@@ -18,7 +18,7 @@
 
 #include <dos.h>
 
-int main(void)
+int start_main(void)
 {
     uint8 unused[0xe];
     uint8 introStage;
@@ -44,10 +44,8 @@ int main(void)
     /* 0x54 */
     TRACE(("main: installing cbreak handler"));
     installCBreakHandler();
-    TRACE(("main: setting up overlays"));
-    setupOverlaySlots(commData->miscOvlAddr);
-    setupOverlaySlots(commData->gfxOvlAddr);
-    setupOverlaySlots(commData->sndOvlAddr);
+    /* gfx/misc/sound are called directly in the merged build — no overlay
+     * slot trampolines to populate. */
     /* 0x81 */
     TRACE(("main: slot 4b"));
     gfx_storeBufPtr(commData->gfxInitResult, 2);
@@ -112,7 +110,7 @@ checkEga:
             TRACE(("main: switching to ega for title"));
             /* 0x19c */
             if (commData->gfxModeNum != GFX_MODE_EGA) {
-                setupOverlaySlots(loadOverlay(aEgraphic_exe));
+                loadOverlay(aEgraphic_exe);
             }
             /* 0x1b4 */
             gfx_waitRetrace();
@@ -149,7 +147,6 @@ checkEga:
             /* 0x264 */
             getch();
             /* 0x26f */
-            setupOverlaySlots(commData->gfxOvlAddr); /* restore temporarily shadowed overlay? */
             gfx_waitRetrace();
             /* 0x282 */
             gfx_setMode13(commData->setupMono);

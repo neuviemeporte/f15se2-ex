@@ -15,10 +15,4 @@
 #include "egtypes.h"
 #include "egdata.h"
 
-#ifdef NO_ASM
-#ifdef BUGFIX
 char far g_world3dData[AIRCRAFT_MODELS_OFFSET + 0x520C];
-#else
-unsigned char far g_world3dData[AIRCRAFT_MODELS_OFFSET + 0x520C];
-#endif
-#endif /* NO_ASM */

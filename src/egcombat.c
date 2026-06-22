@@ -181,11 +181,7 @@ void updateThreatTargeting(void)
 
         if (slot < 8) {
             slot = slot;
-#ifdef BUGFIX
             plotMapObject(g_projectiles[slot].mapX, g_projectiles[slot].mapY, *(int16 *)&g_projectiles[slot].state[4], 0);
-#else
-            plotMapObject(g_projectiles[slot].mapX, g_projectiles[slot].mapY, *(int16 *)&g_projectiles[slot].state[4]);
-#endif
             alt0 = g_viewZ;
             locked = samCanAcquireTarget(slot, viewX, viewY, g_viewZ, mode);
             best = g_acqRange;
@@ -452,11 +448,7 @@ msg_done:
             *(int16 *)&g_projectiles[slot].state[4] =
                 readMapPixelColor(g_projectiles[slot].mapX, g_projectiles[slot].mapY);
             if (frameTick & 1)
-#ifdef BUGFIX
                 plotMapObject(g_projectiles[slot].mapX, g_projectiles[slot].mapY, 0xe, 0);
-#else
-                plotMapObject(g_projectiles[slot].mapX, g_projectiles[slot].mapY, 0xe);
-#endif
         }
         }
     }

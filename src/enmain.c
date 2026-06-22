@@ -20,7 +20,7 @@
 void initGraphics(void);
 void checkQuitFlag(void);
 
-int main(void) {
+int end_main(void) {
     int spriteBufSize;
     int a;
     int auxBufSize;

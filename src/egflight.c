@@ -1015,11 +1015,7 @@ void renderFrame() {
 void UpdateThrottleState(void) {
     if (g_hudVisible != 0) {
         setDrawColor(0);
-#ifdef BUGFIX
         fillRectBoth(0xd4, 0x7f, 0xde, 0xaf);
-#else
-        fillRectBoth(0xd4, 0x7f, 0xde, 0xaf, 0xc4);
-#endif
         setDrawColor(0x0c);
         fillRectBoth(0xd4, -(g_setThrust / 3 - 0xaf), 0xde, 0xaf);
         if (100 < g_setThrust) {

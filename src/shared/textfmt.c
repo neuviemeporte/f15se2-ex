@@ -17,11 +17,7 @@ void drawStringCentered(int16 *page, const char *str, int startx, int y, int end
 
 int stringWidth(int16 *page, const char *str) {
     int n;
-#ifdef BUGFIX
-    const char* l; // clang errors due to wrong type but char does change the binary
-#else
-    const uint8* l;
-#endif
+    const char* l;
     int j;
     l = str;
     j = page[6];
@@ -34,11 +30,7 @@ int stringWidth(int16 *page, const char *str) {
 
 void my_ltoa(int32 value, char* buf) {
     int8 i, k;
-#ifdef BUGFIX
     char *p;
-#else
-    int8 *p;
-#endif
     int8 n[6];
     p = buf;
     if (value < 0) {

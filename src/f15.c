@@ -24,16 +24,16 @@
 #include "overlay.h"
 #include "f15util.h"
 #include "offsets.h"
-#ifdef NO_ASM
 #include "gfx_impl.h"
 #include "slot.h"
-#endif
 
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+
+#include <SDL3/SDL.h>
 
 const char* SOUND_DRIVER = "Nsound.exe";
 const char* GFX_DRIVER = "Mgraphic.exe";
@@ -50,6 +50,17 @@ enum { CMDLINE_LEN = 128 };
 char cmdlineBuf[CMDLINE_LEN] = "";
 const char FAR *CMDLINE = (const char FAR*)cmdlineBuf;
 uint16 commSegment = 0;
+
+/* SDL output surface. The original game renders to a 320x200
+ * MCGA framebuffer; we present that through an SDL renderer scaled to a
+ * resizable window. These are the target surface the gfx layer will draw into
+ * as the graphics system is brought up. */
+const int LOGICAL_WIDTH = 320;
+const int LOGICAL_HEIGHT = 200;
+const int INITIAL_WINDOW_WIDTH = 1280;
+const int INITIAL_WINDOW_HEIGHT = 800;
+SDL_Window *sdlWindow = NULL;
+SDL_Renderer *sdlRenderer = NULL;
 
 /* The DOS EXEC call (INT 21h/4Bh) used to launch each child program writes a
  * stray memory-segment byte into this process's CRT "null pointer" guard at
@@ -75,11 +86,6 @@ static void nullGuardRestore(void) {
     int i;
     for (i = 0; i < NULLGUARD_SIZE; ++i) p[i] = nullGuard[i];
 }
-#ifdef NO_ASM
-/* Satisfy linker for gfx_drawLine's extern refs when stdata.c is absent.
- * At runtime these live in the calling exe's data segment (correct behavior). */
-int16 lineX1, lineX2, lineY1, lineY2;
-#endif
 
 uint16 load_driver(const char* filename, const uint16 commPtrOffset) {
     /* load driver overlay into memory */
@@ -100,10 +106,6 @@ void game_init(void) {
     int8 FAR *charPtr;
     uint16 gfxBufAddress;
     int err;
-#ifndef NO_ASM
-    OverlayFunc gfxInit = NULL;
-    uint16 gfxDrvAddress;
-#endif
 
     bios_clearkeyflags();
 
@@ -134,26 +136,10 @@ void game_init(void) {
     writeWordFar(commSegment, COMM_SETUP2_OFFSET, 0);
     writeWordFar(commSegment, COMM_SETUP_DETAIL_OFFSET, 3); /* max detail */
     writeWordFar(commSegment, COMM_SETUP_USEJOY_OFFSET, 0);
-#ifndef NO_ASM
-    strcpyFar(GFX_DRIVER, commSegment, COMM_GFXOVL_NAME_OFFSET, strlen(GFX_DRIVER));
-#endif
     /* sound driver name is read by start.exe (PC-speaker check) in both builds */
     strcpyFar(SOUND_DRIVER, commSegment, COMM_SNDOVL_NAME_OFFSET, strlen(SOUND_DRIVER));
     writeWordFar(commSegment, COMM_SETUP_DONE_OFFSET, 1);
     writeWordFar(commSegment, COMM_SETUP_GFXMODE_OFFSET, (uint16)'M'); /* mcga */
-
-#ifndef NO_ASM
-    /* load sound, misc and video driver overlays */
-    load_driver(SOUND_DRIVER, COMM_SNDOVL_ADDR_OFFSET);
-    load_driver(MISC_LIBRARY, COMM_MISCOVL_ADDR_OFFSET);
-    gfxDrvAddress = load_driver(GFX_DRIVER, COMM_GFXOVL_ADDR_OFFSET);
-
-    /* call function 0 from video driver, init video */
-    gfxInit = overlay_functionAddress(gfxDrvAddress, 0);
-    INFO("gfx init function at %p", gfxInit);
-    gfxBufAddress = gfxInit(GFX_INIT_ARG);
-    INFO("gfx init function returned 0x%x", gfxBufAddress);
-#else
     {
         uint16 ovlSeg = dos_alloc(80);
         uint16 sndSeg, miscSeg;
@@ -181,7 +167,6 @@ void game_init(void) {
         gfxBufAddress = (uint16)gfx_allocPage((int)GFX_INIT_ARG);
         INFO("gfx_allocPage returned 0x%x", gfxBufAddress);
     }
-#endif
     writeWordFar(commSegment, COMM_GFXINIT_RESULT_OFFSET, gfxBufAddress);
 
     /* initialization done */
@@ -190,25 +175,35 @@ void game_init(void) {
     INFO("Initialization complete, free memory = %s", sizeString(dos_getfree()));
 }
 
+/* In-process entry points for the former START.EXE / EGAME.EXE / END.EXE.
+ * These used to be separate programs launched via dos_runProgram(); they are
+ * now linked into this single executable and called directly. */
+int start_main(void);
+int egame_main(void);
+int end_main(void);
+
+/* Run one of the former sub-programs in-process and return its exit code.
+ * egame/end are only dispatched when compiled in (ENABLE_EGAME/ENABLE_END);
+ * otherwise their stage falls through to the FATAL below. */
+static int game_dispatch(const char* filename) {
+    if (filename == GAME_MENU)       return start_main();
+#ifdef ENABLE_EGAME
+    if (filename == GAME_FLIGHT)     return egame_main();
+#endif
+#ifdef ENABLE_END
+    if (filename == GAME_DEBRIEFING) return end_main();
+#endif
+    FATAL("Unknown program: %s", filename);
+    return -1;
+}
+
 bool game_run(const char* filename, const int returnCode, const bool debug) {
     int err;
-    /* launch game executable */
-    if (debug) {
-        INFO("Executing %s under the debugger", filename);
-        sprintf(cmdlineBuf, " %s", filename);
-        filename = DEBUGGER;
-    }
-    else {
-        memset(cmdlineBuf, 0, CMDLINE_LEN);
-        INFO("Executing %s with commandline '%Fs'", filename, CMDLINE);
-    }
+    INFO("Running %s in-process", filename);
     log_close();
-    err = dos_runProgram(filename, CMDLINE);
+    err = game_dispatch(filename);
     log_open(true);
-    nullGuardRestore(); /* DOS EXEC scribbles on our CRT null-guard; undo it */
-    if (err != 0)
-        FATAL("Unable to run %s", filename);
-    err = dos_getReturnCode();
+    nullGuardRestore(); /* sub-program init may scribble on our CRT null-guard; undo it */
     INFO("%s exited with code 0x%x", filename, err);
     if (debug)
         return true;
@@ -223,6 +218,37 @@ uint16 load_segment(const uint16 envParagraphs) {
     return dos_lastFreeBlock() + 1 + envParagraphs + 1;
 }
 
+/* Bring up the SDL window and renderer. The 320x200 logical surface is stretched
+ * to fill the resizable window (SDL_LOGICAL_PRESENTATION_STRETCH). */
+static void sdl_init(void) {
+    if (!SDL_Init(SDL_INIT_VIDEO))
+        FATAL("SDL_Init failed: %s", SDL_GetError());
+
+    sdlWindow = SDL_CreateWindow(
+        "F-15 SE2 EX v0.0.1",
+        INITIAL_WINDOW_WIDTH,
+        INITIAL_WINDOW_HEIGHT,
+        SDL_WINDOW_RESIZABLE);
+    if (!sdlWindow)
+        FATAL("Window creation failed: %s", SDL_GetError());
+
+    sdlRenderer = SDL_CreateRenderer(sdlWindow, NULL);
+    if (!sdlRenderer)
+        FATAL("Renderer creation failed: %s", SDL_GetError());
+
+    SDL_SetRenderVSync(sdlRenderer, 1);
+
+    if (!SDL_SetRenderLogicalPresentation(sdlRenderer, LOGICAL_WIDTH, LOGICAL_HEIGHT,
+                                          SDL_LOGICAL_PRESENTATION_STRETCH))
+        INFO("SetRenderLogicalPresentation failed: %s", SDL_GetError());
+}
+
+static void sdl_shutdown(void) {
+    if (sdlRenderer) SDL_DestroyRenderer(sdlRenderer);
+    if (sdlWindow)   SDL_DestroyWindow(sdlWindow);
+    SDL_Quit();
+}
+
 int main(int argc, char *argv[]) {
     /* process cmdline args */
     int argIdx, charIdx;
@@ -230,6 +256,7 @@ int main(int argc, char *argv[]) {
 
     log_open(false);
     nullGuardSave();
+    sdl_init();
 
     for (argIdx = 1; argIdx < argc; ++argIdx) {
         const char *arg = argv[argIdx];
@@ -259,5 +286,6 @@ int main(int argc, char *argv[]) {
     }
 
     INFO("Main loop finished, terminating");
+    sdl_shutdown();
     return 0;
 }

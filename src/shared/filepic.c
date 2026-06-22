@@ -27,21 +27,13 @@ void closeFileWrapper(int handle) /* Original: CloseFile(fh). Close a resident f
     fileClose(handle);
 }
 
-#ifdef BUGFIX
 void openShowPic(char *filename, int page) /* Original chain: OpenFile + show/decode + CloseFile. Open, draw PIC to page, then close. */
-#else
-void openShowPic(char *filename, int page, int garbage) /* Original chain: OpenFile + show/decode + CloseFile. Open, draw PIC to page, then close. */
-#endif
 {
     int16 fileHandle;
     TRACE(("openShowPic: opening file %s, page %d",filename,page));
     fileHandle = openFileWrapper(filename, 0);
     TRACE(("openShowPic: showing pic, handle %d",fileHandle));
-#ifdef BUGFIX
     showPicFile(fileHandle, page);
-#else
-    showPicFile(fileHandle, page, garbage);
-#endif
     closeFileWrapper(fileHandle);
     TRACE(("openShowPic: file closed, returning"));
 }

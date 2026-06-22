@@ -282,11 +282,7 @@ void drawMapTileObject(char far *modelData, int screenX, int screenY) {
     case 0x3e:
         return;
     case 0x3f:
-#ifdef BUGFIX
         drawModelPoint(screenX, screenY);
-#else
-        drawModelPoint();
-#endif
         return;
     }
     buildVertexSignMask(screenX, screenY);

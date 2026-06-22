@@ -24,16 +24,8 @@
  * then guaranteed by construction and is correct under both the 16-bit far model and
  * the flat 64-bit layout, with no dependence on linker placement.
  */
-#ifdef BUGFIX
 extern char far g_world3dData[];
-#else
-extern unsigned char far g_world3dData[];
-#endif
-#ifdef NO_ASM
 #define g_aircraftModels (g_world3dData + AIRCRAFT_MODELS_OFFSET)
-#else
-extern char far g_aircraftModels[];
-#endif
 
 extern struct SpriteParams gaugeSpriteParams;
 extern struct SpriteParams blitSpriteParams;

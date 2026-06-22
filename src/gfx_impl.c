@@ -152,7 +152,7 @@ void FAR CDECL gfx_storeBufPtr(uint16 seg, int pageIdx)
  * _gfx_getPageSeg). The shim pushes ES as `seg`. We record it as curPageSeg so
  * the subsequent fillRow/fillRow2 (which write curPageSeg) land in this buffer,
  * then clear it — matching MGRAPHIC's slot 0x3b (`rep stosw` to ES:0). */
-void gfx_clearPage_impl(uint16 seg)
+void FAR CDECL gfx_clearPage(uint16 seg)
 {
     GfxState FAR *s = gfx_getState();
     uint8 far *page;
@@ -187,7 +187,7 @@ void FAR CDECL gfx_setPageN(uint16 pageNum)
 /* Slot 0x0f: register-called via the _gfx_setCurPageSeg shim — AX = segment;
  * curPageSeg = AX. MGRAPHIC's slot 0x0f is `mov [curPageSeg],ax` — a SETTER (the
  * getter is slot 0x10). clearRect saves curPageSeg via 0x10 and restores it here. */
-void gfx_setCurPageSeg_impl(uint16 seg)
+void FAR CDECL gfx_setCurPageSeg(uint16 seg)
 {
     gfx_getState()->curPageSeg = seg;
 }
@@ -205,7 +205,7 @@ int FAR CDECL gfx_getBufSize(void)
  * the caller's DGROUP throughout, so `srcBuf` is read as a near pointer. */
 
 /* Slot 0x3a: DI = y -> AX = row byte offset (y*320). */
-int gfx_getRowOffset_impl(int y)
+int FAR CDECL gfx_getRowOffset(int y)
 {
     GfxState FAR *s = gfx_getState();
     initRowOffsets();
@@ -215,7 +215,7 @@ int gfx_getRowOffset_impl(int y)
 }
 
 /* Slot 0x38: SI = page -> select it as current page, return its segment. */
-int gfx_getPageSeg_impl(uint16 page)
+int FAR CDECL gfx_getPageSeg(uint16 page)
 {
     GfxState FAR *s = gfx_getState();
     if (page < 16)
@@ -225,7 +225,7 @@ int gfx_getPageSeg_impl(uint16 page)
 
 /* Slot 0x33: DI = rowOffset, BP = srcBuf (caller DS), BX = rowNum.
  * Copy one 320-byte decoded row into the current page (MCGA: direct write). */
-void gfx_fillRow_impl(uint16 rowOffset, uint16 srcBuf, uint16 rowNum)
+void FAR CDECL gfx_fillRow(uint16 rowOffset, uint16 srcBuf, uint16 rowNum)
 {
     GfxState FAR *s = gfx_getState();
     const uint8 *src = (const uint8 *)srcBuf;          /* near ptr, caller's DS */
@@ -239,7 +239,7 @@ void gfx_fillRow_impl(uint16 rowOffset, uint16 srcBuf, uint16 rowNum)
 
 /* Slot 0x35: DI = rowOffset. In MCGA the row is already in the page (fillRow
  * wrote directly), so this is a no-op. */
-void gfx_copyRow_impl(uint16 rowOffset)
+void FAR CDECL gfx_copyRow(uint16 rowOffset)
 {
     (void)rowOffset;
 }
@@ -450,6 +450,16 @@ void gfx_drawStringClipped_impl(int16 *params, const char *string, int mode)
     drawStringCore(params, string, clipL, clipR, clipT, clipB);
 }
 
+/* Slots 0x01/0x02/0x03/0x04/0x06: the clipped glyph variants. Each selects which
+ * clip stages run (bit0 = horizontal window, bit1 = vertical window) and shares
+ * the gfx_drawStringClipped_impl core. They take the param block + string as real
+ * arguments (formerly marshalled from BP/BX by regshim.asm). */
+void FAR CDECL gfx_fillDirty(int16 *params, const char *string)           { gfx_drawStringClipped_impl(params, string, 2); }
+void FAR CDECL gfx_blitTransparent(int16 *params, const char *string)     { gfx_drawStringClipped_impl(params, string, 1); }
+void FAR CDECL gfx_blitVariant(int16 *params, const char *string)         { gfx_drawStringClipped_impl(params, string, 1); }
+void FAR CDECL gfx_copyBlock(int16 *params, const char *string)           { gfx_drawStringClipped_impl(params, string, 0); }
+void FAR CDECL gfx_drawStringUnclipped(int16 *params, const char *string) { gfx_drawStringClipped_impl(params, string, 3); }
+
 /* ---- Slot 0x2a: gfx_copyRect ---- */
 void FAR CDECL gfx_copyRect(int srcPage, uint16 srcX, uint16 srcY,
                             int dstPage, uint16 dstX, uint16 dstY,
@@ -529,18 +539,9 @@ void FAR CDECL gfx_setDac(uint16 palIdx)
     regs.x.bx = 0;       /* first register */
     regs.x.cx = 16;      /* number of registers */
     segread(&sregs);
-#if !defined(MSDOS)
     (void)s;
     regs.x.dx = 0; /* (uint16)g_palettes[palIdx]; */
     sregs.es = sregs.ds;
-#else
-    /* ES:DX -> palette table. DX is the table's offset within f15's DGROUP,
-     * but ES must be f15's DGROUP, NOT the caller's DS: when a child far-calls
-     * in, DS is the child's DGROUP where no palette lives (Finding A). */
-    s = gfx_getState();
-    regs.x.dx = (uint16)g_palettes[palIdx];
-    sregs.es = s->f15DataSeg;
-#endif
     int86x(0x10, &regs, &regs, &sregs);
     gfx_waitRetrace();
 }
@@ -565,7 +566,7 @@ void FAR CDECL gfx_initOverlay(void)
 /* Slot 0x0d: register-called via the _gfx_setPage1 shim (regshim.asm) — AX = a
  * page index; curPageSeg = pageSegs[AX]. MGRAPHIC's slot 0x0d takes the index in
  * AX (the name is a misnomer); clearRect uses it to select the page to clear. */
-int gfx_setPage1_impl(uint16 page)
+int FAR CDECL gfx_setPage1(uint16 page)
 {
     GfxState FAR *s = gfx_getState();
     if (page < 16)
@@ -574,7 +575,7 @@ int gfx_setPage1_impl(uint16 page)
 }
 /* Slot 0x10: called via the _gfx_getCurPageSeg shim, which preserves ES (a
  * gfx_getState() call here loads ES, and clearRect needs ES kept across this). */
-int gfx_getCurPageSeg_impl(void)
+int FAR CDECL gfx_getCurPageSeg(void)
 {
     GfxState FAR *s = gfx_getState();
     return (int)s->curPageSeg;
@@ -631,7 +632,7 @@ static int gfx_lineOutcode(int x, int y)
     return code;
 }
 
-void gfx_drawLine_impl(uint16 ux1, uint16 uy1, uint16 ux2, uint16 uy2)
+void FAR CDECL gfx_drawLine(uint16 ux1, uint16 uy1, uint16 ux2, uint16 uy2)
 {
     GfxState FAR *s = gfx_getState();
     uint8 far *page;
@@ -692,7 +693,7 @@ void gfx_drawLine_impl(uint16 ux1, uint16 uy1, uint16 ux2, uint16 uy2)
 }
 /* Slot 0x20: register-called via the _gfx_setDrawColor shim — AH = fill colour.
  * Stores the clearRect/fill colour (MGRAPHIC slot 0x20 = `mov [fillColor],ah`). */
-void gfx_setFillColor_impl(uint16 color)
+void FAR CDECL gfx_setDrawColor(uint16 color)
 {
     gfx_getState()->fillColor = (uint8)color;
 }
@@ -704,7 +705,7 @@ void FAR CDECL gfx_nop23(void) { return; }
  * This is the actual rectangle clear behind clearRect (MGRAPHIC slot 0x25==0x28).
  * A row whose min==max==0 or ==0x13F is treated as empty and skipped, matching
  * the original's range guard. */
-void gfx_dirtyRectFill_impl(uint16 minBufOff, uint16 yMin, uint16 yMax)
+void FAR CDECL gfx_dirtyRect2(uint16 minBufOff, uint16 yMin, uint16 yMax)
 {
     GfxState FAR *s = gfx_getState();
     const uint16 *minBuf = (const uint16 *)minBufOff;          /* caller's DS */
@@ -839,8 +840,11 @@ int FAR CDECL gfx_getModeFlag2(void)
     GfxState FAR *s = gfx_getState();
     return (int)s->modeFlag;
 }
-int FAR CDECL gfx_getVal(uint16 val) { return (int)val; }
-int FAR CDECL gfx_getVal2(uint16 val) { return (int)val; }
+/* Slots 0x4e/0x4d: getters (no args). MGRAPHIC's bodies returned overlay state;
+ * the merged build has no live source for them yet, so they report 0 — the value
+ * start.exe's sprite-load path keys off (gfx_getVal()==0). */
+int FAR CDECL gfx_getVal(void) { return 0; }
+int FAR CDECL gfx_getVal2(void) { return 0; }
 void FAR CDECL gfx_setDacAnimCount(uint16 count)
 {
     GfxState FAR *s = gfx_getState();
@@ -883,7 +887,7 @@ void FAR CDECL gfx_blitToCurrent(int16 pagePtr)
  * Used by egame for the HUD gun-sight / symbol blits (egseg2.asm) — the
  * transparency (skip-zero) is what gives the gun sight its see-through
  * background instead of an opaque black box. */
-void gfx_blitCore_impl(int16 *blk)
+void FAR CDECL gfx_blitCore(int16 *blk)
 {
     GfxState FAR *s = gfx_getState();
     uint16 srcSeg = (uint16)blk[0];
@@ -940,7 +944,7 @@ static const int g_ladderGeom[12] = {
     0x47, 0xf8, 0x78, 0xc8, 0x1a, 0x1a, 0x44, 0x44, 0x56, 0x56, 0x62, 0x62
 };
 
-void gfx_complexRender_impl(int bxArg, int dxArg, int cxArg, int siArg)
+void FAR CDECL gfx_complexRender(int bxArg, int dxArg, int cxArg, int siArg)
 {
     GfxState FAR *s = gfx_getState();
     uint8 far *page;

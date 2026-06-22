@@ -3,9 +3,6 @@
 #include "eg3dview.h"
 #include "egcode.h"
 #include "egcombat.h"
-#ifndef BUGFIX
-#define G_VIEWZ_UNSIGNED   /* this TU views g_viewZ as uint16 (drawHudWorldOverlay) */
-#endif
 #include "egdata.h"
 #include "egflight.h"
 #include "egframe.h"

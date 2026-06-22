@@ -24,13 +24,8 @@ int openFileWrapper(const char *filename, int mode);
 void closeFileWrapper(int handle);
 void mystrcpy(char *dest, const char *source);
 void loadPic(const char *filename, int segment);
-#ifdef BUGFIX
 void openShowPic(char *filename, int page);
 void showPicFile(int handle, int pageNum);
-#else
-void openShowPic(char *filename, int page, int garbage);
-void showPicFile(int handle, int pageNum, int garbage);
-#endif
 
 /* functions provided by file_io.c / file_*.inc */
 int openFile(const char *filename, int mode);
@@ -39,7 +34,6 @@ int openFile(const char *filename, int mode);
 void intDispatch(int intNum, uint8 *inRegs, uint8 *outRegs);
 void restoreCbreakHandler(void);
 void installCBreakHandler(void);
-void setupOverlaySlots(uint16 param);
 int getTimeOfDay(void);
 
 /* functions provided by timer.c / timer_*.inc */

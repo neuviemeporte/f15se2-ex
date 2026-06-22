@@ -12,3 +12,4 @@ bin/
 /*.grc
 build64/
 CMakeUserPresets.json
+/.cache

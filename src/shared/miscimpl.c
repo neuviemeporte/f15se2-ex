@@ -74,7 +74,6 @@ int doFcbSearch(void)
     return -1;
 }
 
-#if !defined(MSDOS)
 int16 *findNearestTerrain(long a, long b)
 {
     return 0;
@@ -89,4 +88,3 @@ uint16 dos_alloc(int size)
 {
     return 0;
 }
-#endif

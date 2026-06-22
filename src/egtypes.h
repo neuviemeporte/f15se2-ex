@@ -2,11 +2,9 @@
 #define F15_SE2_EGTYPES
 /* egame.exe compat macros + hardware/comm/overlay constants. */
 
-#if !defined(MSDOS)
 #define far
 #ifndef pascal
 #define pascal
-#endif
 #endif
 
 #define __int32 long

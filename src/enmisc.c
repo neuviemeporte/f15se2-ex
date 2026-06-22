@@ -69,11 +69,9 @@ void outportByte(int port, int value) {
     outp(port, value);
 }
 
-#ifdef NO_ASM
 void setupWorldBufPtr(void) {
     uint16 seg = FP_SEG(commData);
     uint16 off = FP_OFF(commData);
     worldBufOffset = off + 0x7A;
     worldBufSegment = seg;
 }
-#endif

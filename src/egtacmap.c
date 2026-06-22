@@ -559,11 +559,7 @@ void drawStringCentered(int16* strStruct, const char *text, int screenX, int scr
     strStruct[4] = screenX;
     strStruct[5] = screenY;
     strStruct[2] = color;
-#ifdef BUGFIX
     gfx_drawString(strStruct, strupr((char*)text));
-#else
-    gfx_drawString(strStruct, strupr((char*)text), strlen(text));
-#endif
 }
 
 
