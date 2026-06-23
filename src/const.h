@@ -3,13 +3,11 @@
 
 #define IRQ_VIDEO 0x10
 
-#define DOS_ERROR_RMDIR 0x10
-#define HALLFAME_RECORDSZ 32
+#define HALLFAME_RECORDSZ 0x20
 
 #define THEATER_DS 6
 #define THEATER_OTHER 4
 #define DIFFICULTY_DEMO 4
-#define HALLFAME_RECORDSZ 32
 #define HALLFAME_SLOTS 8
 
 #define MPS_TIMEOUT 120
@@ -42,15 +40,6 @@
 #define JOY_CENTER 128
 #define JOY_DEADZONE_LO 78
 #define JOY_DEADZONE_HI 178
-
-/* graphics mode numbers from driver function 3f */
-#define GFX_MODE_MDA 1
-#define GFX_MODE_EGA 2
-#define GFX_MODE_VGA 3
-
-/* EGA DIP switch detection */
-#define EGA_SWITCH_MASK 0xf
-#define EGA_SWITCH_VALUE 9
 
 /* font indices */
 #define FONT_NORMAL 1

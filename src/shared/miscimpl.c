@@ -65,17 +65,3 @@ int loadOverlay(const char *filename) {
 int doFcbSearch(void) {
     return -1;
 }
-
-int16 *findNearestTerrain(long a, long b) {
-    return 0;
-}
-
-unsigned long scaleCoordByLevel(int level, unsigned long coord) {
-    return coord;
-}
-
-#if !defined(MSDOS)
-uint16 dos_alloc(int size) {
-    return 0;
-}
-#endif

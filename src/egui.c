@@ -9,14 +9,12 @@
 #include "offsets.h"
 #include "pointers.h"
 #include "log.h"
-#include "slot.h"
+#include "gfx.h"
 #include "const.h"
 
 #include "comm.h"
 
 #include <dos.h>
-#include <conio.h>
-#include <bios.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -102,7 +100,7 @@ void drawTacticalMap(char page) {
                     setDrawColor(0x0e);
                 }
                 if (sams[g_projectiles[i].specIdx].weaponClass == 3) {
-                    setDrawColor(*(char *)&gfxModeUnset != 0 ? 8 : 0x0d);
+                    setDrawColor(0x0d);
                 }
                 if (!(g_projectiles[i].alt & 1)) {
                     setDrawColor(7);

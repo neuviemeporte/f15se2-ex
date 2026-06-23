@@ -1,5 +1,5 @@
 /* entext.c — text rendering, compiled with /Gs /Zi */
-#include "slot.h"
+#include "gfx.h"
 #include <string.h>
 #include "offsets.h"
 #include "pointers.h"
@@ -10,11 +10,7 @@
 void drawWrappedText(int16 *page, char *str, unsigned int maxWidth, int x, int y, int lineHeight) {
     int font;
     char *lineStart;
-#ifdef BUGFIX
     char *scan;
-#else
-    uint8 *scan;
-#endif
     int charCount;
     int d;
     char *strBegin;

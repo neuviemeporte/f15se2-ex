@@ -4,15 +4,11 @@
 #ifndef _DOS_H_COMPAT64
 #define _DOS_H_COMPAT64
 
-#define _CDECL
 #define cdecl
 #define far
 #define FAR
 #define near
 #define pascal
-#define interrupt
-#define _interrupt
-#define __interrupt
 #define register
 
 // FP_SEG/FP_OFF: In 64-bit builds, far pointers don't exist.
@@ -83,21 +79,6 @@ inline void movedata(unsigned int srcseg, unsigned int srcoff, unsigned int dsts
     (void)nbytes;
 }
 
-inline void _chain_intr(void (*handler)()) { (void)handler; }
-typedef void (*_dos_isr_t)();
-inline _dos_isr_t _dos_getvect(unsigned intno) {
-    (void)intno;
-    return 0;
-}
-inline void _dos_setvect(unsigned intno, _dos_isr_t handler) {
-    (void)intno;
-    (void)handler;
-}
-
-inline int inp(unsigned int port) {
-    (void)port;
-    return 0;
-}
 inline int outp(unsigned int port, int value) {
     (void)port;
     (void)value;
@@ -117,12 +98,12 @@ inline unsigned short _psp = 0;
 #include <io.h>
 #endif
 
-inline int getch(void) { return 0; }
 inline int putch(int c) {
     (void)c;
     return 0;
 }
-inline int kbhit(void) { return 0; }
+/* Backed by the SDL keyboard layer in eginput.c (egame flight loop). */
+int kbhit(void);
 
 inline char *itoa(int value, char *str, int base) {
     if (base == 10) {

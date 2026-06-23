@@ -15,8 +15,8 @@ void srandInit(int seed) {
     randState = 0;
 }
 
-int loadFileSection(const char *name, int b, int c) {
-    int handle;
+int loadFileSection(char *name, int b, int c) {
+    SDL_IOStream *handle;
     int result;
     handle = openFileWrapper(name, 0);
     result = readFileAt(handle, -1, b, c);
@@ -24,8 +24,8 @@ int loadFileSection(const char *name, int b, int c) {
     return result;
 }
 
-int writeFileSection(const char *name, int b, int c, int d, int e) {
-    int handle;
+int writeFileSection(char *name, int b, int c, int d, int e) {
+    SDL_IOStream *handle;
     int result;
     handle = createFile(name, 0);
     result = writeFile(handle, e, b, c, d);

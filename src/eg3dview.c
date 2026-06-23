@@ -3,13 +3,14 @@
 #include "eg3dmap.h"
 #include "eg3dproj.h"
 #include "eg3dview.h"
+#include "egcode.h"
 #include "egdata.h"
 #include "egtarget.h"
 #include "egtypes.h"
 #include "offsets.h"
 #include "pointers.h"
 #include "log.h"
-#include "slot.h"
+#include "gfx_impl.h"
 #include "const.h"
 
 #include <dos.h>
@@ -27,6 +28,13 @@ void render3DView(int camX, int camY, int camZ, long worldX, long worldY, long w
     g_viewParams[9] = clipLeft;
     g_viewParams[10] = clipLeft + clipWidth - 1;
     *g_viewParams = gfx_getDisplayPage() & 0xFF;
+    /* Select the display page as the active draw page so BOTH curPage and
+     * curPageSeg track it: the 3D scene must composite into the same page
+     * gfx_dacAnimate later sources from (curPage). The alt-view cockpit blit
+     * (openBlitClosePic(..., *g_pageFront)) leaves the draw page on the visible
+     * page; without this the side/rear world renders to the wrong buffer and
+     * never reaches the screen. gfx_getDisplayPage only re-syncs curPageSeg. */
+    gfx_setPageN((uint16)*g_viewParams);
     waitFrameSync(g_frameSyncWait);
     g_viewParams[2] = (unsigned char)((char *)colorLut)[g_skyColorIndex & 0xFF];
     setup3DTransform(g_viewParams, camX, camY, camZ, 0, 0, (int)worldZ, 1);
@@ -42,20 +50,7 @@ void waitFrameSync(int frames) {
     uint8 targetTick;
     if (frames > 0) {
         targetTick = (uint8)frames + g_timerTickByte[0];
-#ifdef DEBUG
-        {
-            unsigned long spins = 0;
-            uint8 start = g_timerTickByte[0];
-            while (targetTick != g_timerTickByte[0]) {
-                if (++spins > 3000000UL) {
-                    LogWarn(("12278: SPIN TIMEOUT arg=%d want=%d cur=%d start=%d (ISR frozen?)", frames, (int)targetTick, (int)g_timerTickByte[0], (int)start));
-                    break;
-                }
-            }
-        }
-#else
-        while (targetTick != g_timerTickByte[0]) {}
-#endif
+        while (targetTick != g_timerTickByte[0]) timerYield();
     }
 }
 

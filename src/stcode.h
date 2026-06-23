@@ -5,8 +5,10 @@
 #include "pointers.h"
 #include <dos.h>
 
+typedef struct SDL_IOStream SDL_IOStream;
+
 int checkQuitFlag();
-void picBlit(int handle, int unk);
+void picBlit(SDL_IOStream *handle, int unk);
 void mystrcat(char *dst, const char *src);
 void nearmemset(void *dst, char value, int count);
 void dos_printstring(const char *str);
@@ -14,7 +16,7 @@ int loadOverlay(const char *filename);
 void clearRect(int16 *buf, int x, int y, int maxx, int maxy);
 void drawLineWrapper();
 int writeFileAtRaw();
-void decodePic(int handle, int segment);
+void decodePic(SDL_IOStream *handle, int segment);
 void doNothing2(const char *msg, int a, int b, int c);
 void far pollJoystick();
 void far copyJoystickData(uint8 FAR *ptr);

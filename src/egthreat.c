@@ -12,13 +12,10 @@
 #include "offsets.h"
 #include "pointers.h"
 #include "log.h"
-#include "slot.h"
 #include "const.h"
 #include "comm.h"
 
 #include <dos.h>
-#include <conio.h>
-#include <bios.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,12 +57,8 @@ void updateThreatSites() {
         }
     }
 
-    if (commData->gfxModeNum == 0) {
-        g_scopeArcColor = 0;
-    }
-
     if (g_mapMode == 0 && g_scopeSweepTimer > 0 && g_hudVisible != 0 && g_scopeArcRange > 1) {
-        if (g_detailLevel != 0 && commData->gfxModeNum != 0) {
+        if (g_detailLevel != 0) {
             captureScopePanel();
             arcRadius = (int)((long)clampRange(g_frameRateScaling - g_scopeSweepTimer, 1, g_frameRateScaling) * (long)g_scopeArcRange / (long)g_frameRateScaling) << 6;
         } else {
@@ -378,7 +371,7 @@ void updateObjects(void) {
                     }
                     relBearing = (int)(bearing - hdg) >> 13 & 7;
                     hdg = g_ourHead;
-                    if (abs(g_ourRoll) < 0x4000) {
+                    if (abs((int16)g_ourRoll) < 0x4000) {
                         hdg += (int16)g_ourRoll >> 1;
                     }
                     aspect = (((g_simObjects[objIdx].heading.w - hdg) >> 13) + 4) & 7;

@@ -1,5 +1,5 @@
 /* enmisc.c — split from enmain.c (loadWorldStrings + helpers), compiled with /Gs */
-#include "slot.h"
+#include "gfx.h"
 #include <dos.h>
 #include "offsets.h"
 #include "pointers.h"
@@ -63,8 +63,5 @@ void outportByte(int port, int value) {
 }
 
 void setupWorldBufPtr(void) {
-    uint16 seg = FP_SEG(commData);
-    uint16 off = FP_OFF(commData);
-    worldBufOffset = off + 0x7A;
-    worldBufSegment = seg;
+    worldBufCursor = (uint8 far *)commData->worldBuf;
 }

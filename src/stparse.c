@@ -2,12 +2,12 @@
 #include "stcode.h"
 #include "stdata.h"
 #include "stparse.h"
-#include "const.h"
 #include "shared/common.h"
 #include "log.h"
+#include "slot.h"
 
 #include <stdio.h>
-#include <conio.h>
+#include <dos.h>
 
 /* Private helpers for this translation unit. */
 void parseTerrain(char *dest);
@@ -25,20 +25,20 @@ void parseTerrain(char *filename) {
     int16 tileIdx, level, tileOffset, entry;
     uint16 tileNum;
     replaceExtension(filename, ".3dT");
-    if ((fileHandle = fopen(filename, "rb")) == 0) {
+    if ((fileHandle = openFile(filename, 0)) == 0) {
         showMsgWaitKey("Open Error on *.3DT, assuming new file !");
     } else {
-        fread(&terrainSignature, 2, 1, fileHandle);
+        fileRead(&terrainSignature, 2, 1, fileHandle);
         if (terrainSignature != TERRAIN_MAGIC) {
             showMsgWaitKey("Bad Tile file format.");
         } else {
-            fread(terrainBuf1, 2, 5, fileHandle);
+            fileRead(terrainBuf1, 2, 5, fileHandle);
             for (level = 0; level < 5; level++) {
                 if (terrainBuf1[level] > 32) {
                     showMsgWaitKey("Too many tiles.");
                     return;
                 }
-                fread(&terrainTileCounts[level], 2, terrainBuf1[level], fileHandle);
+                fileRead(&terrainTileCounts[level], 2, terrainBuf1[level], fileHandle);
             }
             tileOffset = 0;
             for (level = 0; level < 5; level = level + 1) {
@@ -49,17 +49,17 @@ void parseTerrain(char *filename) {
                             showMsgWaitKey("Too much tile data");
                             return;
                         }
-                        fread(&((struct TerrainTile *)((uint8 *)terrainTileBlock + tileOffset))->buf3, 2, 1, fileHandle);
-                        fread(&((struct TerrainTile *)((uint8 *)terrainTileBlock + tileOffset))->buf4, 2, 1, fileHandle);
-                        fread(&((struct TerrainTile *)((uint8 *)terrainTileBlock + tileOffset))->buf5, 2, 1, fileHandle);
-                        fread(&tileIdx, 2, 1, fileHandle);
+                        fileRead(&((struct TerrainTile *)((uint8 *)terrainTileBlock + tileOffset))->buf3, 2, 1, fileHandle);
+                        fileRead(&((struct TerrainTile *)((uint8 *)terrainTileBlock + tileOffset))->buf4, 2, 1, fileHandle);
+                        fileRead(&((struct TerrainTile *)((uint8 *)terrainTileBlock + tileOffset))->buf5, 2, 1, fileHandle);
+                        fileRead(&tileIdx, 2, 1, fileHandle);
                         ((struct TerrainTile *)((uint8 *)terrainTileBlock + tileOffset))->idx = tileIdx;
                         tileOffset += sizeof(struct TerrainTile);
                     }
                 }
             }
         }
-        fclose(fileHandle);
+        fileClose(fileHandle);
     }
 }
 
@@ -67,7 +67,7 @@ void parseTerrain(char *filename) {
 void parseGrid() {
     int idx;
     replaceExtension(regnPlhPtr, ".3dG");
-    if ((fileHandle = fopen(regnPlhPtr, "rb")) == 0) {
+    if ((fileHandle = openFile(regnPlhPtr, 0)) == 0) {
         showMsgWaitKey("Open Error on *.3DG, assuming new file !");
         idx = 0;
         do {
@@ -81,22 +81,22 @@ void parseGrid() {
         gridValidFlag = 0;
         return;
     }
-    fread(&gridSignature, 2, 1, fileHandle);
+    fileRead(&gridSignature, 2, 1, fileHandle);
     if (gridSignature != GRID_MAGIC) {
         showMsgWaitKey("Bad Grid file format.");
     } else {
-        fread(gridBuf1, 1, 16, fileHandle);
-        fread(gridBuf2, 1, 0x100, fileHandle);
-        fread(gridBuf3, 1, 0x200, fileHandle);
-        fread(gridBuf4, 1, 0x200, fileHandle);
-        fread(gridBuf5, 1, 0x200, fileHandle);
+        fileRead(gridBuf1, 1, 16, fileHandle);
+        fileRead(gridBuf2, 1, 0x100, fileHandle);
+        fileRead(gridBuf3, 1, 0x200, fileHandle);
+        fileRead(gridBuf4, 1, 0x200, fileHandle);
+        fileRead(gridBuf5, 1, 0x200, fileHandle);
     }
-    fclose(fileHandle);
+    fileClose(fileHandle);
 }
 
 int showMsgWaitKey(const char *msg) {
     doNothing2(msg, 0, 96, 0x0f);
-    return getch();
+    return misc_getKey();
 }
 
 void replaceExtension(char *path, const char *source) {

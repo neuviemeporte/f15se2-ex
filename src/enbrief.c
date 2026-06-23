@@ -1,4 +1,5 @@
 /* enbrief.c — debrief UI, compiled with /Gs /Zi */
+#include "gfx.h"
 #include "slot.h"
 #include <dos.h>
 #include "offsets.h"
@@ -92,7 +93,7 @@ int selectMenuItem(MenuItem *items, int unused, int itemCount, int16 *inputState
     gfx_commitPage();
     colorAnimEnabled = 0;
     curIdx = 0;
-    while (isPointInRect(&items[curIdx]) == 0 && curIdx < itemCount)
+    while (curIdx < itemCount && isPointInRect(&items[curIdx]) == 0)
         curIdx++;
     joyRepeatFlag = 0;
     for (;;) {
@@ -109,7 +110,7 @@ int selectMenuItem(MenuItem *items, int unused, int itemCount, int16 *inputState
         if (enterPressed != 0) {              // 22f2
             if (curIdx != selectedMenuItem) { // 22fa
                 curIdx = 0;
-                while (isPointInRect(&items[curIdx]) == 0 && curIdx < itemCount)
+                while (curIdx < itemCount && isPointInRect(&items[curIdx]) == 0)
                     curIdx++;
             } // 2320
             // 232c
@@ -127,7 +128,7 @@ int selectMenuItem(MenuItem *items, int unused, int itemCount, int16 *inputState
             continue;
         } // 23c2
         curIdx = 0;
-        while (isPointInRect(&items[curIdx]) == 0 && curIdx < itemCount)
+        while (curIdx < itemCount && isPointInRect(&items[curIdx]) == 0)
             curIdx++;
         if (curIdx != selectedMenuItem) {
             if ((items[curIdx].flags & MENUITEM_SELECTABLE) != 0) {
@@ -303,7 +304,8 @@ int isPointInRect(const MenuItem *p) {
             drawEventSprite(curRecordIdx);
         }
         spriteToggle = (spriteToggle == 0);
-    skip_sprite:;
+    skip_sprite:
+        gfx_commitPage();
     }
 
     /* post-loop input handling */
@@ -384,7 +386,7 @@ void drawMenuItem(const MenuItem *items, unsigned int index, int16 *gfxPage) {
     char prefix[2];
     char d[2];
     int m;
-    char numBuf[4];
+    char numBuf[22];
     unsigned int unitIdx;
     p[0] = 0x0a;
     p[1] = 0;
@@ -613,6 +615,7 @@ int drawEventSprite(int recordIdx) {
         spriteWaypoint->dstY = mapToScreenY(flightRecords[recordIdx].mapY) + mapViewY1;
         return gfx_blitSprite(spriteWaypoint);
     }
+    return 0; /* status matched no event type: nothing drawn */
 }
 
 void waitForKeyOrJoy(void);
@@ -658,7 +661,10 @@ loop_top:
             drawStringCentered(gfxPage, scoreString, 232, 86, 87);
             timerCounter = 0;
         wait_loop:
-            if (timerCounter <= 5) goto wait_loop;
+            if (timerCounter <= 5) {
+                timerYield();
+                goto wait_loop;
+            }
             goto loop_top;
         }
     }
@@ -765,7 +771,7 @@ void plotMapPoint(int x, int y, int color, int unused) {
 void timerWait(unsigned int ticks) {
     timerCounter = 0;
     setTimerIrqHandler();
-    while (ticks >= timerCounter);
+    while (ticks >= timerCounter) timerYield();
     restoreTimerIrqHandler();
 }
 

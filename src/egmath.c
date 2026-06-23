@@ -25,26 +25,25 @@ void load15Flt3d3() {
     struct SREGS segs;
     char FAR *dest;
     strcpyFromDot(a15flt_xxx, ".3D3");
-    fileHandle = fopen(a15flt_xxx, "rb");
+    fileHandle = openFile(a15flt_xxx, 0);
     if (fileHandle == NULL) {
         printError("Open Error on *.3D3");
         return;
     }
-    fread(&flt15HeaderWord, 2, 1, fileHandle);
-    fread(&flt15_size, 2, 1, fileHandle);
-    fread(flt15_buf1, 2, flt15_size, fileHandle);
-    fread(&bytesLeft, 2, 1, fileHandle);
-    segread(&segs);
+    fileRead(&flt15HeaderWord, 2, 1, fileHandle);
+    fileRead(&flt15_size, 2, 1, fileHandle);
+    fileRead(flt15_buf1, 2, flt15_size, fileHandle);
+    fileRead(&bytesLeft, 2, 1, fileHandle);
     dest = g_aircraftModels;
-    Log(("load15Flt3d3: DS=%04x var_10=%04x:%04x", segs.ds, FP_SEG(dest), FP_OFF(dest)));
+    /* Original staged each chunk through a near buffer and movedata'd it into the
+     * far model region; natively g_aircraftModels is a real buffer, read into it. */
     while (bytesLeft > 0) {
         chunkSize = bytesLeft <= 0x800 ? bytesLeft : 0x800;
-        fread(flt15_buf2, 1, chunkSize, fileHandle);
-        movedata(segs.ds, PTR_OFF(flt15_buf2), FP_SEG(dest), FP_OFF(dest), chunkSize);
+        fileRead(dest, 1, chunkSize, fileHandle);
         bytesLeft -= 0x800;
-        FP_OFF(dest) += 0x800;
+        dest += 0x800;
     }
-    fclose(fileHandle);
+    fileClose(fileHandle);
 }
 
 void drawWorldObject(int shapeId, long worldX, long worldY, int altitude, int objYaw, int objPitch, int objRoll, int scaleShift) {
@@ -72,7 +71,8 @@ void drawWorldObject(int shapeId, long worldX, long worldY, int altitude, int ob
         altDiff <<= (char)scaleShift;
     }
     if (scaleShift < 0) {
-        *(char *)&shiftAmt = -scaleShift;
+        /* full int, not just the low byte: native shift uses all 32 bits */
+        shiftAmt = -scaleShift;
         shiftLongRightInPlace(shiftAmt, &relX);
         shiftLongRightInPlace(shiftAmt, &relY);
         altDiff >>= (char)shiftAmt;
@@ -105,9 +105,6 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
     char categoryLow;
 
     g_targetInHudFlag = 1;
-    if (mode == 1 && g_detailLevel == 0 && *(char *)&gfxModeUnset != 0 && (frameTick & 3) != 0) {
-        return;
-    }
 
     dataOff = shapeDataOffset(shapeId);
     if (g_drawPage == 0) {
@@ -299,6 +296,7 @@ int computeBearing(int deltaX, int deltaY) {
         else
             result = swapped ? BEARING_WEST - angle : angle + BEARING_SOUTH;
     }
+    return result;
 }
 
 // ==== seg000:0xd178 sinMul ====
@@ -334,7 +332,8 @@ void seedRng(void) {
 // ==== seg000:0xd200 randomRange ====
 int randomRange(int maxVal) { /* Original: rnd(Max). Deterministic ((long)Max * rand()) >> 15 range scaling. */
     enum { RAND_SCALE_SHIFT = 15 };
-    return (int)(((long)rand() * (long)maxVal) >> RAND_SCALE_SHIFT);
+    /* DOS rand() is 15-bit (RAND_MAX 0x7fff); mask to match so the >>15 scaling yields [0, maxVal). */
+    return (int)(((long)(rand() & 0x7fff) * (long)maxVal) >> RAND_SCALE_SHIFT);
 }
 
 // ==== seg000:0xd21e ====

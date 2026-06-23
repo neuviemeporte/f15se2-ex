@@ -15,13 +15,11 @@
 #include "offsets.h"
 #include "pointers.h"
 #include "log.h"
-#include "slot.h"
+#include "gfx.h"
 #include "const.h"
 #include "comm.h"
 
 #include <dos.h>
-#include <conio.h>
-#include <bios.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,17 +46,6 @@ void updateFrame(void) {
     uint16 screenY;
     int i;
     int objIdx;
-    Log(("updateFrame: enter, g_initPhase=%d", g_initPhase));
-#ifdef DEBUG
-    {
-        static int sig_was_ok = 1;
-        int s4 = *(int far *)((char far *)commData - 4);
-        if (sig_was_ok && (unsigned)s4 != 0xca01) {
-            sig_was_ok = 0;
-            LogError(("SIG CORRUPTED at frame %d: commData-4(MCB)=%04x", frameTick, s4));
-        }
-    }
-#endif
 
     g_viewX_ = (int)((g_ViewX + 0x10L) >> 5);
     g_viewY_ = -((int)((g_ViewY + 0x10L) >> 5) - 0x8000);
@@ -93,8 +80,8 @@ void updateFrame(void) {
         recalcTimeScale();
         g_mapZoomLevel = 1;
         g_radarScopeRange = 1;
-        tmp = g_northSouthSign = (gameData->theater == 6) ? 1 : (*((char far *)gameData + 0x38) & 1) ? 1
-                                                                                                     : -1;
+        tmp = g_northSouthSign = (gameData->theater == 6) ? 1 : (gameData->theater & 1) ? 1
+                                                                                        : -1;
 
         if (((g_planeTable.planes[g_targetSlots[0].viewIndex].flags) & 0x200) != 0) {
             g_ViewX -= (long)(tmp * 0x80);
@@ -166,7 +153,6 @@ void updateFrame(void) {
         g_ViewY = (long)(0x8000 - g_viewY_) << 5;
     }
 
-    *MAKEFAR(char, SEG_LOWMEM, OFF_BDA_KEYFLAGS) &= 0xf;
     updateThreatSites();
     updateObjects();
     updateThreatTargeting();
@@ -176,10 +162,9 @@ void updateFrame(void) {
     applyGravityFall();
 
     if (objectToScreen(g_viewX_, g_viewY_, (int16 *)&val, (int16 *)&screenY) != 0) {
-        g_drawPage = -(gfx_getDisplayPage() - 1);
+        g_drawPage = gfx_getDisplayPage();
         gfx_copyRect(2, val - 3, screenY - 3, g_drawPage, val - 3, screenY - 3, 6, 6);
         blitSprite(val - 1, screenY - 1, ((g_ourHead + 0x1000) >> 0xd & 7) * 4 + 164, 4, 4, 4, 0);
-        g_drawPage = 1 - g_drawPage;
         if (((int16)val < 32 || (int16)val > 88 || (int16)screenY < 118 || (int16)screenY > 162) && g_mapZoomLevel > 2) {
             g_mapZoomLevel--;
             redrawTacMap(g_viewX_, g_viewY_);
@@ -224,14 +209,6 @@ void updateFrame(void) {
         g_targetSlots[1].viewIndex = g_closestThreatIndex;
         waypoints[3].mapX = g_planeTable.planes[g_closestThreatIndex].mapX;
         waypoints[3].mapY = g_planeTable.planes[g_closestThreatIndex].mapY;
-    }
-
-    /* Magic signature check, only done when the plane is moving? */
-    if ((char)frameTick == 0 && frameTick != 0) {
-        if (*((int32 HUGE *)commData - 1) != COMM_MCB_VALUE_MAGIC) {
-            finalizeMission(1);
-            exitCode = 0;
-        }
     }
 
     if (g_prevThreatIndex != g_closestThreatIndex && (g_planeTable.planes[g_closestThreatIndex].flags & 0x800) == 0) {
@@ -371,12 +348,10 @@ skip_target_section:
     }
 
 skip_autopilot:
-    Log(("updateFrame: skip_autopilot, w33702=%d var547=%d unk4=%d 3BF90=%d 33098=%d 3BE3C=%d 3AA5A=%d", g_inLandingCorridor, g_viewZ, gameData->unk4, g_gunHits, g_fuelRemaining, g_ejectState, g_knots));
     if (g_inLandingCorridor == 0) {
         if (g_viewZ == 0) {
             if ((gameData->unk4 != 0 || g_gunHits > 4 || g_fuelRemaining == 0) &&
                 g_ejectState == 0 && g_knots > 50) {
-                LogInfo(("DEATH: altitude-zero crash, tick=%d var547=%d 3AA5A=%d", frameTick, g_viewZ, g_knots));
                 makeSound(0, 2);
                 setDrawColor(0);
                 fillRectBoth(0, 0, 319, 199);
@@ -389,7 +364,6 @@ skip_autopilot:
     }
 
     if (g_savedPosVisible != 0 && (keyValue & 0x80) == 0) {
-        LogInfo(("DEATH-path collision: g_savedPosVisible=%d unk4=%d var548=%d tick=%d", g_savedPosVisible, gameData->unk4, g_altitude, frameTick));
         if (gameData->unk4 != 0 && g_altitude != 0) {
             makeSound(0, 2);
             gfx_waitRetrace();
@@ -452,11 +426,6 @@ skip_autopilot:
 // ==== seg000:0x14e8 ====
 void dispatchKeyScancode(void) {
     int unused0, unused1, unused2, unused3, unused4, unused5, unused6, unused7;
-#ifdef DEBUG
-    if (keyScancode != 0)
-        LogInfo(("KEY scancode=%04x  dot joyAxes[0/1]=%d/%d  ISR raw axes=%d/%d",
-                 (unsigned)keyScancode, (int)joyAxes[0], (int)joyAxes[1], (int)g_joyRawX, (int)g_joyRawY));
-#endif
     keyDispatch(keyScancode);
 }
 
@@ -669,14 +638,19 @@ void drawWeaponSelectMarker(int weaponIdx) {
 
 // ==== seg000:0x1b37 routine_148 ====
 void finalizeMission(int outcome) {
-    LogInfo(("DEATH/END finalizeMission: outcome=%d, g_ejectState=%d, tick=%d", outcome, g_ejectState, frameTick));
     if (g_ejectState != 0 && outcome != 0) {
         return;
     }
     g_missionEndedFlag[0] = 1;
-    commData->continueFlag = outcome;
-    if (outcome == 0 && g_ejectState == 0) {
-        commData->setupDone = 3;
+    commData->bailoutSurvived = outcome;
+    /* Landing type the debrief reads (1=crashed, 2=ejected, 3=landed). START
+     * defaults it to 3, so crash/eject must be set or the debrief reports a landing. */
+    if (g_ejectState != 0) {
+        commData->landingType = 2;
+    } else if (outcome == 0) {
+        commData->landingType = 3;
+    } else {
+        commData->landingType = 1;
     }
     *(int16 far *)((char far *)commData + 0x74) = g_viewX_;
     *(int16 far *)((char far *)commData + 0x76) = g_viewY_;
@@ -846,17 +820,17 @@ void moveStuff() {
 
 // ==== seg000:0x215c ====
 void moveNearFar(void *nearPtr, int count) {
-    void FAR *farPtr = nearPtr;
+    /* farPointer is a real cursor into commData->worldBuf. */
     if (flagFarToNear != 0) {
-        movedata(FP_SEG(farPointer), FP_OFF(farPointer), FP_SEG(farPtr), FP_OFF(farPtr), count);
+        memcpy(nearPtr, farPointer, count); /* load: worldBuf -> near globals */
     } else {
-        movedata(FP_SEG(farPtr), FP_OFF(farPtr), FP_SEG(farPointer), FP_OFF(farPointer), count);
+        memcpy(farPointer, nearPtr, count); /* save: near globals -> worldBuf */
     }
     farPointer += count;
 }
 
 // ==== seg000:0x21a9 ====
 int setCommWorldbufPtr() {
-    farPointer = (uint8 FAR *)&commData->worldBuf;
+    farPointer = (uint8 FAR *)commData->worldBuf;
     return 0;
 }

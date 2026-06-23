@@ -12,14 +12,11 @@
 #include "offsets.h"
 #include "pointers.h"
 #include "log.h"
-#include "slot.h"
 #include "const.h"
 #include "comm.h"
 
 #include <dos.h>
 #include <memory.h>
-#include <conio.h>
-#include <bios.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -635,7 +632,7 @@ void fireMissile() {
     int weaponIdx;
     int slot;
 
-    if (abs((int16)g_ourRoll) > 0x3000) return;
+    if (abs(g_ourRoll) > 0x3000) return;
     if (g_inLandingCorridor != 0) return;
     if (g_ejectState != 0) return;
 

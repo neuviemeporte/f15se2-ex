@@ -1,4 +1,5 @@
 /* endebrief.c — debrief main loop, compiled with /Gs */
+#include "gfx.h"
 #include "slot.h"
 #include <stdio.h>
 #include "offsets.h"
@@ -12,7 +13,7 @@
 #include "endbrf.h"
 
 extern int16 menuItemUnused;
-extern char animExitFlag;
+extern uint8 animExitFlag;
 
 void debriefMainLoop(void) {
     char p[2];
@@ -47,14 +48,14 @@ insert_scenario:
     misc_getKey();
 
 open_theater:
-    worldBufHandle = fopen(theaterSprFiles[gameData->theater], "rb");
+    worldBufHandle = openFile(theaterSprFiles[gameData->theater], 0);
     if (!worldBufHandle)
         goto insert_scenario;
 
     gfx_waitRetrace();
-    fclose(worldBufHandle);
+    fileClose(worldBufHandle);
     gfx_setFadeSteps(9);
-    spriteBufSeg = allocBuffer(gfx_getBufSize());
+    spriteBufSeg = gfx_allocSpriteBuf();
     loadPic(theaterSprFiles[gameData->theater], spriteBufSeg);
     a = spriteBufSeg;
 
@@ -70,12 +71,12 @@ insert_diska:
     misc_getKey();
 
 open_dbicons:
-    worldBufHandle = fopen("dbicons.spr", "rb");
+    worldBufHandle = openFile("dbicons.spr", 0);
     if (!worldBufHandle)
         goto insert_diska;
 
     gfx_waitRetrace();
-    fclose(worldBufHandle);
+    fileClose(worldBufHandle);
     gfx_setFadeSteps(8);
     openShowPic("dbicons.spr", 1);
 
@@ -137,7 +138,7 @@ open_dbicons:
         if (commData->setupUseJoy == 1) {
             while (misc_readJoystick(0));
             timerCounter = 0;
-            while (timerCounter <= 5);
+            while (timerCounter <= 5) timerYield();
             while (misc_readJoystick(0));
         }
     } while (b);
@@ -151,7 +152,7 @@ open_dbicons:
     if (commData->trainingFlag == 0) {
         gameData->hallOfFameEligible = missionScore;
 
-        if ((unsigned long)gameData->lastScore < (unsigned long)missionScore) {
+        if ((unsigned long)gameData->lastScore < (uint32)missionScore) {
             gameData->lastScore = missionScore;
         }
 
@@ -168,5 +169,5 @@ open_dbicons:
         }
     }
 
-    freeBuffer(spriteBufSeg);
+    gfx_freeSpriteBuf(spriteBufSeg);
 }

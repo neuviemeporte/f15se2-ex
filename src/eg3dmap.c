@@ -11,15 +11,12 @@
 #include "offsets.h"
 #include "pointers.h"
 #include "log.h"
-#include "slot.h"
+#include "gfx_impl.h"
 #include "const.h"
 
 #include "comm.h"
 
 #include <dos.h>
-#include <memory.h>
-#include <conio.h>
-#include <bios.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,7 +41,7 @@ struct TileObject *findNearestTileObject(uint32 worldX, uint32 worldY) {
     // slots and breaks the match. See drawNearestTileObject() below for the same
     // algorithm with readable names. Legend:
     //   c = lod (detail level 1..2)      e = neighbour sample index 0..8
-    //   m = scratch, aliased as long for scaleCoordToLod() (m & n hold the long)
+    //   m = scaleCoordToLod() scratch (a 32-bit int now holds the whole value)
     //   i = tileX     k = tileY          r = fracX     d = fracY  (query point)
     //   a = neighbour col delta          b = neighbour row delta
     //   o = baseDx    p = baseDy         (query point -> neighbour cell offset)
@@ -57,11 +54,11 @@ struct TileObject *findNearestTileObject(uint32 worldX, uint32 worldY) {
     nearestTile.dist = 0x7fff;
     for (c = 1; c <= 2; c++) {
         for (e = 0; e < 9; e++) {
-            *(int32 *)&m = scaleCoordToLod(c, worldX);
-            i = *(uint32 *)&m >> 0xc;
+            m = (int)scaleCoordToLod(c, worldX);
+            i = (unsigned)m >> 0xc;
             r = m & 0xfff;
-            *(int32 *)&m = scaleCoordToLod(c, worldY);
-            k = *(uint32 *)&m >> 0xc;
+            m = (int)scaleCoordToLod(c, worldY);
+            k = (unsigned)m >> 0xc;
             d = m & 0xfff;
             a = g_neighborSampling.gridX[e];
             b = g_neighborSampling.gridY[e];
@@ -199,6 +196,7 @@ void renderMapTerrain(const int16 *transform, int mapX, int mapY, int zoomShift)
     int tmp0, tmp1;
     g_objShade = 0;
     setup3DTransform(transform, 0, 0, 0, 0, 0, 0, 0);
+    /* clip-left / clip-top are 16-bit descriptor words (see setupViewport). */
     gfx_setBlitOffset(gfx_calcRowAddr(transform[9], transform[7]));
     drawMapTiles(mapX, mapY, zoomShift);
     rasterize3DWorld();
@@ -368,20 +366,8 @@ void setup3DTransform(const int16 *model, int angleX, int angleY, int angleZ, in
         if (g_offscreenRender == 0) {
             transformModelVerticesFar();
         }
-#ifdef DEBUG
-        {
-            unsigned long spins = 0;
-            while (g_frameSyncPending != 0) {
-                if (++spins > 3000000UL) {
-                    LogWarn(("13932: SPIN TIMEOUT - timer ISR not clearing 378EE"));
-                    g_frameSyncPending = 0;
-                    break;
-                }
-            }
-        }
-#else
-        while (g_frameSyncPending != 0);
-#endif
+        while (g_frameSyncPending != 0)
+            timerYield();
         drawProjectionSphere(model[2]);
     }
     g_sortedObjCount = 0;

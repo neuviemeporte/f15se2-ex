@@ -10,13 +10,12 @@
 #include "offsets.h"
 #include "pointers.h"
 #include "log.h"
+#include "gfx.h"
 #include "slot.h"
 #include "const.h"
 #include "comm.h"
 
 #include <dos.h>
-#include <conio.h>
-#include <bios.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -291,9 +290,7 @@ end_dispatch:
                             : (g_knots < 250 || (*(char *)&frameTick & 1)) ? 2
                                                                            : 10);
 
-    switchIndicatorColor(2, (*(char *)&g_playerPlaneFlags & 8) ? 14
-                            : *(char *)&gfxModeUnset != 0      ? 3
-                                                               : 2);
+    switchIndicatorColor(2, (*(char *)&g_playerPlaneFlags & 8) ? 14 : 2);
 }
 
 // ==== seg000:0xd9db ====

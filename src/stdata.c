@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <dos.h>
 
+typedef struct SDL_IOStream SDL_IOStream;
+
 /* === Group 1 (0x0042-0x0530): Filename, mission selection, UI strings === */
 
 /* Mission selection strings */
@@ -51,6 +53,9 @@ int16 enableHighlight = 1;
 /* Direction/level lookup tables */
 extern const int dirDeltaX[] = {-1, 1, 1, -1, 0, 1, 0, -1, 0};
 extern const int dirDeltaY[] = {1, 1, -1, -1, 1, 0, -1, 0, 0, -8192, -4096};
+/* Per-level grid dimension (max col/row), read as gridLevelSize[level + 3] for
+   level 0..4 -> indices [3..7] = {0x400, 0x100, 0x40, 0x10, 4}, matching the x4
+   gridBuf hierarchy (level 3 = 16-wide gridBuf2, level 4 = 4-wide gridBuf1). */
 extern const int gridLevelSize[] = {0, 0x1000, 0x2000, 0x400, 0x100, 0x40, 0x10, 4};
 
 /* === Group 6 (0x1632-0x1763): Terrain/grid file strings === */
@@ -343,7 +348,7 @@ int16 missionPickPad = -1; /* the db 0FFh, 0FFh after missionPick */
 extern const int16 armSpriteIndex[] = {1, 2, 3, 4, 5, 6, 7};
 
 /* Joystick repeat flag */
-int16 joyRepeatFlag = 0;
+uint8 joyRepeatFlag = 0;
 
 /* FCB search data */
 extern const uint8 fcbMatchStr[] = {0x49, 0x03, 0x46, 0x31, 0x35, 0x41, 0x00};
@@ -531,10 +536,7 @@ extern const int16 targetCoordsCount[9] = {3, 2, 2, 3, 4, 1, 8, 3, 0};
 struct Pilot hallfameBuf[8];
 struct GameComm far *commData;
 struct Game far *gameData;
-FILE *fileHandle;
-int far *needSplash;
-int far *gfxModeSetPtr;
-uint8 hercFlag;
+SDL_IOStream *fileHandle;
 int selectedPilotIdx;
 int readItemSize;
 int flightUnitCount;
@@ -543,7 +545,7 @@ uint8 intRegs[12];
 char todayMissStrBuf[0x1D];
 uint8 missionStrTrunc;
 uint8 missionStrTruncEnd[1];
-uint8 exitCode[2];
+int16 exitCode;
 struct NearestTerrain *nearestTerrainResult;
 char objectTypeTable[0x64];
 uint8 wldReadBuf8[0x64];

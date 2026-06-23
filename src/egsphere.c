@@ -6,7 +6,7 @@
 #include "offsets.h"
 #include "pointers.h"
 #include "log.h"
-#include "slot.h"
+#include "gfx_impl.h"
 #include "const.h"
 
 #include <dos.h>

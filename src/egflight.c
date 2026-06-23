@@ -13,13 +13,13 @@
 #include "offsets.h"
 #include "pointers.h"
 #include "log.h"
+#include "gfx.h"
 #include "slot.h"
 #include "const.h"
 #include "comm.h"
+#include "eginput.h"
 
 #include <dos.h>
-#include <conio.h>
-#include <bios.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -88,7 +88,7 @@ void stepFlightModel(void) {
 
     keyScancode = 0;
     if (kbhit()) {
-        keyScancode = _bios_keybrd(0);
+        keyScancode = egReadKey();
         if (g_autopilotEngaged == 1) {
             g_directorMode =
                 g_autopilotEngaged =
@@ -97,7 +97,7 @@ void stepFlightModel(void) {
     }
 
     while (kbhit()) {
-        _bios_keybrd(0); // Flush keyboard buffer
+        egReadKey(); // Flush keyboard buffer
     }
 
     // Main key dispatch logic
@@ -760,7 +760,6 @@ void renderFrame() {
     g_camEyeZ = g_viewZ + 0x18;
     g_viewTargetAlt = g_viewZ;
     camDist = g_externalCamDist = clampRange(g_externalCamDist, 2, 8);
-    Log(("renderFrame: past clamp, keyValue=%d", keyValue));
     switch (keyValue) {
     case 0:
     case 0x44:
@@ -947,7 +946,7 @@ void renderFrame() {
     }
     g_horizonGroundColor = g_world3dData[47];
     *(uint8 *)(&g_skyColorIndex) = 3;
-    if (g_detailLevel == 0 && commData->gfxModeNum != 0) {
+    if (g_detailLevel == 0) {
         g_horizonGroundColor = 3;
         *(uint8 *)(&g_skyColorIndex) = 0x0b;
     }
@@ -971,19 +970,20 @@ void renderFrame() {
         drawClipLineGlobal();
         gfx_nop23();
         tmp = g_drawPage;
-        g_drawPage = gfx_getDisplayPage();
+        /* Blit the rear-view sprites onto the page the frame is composited on
+         * (curPage), not the back-buffer index: the rear view renders into page 0. */
+        g_drawPage = gfx_curPage();
         blitSprite(107, 48, 209, 0, 111, 47, 0);
         blitSprite(65, 95, 125, 54, 195, 2, 0);
         g_drawPage = tmp;
     }
-    gfx_flipPage();
     g_hudBottomY = (g_activePanelMode == 0x13 || g_mapMode == 1 || g_hudVisible == 0) ? 200 : 97;
 }
 
 void UpdateThrottleState(void) {
     if (g_hudVisible != 0) {
         setDrawColor(0);
-        fillRectBoth(0xd4, 0x7f, 0xde, 0xaf);
+        fillRectBoth(212, 127, 222, 175);
         setDrawColor(0x0c);
         fillRectBoth(212, -(g_setThrust / 3 - 175), 222, 175);
         if (100 < g_setThrust) {
@@ -1026,7 +1026,7 @@ void waitForKeyPress(void) {
     savedTiming = g_frameTimingAccum;
 loop:
     while (kbhit() == 0);
-    if (_bios_keybrd(0) == 0x1900)
+    if (egReadKey() == 0x1900)
         goto loop;
     updateEngineSound();
     g_frameTimingAccum = savedTiming;

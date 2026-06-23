@@ -4,6 +4,9 @@
 #include "inttype.h"
 #include "pointers.h"
 #include "egtypes.h"
+#include <stddef.h>
+
+typedef struct SDL_IOStream SDL_IOStream;
 
 int loadF15DgtlBin();
 void setupDac();
@@ -15,12 +18,12 @@ void runGameLoop();
 void gameMainLoop();
 void advanceFrameTick();
 int __cdecl drawCenteredLabelBox(int panel, const char *text);
-int createFile(const char *path, int attr);
+SDL_IOStream *createFile(const char *path, int attr);
 void closeFile(int handle);
 int readFile1(int handle, int count, int bufOffset);
 int readFile2(int handle, int count, int bufOffset, int bufSegment);
 int writeFileAtRaw(int handle, int count, int bufOffset, int bufSegment, int offsetAddend);
-void picBlit(int handle, int unk);
+void picBlit(SDL_IOStream *handle, int unk);
 void pascal shiftLongLeftInPlace(int count, long *ptr);
 void pascal shiftLongRightInPlace(int count, long *ptr);
 int far drawPolygonOutline(int fillColor, int pointCount, int *points, int edgeColor);
@@ -63,8 +66,15 @@ void restoreTimerIrqHandler();
  * verify ASM build runs egcode.asm's own timer ISR instead, so this is NO_ASM. */
 void setTimerTickHook(void(far *fn)(void));
 void far egAdvanceFrameTick(void);
+/* Advance the 60 Hz tick counters from the monotonic clock (call while polling
+ * a tick counter); timerYield also sleeps a touch so the wait doesn't peg a core. */
+void timerPump(void);
+void timerYield(void);
 int getTimeOfDay();
-int __cdecl openFile(const char *path, int mode);
+SDL_IOStream *__cdecl openFile(const char *path, int mode);
+void fileClose(SDL_IOStream *handle);
+size_t fileRead(void *ptr, size_t size, size_t count, SDL_IOStream *handle);
+size_t fileWrite(const void *ptr, size_t size, size_t count, SDL_IOStream *handle);
 
 void far projectSceneObject(char far *model, int yaw, int pitch, int roll, int posX, int posY, int posZ);
 

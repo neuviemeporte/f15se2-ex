@@ -8,6 +8,5 @@
 #include "enrand.h"
 
 void enSeedRandom(void) {
-    Log(("enSeedRandom"));
     srandInit(getTimeOfDay());
 }

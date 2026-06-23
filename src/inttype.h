@@ -1,8 +1,6 @@
 #ifndef INTTYPE_H
 #define INTTYPE_H
 
-#define HAVE_PRAGMA
-
 /*
  * Results from example code run:
  *

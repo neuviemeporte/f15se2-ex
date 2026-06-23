@@ -68,8 +68,6 @@ struct Target {
 #pragma pack()
 STATIC_ASSERT(sizeof(struct Target) == 18);
 
-#define TARGETSIZE 18
-
 /* MissionTableEntry: 0x0C-byte mission lookup table entry.
  * Array of ~56 entries defining possible mission types per theater/tension.
  * Used by missionTable[] (start.exe) and g_particles[] (egame.exe). */
@@ -85,8 +83,6 @@ struct MissionTableEntry {
 #pragma pack()
 STATIC_ASSERT(sizeof(struct MissionTableEntry) == 12);
 
-#define MISSIONTABLEENTRY_SIZE 12
-
 #pragma pack(1)
 struct UnitTypeRemap {
     int16 upgrade;
@@ -95,7 +91,6 @@ struct UnitTypeRemap {
 #pragma pack()
 STATIC_ASSERT(sizeof(struct UnitTypeRemap) == 4);
 
-#define UNITTYPEREMAP_SIZE 4
 #define PILOTNAMELEN 22
 
 #pragma pack(1)
@@ -119,7 +114,6 @@ struct Plane {
     int8 weaponConfig[10];
 };
 STATIC_ASSERT(sizeof(struct Plane) == 32);
-#define PLANESIZE 32
 
 /* SamDataEntry: 32-byte record in end.exe's planeArray/samDataTable.
  * Unlike struct Plane (start.exe), this has 8 prefix bytes before the name.
@@ -152,8 +146,6 @@ struct TerrainCountTable {
     uint16 entries[32];
 };
 STATIC_ASSERT(sizeof(struct TerrainCountTable) == 64);
-
-#define TERRAINUNKSIZE 64
 
 // used in egame.exe renderFrame, 16 bytes
 struct ViewSnapshot {
@@ -535,10 +527,13 @@ STATIC_ASSERT(sizeof(struct MapEvent) == 12);
  * unions. */
 #pragma pack(1)
 struct VertexProj {
+    /* input pairs (stride 4). The whole 32-bit slot is also the camera-space
+     * depth: .div is its high word (the perspective divisor), .num its low word.
+     * eg3drast composes/decomposes it explicitly (getVtxDepth/setVtxDepth). */
     struct {
         int16 num;
         int16 div;
-    } in[121]; /* input pairs (stride 4) */
+    } in[121];
     union {
         int32 v[121];
         int16 lo;

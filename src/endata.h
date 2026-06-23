@@ -8,6 +8,8 @@
 #include <dos.h>
 #include <stdio.h>
 
+typedef struct SDL_IOStream SDL_IOStream;
+
 extern unsigned char timerCounter;
 extern int16 lineX1;
 extern int16 lineY1;
@@ -39,7 +41,7 @@ extern unsigned int *colorTablePtr;
 extern char inputChanged;
 extern int colorAnimIdx;
 extern int colorAnimEnabled;
-extern char joyRepeatFlag;
+extern uint8 joyRepeatFlag;
 extern char spriteToggle;
 extern char animDone;
 extern uint8 timerCounter2;
@@ -82,7 +84,7 @@ extern MenuItem debriefMenuItems[];
 extern int worldDataReady;
 extern char *worldStrings[];
 extern char worldStringBuf[];
-extern FILE *worldBufHandle;
+extern SDL_IOStream *worldBufHandle;
 extern struct WorldObject worldObjects[];
 extern int16 worldWaypointCount;
 extern uint8 worldRouteTable[];
@@ -93,7 +95,7 @@ extern int16 worldGridSize;
 extern uint8 worldMiscHeader[];
 extern struct WeaponDataBlock weaponDataBlock;
 extern uint16 worldObjectCount;
-extern int worldSamCount;
+extern uint16 worldSamCount;
 extern int totalFlightRecords;
 
 /* The flight recording read back from the COMM block is one contiguous 0x600
@@ -130,15 +132,17 @@ extern char hercFlag;
 extern uint8 joyAxisY;
 extern uint8 joyAxisX;
 extern int hasVgaMode;
-extern int16 gfxBufSeg;
-extern int vgaBufSeg;
-extern int vgaBufSeg2;
+/* END graphics scratch buffers (allocBuffer in enmain). DOS used these as raw
+ * VGA/aux segments; the native debrief draws through the SDL gfx layer instead,
+ * so they are allocated but never read — candidates for removal. */
+extern void *gfxBufSeg;
+extern void *vgaBufSeg;
+extern void *vgaBufSeg2;
 extern int vgaBufOffset;
 extern int spriteBufSeg;
 extern int missionResult;
 extern int selectedMenuItem;
-extern int16 worldBufOffset;
-extern int16 worldBufSegment;
+extern uint8 far *worldBufCursor;
 
 /* Named views into weaponDataBlock[] (offsets documented in endata.c):
  *   planeArray     +0x156  SamDataEntry[] — enemy aircraft specs

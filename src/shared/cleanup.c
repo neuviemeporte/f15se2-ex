@@ -9,7 +9,7 @@
 #include <dos.h>
 
 /* extern declarations needed by these functions */
-extern int far gfx_drawString(int16 *pageNum, const char *string);
+extern void far gfx_drawString(int16 *pageNum, const char *string);
 extern int far gfx_setFont(uint16 ch, uint16 font);
 extern void far misc_clearKeyFlags(void);
 extern uint8 timerHandlerInstalled;

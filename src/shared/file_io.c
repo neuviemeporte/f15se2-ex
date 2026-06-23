@@ -1,144 +1,114 @@
 /*
- * file_io.c - C implementations of shared file I/O routines for NO_ASM build.
+ * file_io.c - shared file I/O, backed by SDL_IOStream.
  */
 
 #include "inttype.h"
 #include "pointers.h"
-#include <dos.h>
+#include "log.h"
+#include <SDL3/SDL.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
 
-/* file_alloc.inc: Allocate DOS memory. Callers pass BYTE count. */
-uint16 dos_alloc(uint16 size) {
-    union REGS r;
-    r.h.ah = 0x48;
-    /* Convert bytes to paragraphs (divide by 16, round up) */
-    r.x.bx = size >> 4;
-    if (size & 0x0F) r.x.bx++;
-    intdos(&r, &r);
-    if (r.x.cflag) return 0;
-    return r.x.ax;
+/* The game ships its assets with UPPERCASE 8.3 names (LABS.PIC), but the code
+ * passes lowercase or mixed-case literals ("labs.pic", "HallFame"). DOS
+ * filesystems were case-insensitive; a Linux filesystem is not.
+ *
+ * Resolve `filename` to the spelling that actually exists on disk: try the name
+ * as given, then an all-uppercase form, then an all-lowercase form, and return
+ * whichever exists (copied into `buf`). If none exists, return the original name. */
+static const char *resolveCasePath(const char *filename, char *buf, size_t bufsz) {
+    SDL_PathInfo info;
+    size_t len, i;
+
+    if (SDL_GetPathInfo(filename, &info)) return filename;
+
+    len = SDL_strlen(filename);
+    if (len >= bufsz) return filename;
+
+    for (i = 0; i <= len; i++) buf[i] = (char)toupper((unsigned char)filename[i]);
+    if (SDL_GetPathInfo(buf, &info)) return buf;
+
+    for (i = 0; i <= len; i++) buf[i] = (char)tolower((unsigned char)filename[i]);
+    if (SDL_GetPathInfo(buf, &info)) return buf;
+
+    return filename;
 }
 
-/* file_close.inc: Close file handle */
-void fileClose(int handle) {
-    union REGS r;
-    r.h.ah = 0x3E;
-    r.x.bx = handle;
-    intdos(&r, &r);
+/* Open an asset for reading. Returns the stream, or NULL on failure. */
+SDL_IOStream *openFile(const char *filename, int mode) {
+    char buf[260];
+    (void)mode; /* the resident open service only distinguished read vs. write;
+                 * every openFile caller in the game opens an asset for reading */
+    return SDL_IOFromFile(resolveCasePath(filename, buf, sizeof(buf)), "rb");
 }
 
-/* file_open.inc: Open file, returns handle or -1 on error */
-int openFile(const char *filename, int mode) {
-    union REGS r;
-    struct SREGS s;
-    r.h.ah = 0x3D;
-    r.h.al = (unsigned char)mode;
-    segread(&s);
-    r.x.dx = 0; // (uint16)filename;
-    intdosx(&r, &r, &s);
-    if (r.x.cflag) return -1;
-    return r.x.ax;
+/* Create or truncate a file for writing. Returns the stream, or NULL on failure. */
+SDL_IOStream *createFile(const char *filename, int attr) {
+    char buf[260];
+    (void)attr;
+    return SDL_IOFromFile(resolveCasePath(filename, buf, sizeof(buf)), "wb");
 }
 
-/* file_printstring.inc: Print '$'-terminated string via DOS */
+void fileClose(SDL_IOStream *io) {
+    if (io) SDL_CloseIO(io);
+}
+
+/* fread/fwrite work-alikes over SDL_IOStream: transfer `count` items of `size`
+ * bytes and return the number of whole items moved, matching the stdio
+ * semantics the game's call sites were written against. */
+size_t fileRead(void *ptr, size_t size, size_t count, SDL_IOStream *io) {
+    if (!io || size == 0) return 0;
+    return SDL_ReadIO(io, ptr, size * count) / size;
+}
+
+size_t fileWrite(const void *ptr, size_t size, size_t count, SDL_IOStream *io) {
+    if (!io || size == 0) return 0;
+    return SDL_WriteIO(io, ptr, size * count) / size;
+}
+
+/* Raw read into a host buffer. Shared with the PIC decoder (picimpl.c), which
+ * streams the file 512 bytes at a time. Returns bytes read, or -1 on a null
+ * stream. A negative count means "as much as fits" (DOS used cx=0xFFFF). */
+int fileReadRaw(SDL_IOStream *io, void *dst, int count) {
+    if (!io) return -1;
+    if (count < 0) count = 0xFFFF;
+    return (int)SDL_ReadIO(io, dst, (size_t)count);
+}
+
+/* readFileAt/readFile/writeFile still resolve their buffer through MK_FP: the
+ * segment:offset addressing is the next thing to be ported away, but it is not
+ * on the PIC/title path and is left intact for now. */
+int readFile(SDL_IOStream *io, int count, int bufOffset) {
+    return fileReadRaw(io, (void *)MK_FP(0, bufOffset), count);
+}
+
+int readFileAt(SDL_IOStream *io, int count, int offset, int segment) {
+    return fileReadRaw(io, (void *)MK_FP(segment, offset), count);
+}
+
+int writeFile(SDL_IOStream *io, int count, int offset, int segment, int unused) {
+    (void)unused;
+    if (!io) return -1;
+    if (count < 0) count = 0xFFFF;
+    return (int)SDL_WriteIO(io, (const void *)MK_FP(segment, offset), (size_t)count);
+}
+
+int writeFileAtRaw(SDL_IOStream *io, void *buf, uint16 count) {
+    if (!io) return -1;
+    return (int)SDL_WriteIO(io, buf, count);
+}
+
+/* Print a '$'-terminated DOS string (INT 21h/09h) to the log. */
 void dos_printstring(const char *str) {
-    union REGS r;
-    struct SREGS s;
-    r.h.ah = 0x09;
-    segread(&s);
-    r.x.dx = 0; // (uint16)str;
-    intdosx(&r, &r, &s);
-}
-
-/* file_write.inc: Write to file */
-int writeFileAtRaw(int handle, const void far *buf, uint16 count) {
-    union REGS r;
-    struct SREGS s;
-    r.h.ah = 0x40;
-    r.x.bx = handle;
-    r.x.cx = count;
-    s.ds = FP_SEG(buf);
-    r.x.dx = FP_OFF(buf);
-    intdosx(&r, &r, &s);
-    if (r.x.cflag) return -1;
-    return r.x.ax;
-}
-
-/* dos_free: Free DOS memory block (INT 21h/49h) */
-int dos_free(int segment) {
-    union REGS r;
-    struct SREGS s;
-    r.h.ah = 0x49;
-    s.es = segment;
-    intdosx(&r, &r, &s);
-    if (r.x.cflag) return r.x.ax;
-    return 0;
-}
-
-/* createFile: Create or truncate file (INT 21h/3Ch) */
-int createFile(const char *filename, int attr) {
-    union REGS r;
-    struct SREGS s;
-    r.h.ah = 0x3C;
-    r.x.cx = attr;
-    segread(&s);
-    r.x.dx = 0; // (uint16)filename;
-    intdosx(&r, &r, &s);
-    if (r.x.cflag) return -1;
-    return r.x.ax;
-}
-
-/* readFile: Read from file into DS-relative buffer (INT 21h/3Fh) */
-int readFile(int handle, int count, int bufOffset) {
-    union REGS r;
-    struct SREGS s;
-    r.h.ah = 0x3F;
-    r.x.bx = handle;
-    r.x.cx = count;
-    r.x.dx = bufOffset;
-    segread(&s);
-    intdosx(&r, &r, &s);
-    if (r.x.cflag) return -1;
-    return r.x.ax;
-}
-
-/* readFileAt: Read from file into specific segment:offset (INT 21h/3Fh) */
-int readFileAt(int handle, int count, int offset, int segment) {
-    union REGS r;
-    struct SREGS s;
-    r.h.ah = 0x3F;
-    r.x.bx = handle;
-    r.x.cx = count;
-    r.x.dx = offset;
-    s.ds = segment;
-    intdosx(&r, &r, &s);
-    if (r.x.cflag) return -1;
-    return r.x.ax;
-}
-
-/* writeFile: Write to file from specific segment:offset (INT 21h/40h) */
-int writeFile(int handle, int count, int offset, int segment, int unused) {
-    union REGS r;
-    struct SREGS s;
-    r.h.ah = 0x40;
-    r.x.bx = handle;
-    r.x.cx = count;
-    r.x.dx = offset;
-    s.ds = segment;
-    intdosx(&r, &r, &s);
-    if (r.x.cflag) return -1;
-    return r.x.ax;
-}
-
-/* file_read512.inc: Read 512 bytes from file - stub */
-int read512FromFileIntoBuf(void) {
-    return 0;
+    size_t len = 0;
+    while (str[len] && str[len] != '$') len++;
+    LogInfo(("%.*s", (int)len, str));
 }
 
 /* file_error.inc: Print error and exit */
 void errorAndExit(const char *msg) {
-    union REGS r;
     dos_printstring(msg);
-    r.h.ah = 0x4C;
-    r.h.al = 1;
-    intdos(&r, &r);
+    SDL_Quit();
+    exit(1);
 }

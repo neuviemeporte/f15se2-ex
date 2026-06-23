@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include "egtypes.h"
 
+typedef struct SDL_IOStream SDL_IOStream;
+
 /*
  * The 3D world data lives in one contiguous far buffer. The aircraft-model region
  * (g_aircraftModels) sits AIRCRAFT_MODELS_OFFSET bytes into the region/object buffer
@@ -31,8 +33,7 @@ extern struct SpriteParams gaugeSpriteParams;
 extern struct SpriteParams blitSpriteParams;
 extern struct BulletTrack bulletTracks[20];
 extern uint8 g_dacSupported;
-extern uint8 exitCode;
-extern int16 gfxModeUnset;
+extern int16 exitCode;
 extern int16 f15DgtlResult;
 extern char *regnStr;
 extern const char *scenarioPlh[];
@@ -222,8 +223,7 @@ extern int g_gees;
 extern int g_detailLevel;
 extern int16 g_autoCrashDive;
 extern int16 g_missionTick;
-extern uint8 far *g_floppyMotorPtr;
-extern FILE *fileHandle;
+extern SDL_IOStream *fileHandle;
 extern int16 g_gunFiredFlag;
 extern int16 g_damageTakenFlag;
 extern int16 g_threatRefHead;
@@ -275,7 +275,6 @@ extern int16 g_liftForce;
 extern int16 g_wreckFallVel;
 extern int16 g_camEyeZ;
 extern int16 g_threatRefY;
-extern uint8 hercFlag;
 extern int16 g_viewRoll;
 extern struct DynTileOverride g_dynTileEntries[]; // overlaps the following bytes with structs
 extern int16 g_threatRefZ;
@@ -290,6 +289,9 @@ extern int16 g_scopeArcRange;
 extern uint8 g_modelVertZ[];
 extern int16 keyValue;
 extern int16 g_waypointBearing;
+// 16-bit on purpose: view-angle math relies on 16-bit wraparound (the gimbal
+// flip in renderFrame, where side views feed roll into pitch). Native int=4
+// would make abs()/0x8000 compares misfire and invert the scene.
 extern int16 g_viewPitch;
 extern int16 g_threatLabelTarget;
 extern int16 g_skyColorIndex;
@@ -446,9 +448,11 @@ extern uint8 g_offscreenRender;
 extern int16 g_modelEvenOddBit;
 extern int16 g_mapLodIndex;
 
-/* HUD gauge data. */
-extern uint8 g_tapeDigitStrip[];
-extern uint8 g_compassTapeBuf[];
+/* HUD gauge data. Both point into one contiguous block (g_hudTapeTables) so the
+ * thousands-altitude tape can read across the digit-strip/heading-table boundary,
+ * as it did in the original DOS data segment. */
+extern uint8 *g_tapeDigitStrip;
+extern uint8 *g_compassTapeBuf;
 extern uint8 g_pitchLabelTable[92];
 /* HUD tape/sprite descriptor blocks (gfx slot param blocks). */
 extern int16 g_tapeText0[11];

@@ -1,64 +1,70 @@
 /*
- * gfx_impl.h — Header for pure-C MGRAPHIC.EXE replacement
+ * gfx_impl.h — internal header for the pure-C MGRAPHIC.EXE replacement.
  *
- * When NO_ASM is defined, gfx_impl.c provides implementations for all
- * slot functions declared in slot.h. This header provides supporting
- * type definitions and documentation.
+ * The renderer's private surface: GfxState, the SDL backbuffer/sprite-surface
+ * accessors, and the internal layout structs. Consumed by the renderer
+ * implementation (gfx_impl.c) and the software-renderer code in eg3d*.c /
+ * egsphere.c. Everything the rest of the game calls lives in the public gfx.h.
  */
 
 #ifndef GFX_IMPL_H
 #define GFX_IMPL_H
 
+#include "gfx.h"
 #include "inttype.h"
 #include "pointers.h"
 
-/* Byte offset of GfxState within the virtual overlay block */
-#define GFX_STATE_OFFSET 0x2EC
+/* Forward declaration so GfxState can hold SDL backbuffers without pulling the
+ * full SDL header. */
+struct SDL_Surface;
 
-/* Shared gfx state stored in the virtual overlay block.
- * gfx_impl.c functions will migrate to accessing this via far pointer in Phase 2.
- */
+/* Shared gfx state. */
 typedef struct {
-    uint16 rowOffsets[200]; /* replaces g_rowOffsets[] */
-    uint16 curPageSeg;      /* replaces g_curPageSeg  */
-    int16 blitOffset;       /* replaces g_blitOffset  */
-    uint8 modeFlag;         /* replaces g_modeFlag = 1 */
-    uint8 fillColor;        /* replaces g_fillColor   */
-    uint8 dacCounter;       /* replaces g_dacCounter  */
-    uint8 rowOffsetsReady;  /* replaces g_rowOffsetsReady */
-    uint16 pageSegs[16];    /* replaces g_pageSegs[]  */
-    uint16 f15DataSeg;      /* FP_SEG of f15.exe's DGROUP — see Finding A.
-                             * Lets gfx functions reach their own const tables
-                             * (palettes, font tables) via far pointer when a
-                             * child far-calls in with DS = the child's DGROUP. */
-    uint8 displayPage;      /* MGRAPHIC cs:0x1a2 — the back-buffer page index
-                             * returned by getDisplayPage (slot 0x2d). The frame
-                             * is composited here (page 1) then presented to the
-                             * visible page 0 by gfx_dacAnimate (slot 0x2c). */
-    uint16 dacPhase;        /* MGRAPHIC data-seg 0x1ccc — the DAC fire-cycle phase
-                             * counter advanced by gfx_dacCycle (slot 0x2e) each
-                             * frame (LCG x*5+1); seeded 0x4d2 in gfx_buildVirtualOverlay. */
+    uint16 rowOffsets[200];               /* replaces g_rowOffsets[] */
+    uint16 curPageSeg;                    /* replaces g_curPageSeg  */
+    int16 blitOffset;                     /* replaces g_blitOffset  */
+    uint8 modeFlag;                       /* replaces g_modeFlag = 1 */
+    uint8 fillColor;                      /* replaces g_fillColor   */
+    uint8 dacCounter;                     /* replaces g_dacCounter  */
+    uint8 rowOffsetsReady;                /* replaces g_rowOffsetsReady */
+    uint16 pageSegs[16];                  /* replaces g_pageSegs[]  */
+    uint16 f15DataSeg;                    /* FP_SEG of f15.exe's DGROUP — see Finding A.
+                                           * Lets gfx functions reach their own const tables
+                                           * (palettes, font tables) via far pointer when a
+                                           * child far-calls in with DS = the child's DGROUP. */
+    uint8 displayPage;                    /* MGRAPHIC cs:0x1a2 — the back-buffer page index
+                                           * returned by getDisplayPage (slot 0x2d). The frame
+                                           * is composited here (page 1) then presented to the
+                                           * visible page 0 by gfx_dacAnimate (slot 0x2c). */
+    uint16 dacPhase;                      /* MGRAPHIC data-seg 0x1ccc — the DAC fire-cycle phase
+                                           * counter advanced by gfx_dacCycle (slot 0x2e) each
+                                           * frame (LCG x*5+1); seeded 0x4d2 in gfx_initState. */
+    struct SDL_Surface *pageSurfaces[16]; /* SDL draw buffers, one per page index
+                                           * . Lazily created 320x200 8-bit surfaces;
+                                           * gfx_flipPage pushes page 0 to the renderer. */
+    int curPage;                          /* index of the current draw page. */
+    int shakeOffset;                      /* horizontal screen-shake in pixels, set by gfx_dacCycle
+                                           * (the explosion CRTC start-address jitter) and applied
+                                           * by the page present. 0 when not shaking. */
+    uint64_t cycleClockNs;                /* wall-clock anchor (SDL_GetTicksNS) for advancing the
+                                           * fire colour-cycle at the fixed ~60 Hz tick rate,
+                                           * decoupled from the present/frame rate. */
 } GfxState;
 
-/* Near function pointer type for the gfx slot table */
-typedef int (*GfxSlotFn)(void);
+/* Initialise the shared GfxState defaults. Called once at startup. */
+void gfx_initState(void);
 
-/* Far function pointer type for the slot trampoline table */
-typedef int(FAR *GfxFarFn)(void);
+/* Page backbuffers: each page index is backed by a 320x200 8-bit SDL_Surface.
+ * The pic decoder renders into these; gfx_flipPage/gfx_commitPage push the visible
+ * page (index 0) to the renderer. Both lazily create the surface on first use. */
+struct SDL_Surface *gfx_getPageSurface(int page);
+struct SDL_Surface *gfx_getCurPageSurface(void);
 
-/* 84-entry slot table used by f15.exe to call gfx functions directly and to
- * fill the virtual overlay's slot_offsets[] array at startup */
-extern GfxSlotFn gfxSlotTable[84];
-
-/* Build the virtual overlay block at ovlSeg: write OvlHeader-compatible fields,
- * fill slot_offsets[] with FP_OFF of each gfx function, init GfxState. */
-void gfx_buildVirtualOverlay(uint16 ovlSeg);
-
-/* Build stub MISC (slots 0x5a-0x5f) and SOUND (slots 0x64-0x6d) overlays from
- * f15.exe — removes the dependency on MISC.EXE / NSOUND.EXE. Sound is a no-op
- * (no DOS audio); misc is a placeholder (input reports nothing pending). */
-void gfx_buildMiscOverlay(uint16 ovlSeg);
-void gfx_buildSoundOverlay(uint16 ovlSeg);
+/* Sprite buffers: each is a 320x200 8-bit SDL_Surface addressed by a small
+ * integer handle. The public gfx_allocSpriteBuf (gfx.h) creates one; the pic
+ * decoder fills it and gfx_blitSprite reads it via this accessor. Replaces the
+ * DOS-era 64KB "segment" sprite sheets. */
+struct SDL_Surface *gfx_getSpriteSurface(int handle);
 
 /*
  * Reference structures documenting how the overlay accesses caller data.

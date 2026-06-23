@@ -2,7 +2,6 @@
 #include "stdata.h"
 #include "stsprit.h"
 #include "gfx.h"
-#include "slot.h"
 #include "log.h"
 
 void showSprite(int page, int x, int y, int src_x, int src_y, int width, int height) {

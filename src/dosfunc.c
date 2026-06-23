@@ -2,7 +2,6 @@
 #include "inttype.h"
 #include "log.h"
 #include "memory.h"
-#include "f15util.h"
 #include "offsets.h"
 
 #include <stdio.h>
@@ -10,6 +9,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <stdint.h>
 
 typedef enum {
     DOSF_ALLOCMEM = 0x48,
@@ -43,65 +43,11 @@ typedef enum {
     DOSERR_FILESNMORE = 0x12, // (18)  no more files
 } DosError;
 
-#define PID_NONE 0
-#define PID_DOS 8
-
 static union REGS rin, rout;
 static struct SREGS sreg;
 
-uint16 dos_alloc(const size_t paragraphs) {
-    int err;
-    rin.h.ah = DOSF_ALLOCMEM;
-    rin.x.bx = paragraphs;
-    err = intdos(&rin, &rout);
-    assert(err == rout.x.ax);
-    if (rout.x.cflag != 0) {
-        LogError(("dos_alloc: error allocating %up (%lu): error 0x%x, max avail %u", paragraphs, PARA_TO_BYTES(paragraphs), err, rout.x.bx));
-        return 0;
-    }
-    return rout.x.ax;
-}
-
-int dos_free(const uint16 segment) {
-    int err;
-    rin.h.ah = DOSF_FREEMEM;
-    sreg.es = segment;
-    err = intdosx(&rin, &rout, &sreg);
-    // RBIL: "Apparently [int 21/49hhj] never returns an error 07h, despite official docs; DOS 2.1+ code contains only an error 09h exit.
-    // DOS 2.1-6.0 does not coalesce adjacent free blocks when a block is freed, only when a block is allocated or resized.
-    // The code for this function is identical in DOS 2.1-6.0 except for calls to start/end a critical section in DOS 3.0+""
-    if (rout.x.cflag != 0) {
-        LogError(("dos_free: error freeing segment 0x%x: error 0x%x", segment, err));
-        return err;
-    }
-    return 0;
-}
-
-uint16 dos_resize(const uint16 segment, uint16 newsize) {
-    int err;
-    rin.h.ah = DOSF_RESIZEMEM;
-    rin.x.bx = newsize;
-    sreg.es = segment;
-    err = intdosx(&rin, &rout, &sreg);
-    assert(err == rout.x.ax);
-    if (rout.x.cflag != 0) {
-        LogError(("dos_resize: error resizing segment 0x%x to %u - error 0x%x max avail %u", segment, newsize, rout.x.ax, rout.x.bx));
-        return rout.x.bx;
-    }
-    return 0;
-}
-
-size_t dos_getfree(void) {
-    int err;
-    rin.h.ah = DOSF_ALLOCMEM;
-    rin.x.bx = 0xffff; // 1,048,560 bytes
-    err = intdos(&rin, &rout);
-    // we expect the call to fail
-    if (rout.x.cflag == 0) {
-        LogError(("dos_getfree(): unexpected: succeeded in allocating 0xffff paragraphs?"));
-        return 0;
-    }
-    return rout.x.bx;
+void *dos_alloc(const size_t paragraphs) {
+    return malloc(paragraphs * 16);
 }
 
 // Format of EXEC parameter block for AL=00h,01h,04h:
@@ -158,16 +104,11 @@ static int loadprog(const char *file, const uint16 segment, const uint8 type, co
         exeLoadParams.fcb2Offset = 0x6c;
         exeLoadParams.fcb2Segment = _psp;
         rin.x.bx = 0; // (unsigned int)&exeLoadParams;
-        if (DOS_LOAD_EXEC)
-            LogDebug(("dos_loadprog(): loading %s and executing with cmdline '%Fs'", file, cmdline));
-        else
-            LogDebug(("dos_loadprog(): loading %s with cmdline '%Fs'", file, cmdline));
         break;
     case DOS_LOAD_OVL:
         ovlLoadParams.segment = segment;
         ovlLoadParams.reloc = segment; // no idea, original does the same
         rin.x.bx = 0;                  // (unsigned int)&ovlLoadParams;
-        LogInfo(("dos_loadprog(): loading %s at segment 0x%x as overlay", file, segment));
         break;
     default:
         LogError(("dos_loadprog(): unsupported load type: 0x%hx", type));
@@ -178,39 +119,7 @@ static int loadprog(const char *file, const uint16 segment, const uint8 type, co
         LogError(("dos_loadprog: unable to load %s at 0x%x, error 0x%x", file, segment, err));
         return err;
     }
-    LogDebug(("dos_loadprog(): success, ax = 0x%x, cs:ip = %X:%X, ss:sp = %X:%X", rout.x.ax,
-              exeLoadParams.cs, exeLoadParams.ip, exeLoadParams.ss, exeLoadParams.sp));
     return 0;
-}
-
-int dos_loadOverlay(const char *file, const uint16 segment) {
-    return loadprog(file, segment, DOS_LOAD_OVL, NULL);
-}
-
-int dos_runProgram(const char *file, const char FAR *cmdline) {
-    return loadprog(file, 0, DOS_LOAD_EXEC, cmdline);
-}
-
-int dos_loadProgram(const char *file, const char FAR *cmdline, uint16 *cs, uint16 *ss) {
-    int err;
-    if ((err = loadprog(file, 0, DOS_LOAD_NOEXEC, cmdline)) != 0)
-        return err;
-    *cs = exeLoadParams.cs;
-    *ss = exeLoadParams.ss;
-    return 0;
-}
-
-int dos_getReturnCode(void) {
-    int err;
-    rin.h.ah = DOSF_RETURNCODE;
-    err = intdos(&rin, &rout);
-    // AH = termination type
-    // 00h normal (INT 20,INT 21/AH=00h, or INT 21/AH=4Ch)
-    // 01h control-C abort
-    // 02h critical error abort
-    // 03h terminate and stay resident (INT 21/AH=31h or INT 27)
-    // AL = return code
-    return rout.h.al;
 }
 
 #pragma pack(1)
@@ -228,92 +137,4 @@ static uint8 FAR *dos_sysvars(void) {
     rin.h.ah = DOSF_SYSVARS;
     intdosx(&rin, &rout, &sreg);
     return (uint8 FAR *)MK_FP(sreg.es, rout.x.bx);
-}
-
-void dos_mcbInfo(void) {
-    uint16 segment = 0;
-    uint8 FAR *lol = NULL;
-    struct MCB FAR *mcb = NULL;
-    size_t total = 0, alloc = 0, free = 0;
-    int i = 0;
-    char strbuf[128];
-    // get segment of first mcb from list of lists
-    lol = dos_sysvars();
-    // first mcb's segment is in LoL at offset -2
-    segment = *((uint16 FAR *)(lol - 2));
-    mcb = (struct MCB FAR *)MK_FP(segment, 0);
-    LogInfo(("Walking the MCB chain, LoL @ %p", lol));
-    while (mcb) {
-        switch (mcb->type) {
-        case 'M':
-        case 'Z':
-            total += mcb->size;
-            sprintf(strbuf, "desc = '%.8Fs'", mcb->desc);
-            switch (mcb->pid) {
-            case PID_NONE:
-                strcat(strbuf, " <--- free");
-                free += mcb->size;
-                break;
-            case PID_DOS:
-                strcat(strbuf, " <--- DOS");
-                // fall through
-            default:
-                alloc += mcb->size;
-            }
-            LogInfo(("#%03d [0x%04x]: pid = 0x%04x, size = %05up, %s", i++, segment, mcb->pid, mcb->size, strbuf));
-            break;
-        default:
-            LogError(("unexpected MCB type: %Xh", mcb->type));
-            return;
-        }
-        if (mcb->type == 'Z') { // last mcb
-            mcb = NULL;
-        } else { // next mcb
-            segment += mcb->size + 1;
-            mcb = (struct MCB FAR *)MK_FP(segment, 0);
-        }
-    }
-    sprintf(strbuf, "summary: total %s", sizeString(total));
-    sprintf(strbuf + strlen(strbuf), ", alloc %s", sizeString(alloc));
-    sprintf(strbuf + strlen(strbuf), ", free %s", sizeString(free));
-    LogInfo(("%s", strbuf));
-}
-
-uint16 dos_lastFreeBlock(void) {
-    uint16 segment = 0;
-    uint8 FAR *lol = NULL;
-    struct MCB FAR *mcb = NULL;
-    // get segment of first mcb from list of lists
-    lol = dos_sysvars();
-    // first mcb's segment is in LoL at offset -2
-    segment = *((uint16 FAR *)(lol - 2));
-    mcb = (struct MCB FAR *)MK_FP(segment, 0);
-    while (mcb) {
-        switch (mcb->type) {
-        case 'M':
-            break;
-        case 'Z':
-            if (mcb->pid == PID_NONE)
-                return segment;
-            else
-                return 0;
-            break;
-        default:
-            LogError(("unexpected MCB type: %Xh", mcb->type));
-            return 0;
-        }
-        if (mcb->type == 'Z') { // last mcb
-            mcb = NULL;
-        } else { // next mcb
-            segment += mcb->size + 1;
-            mcb = (struct MCB FAR *)MK_FP(segment, 0);
-        }
-    }
-    return 0;
-}
-
-size_t dos_envSize(void) {
-    const size_t envSegment = *(const uint16 FAR *)MK_FP(_psp, 0x2c);
-    const struct MCB FAR *envMcb = (struct MCB FAR *)MK_FP(envSegment - 1, 0);
-    return envMcb->size;
 }

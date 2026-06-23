@@ -4,10 +4,12 @@
 #include "endata.h"
 #include "enworld.h"
 
+typedef struct SDL_IOStream SDL_IOStream;
+
 /* Private helpers for this translation unit. */
 void loadWorldData(void *destOffset, int size);
-void readFromWorldBuf(void *dest, int size, int count, FILE *bufHandle);
-void writeToWorldBuf(void *dest, int size, int count, FILE *bufHandle);
+void readFromWorldBuf(void *dest, int size, int count, SDL_IOStream *bufHandle);
+void writeToWorldBuf(void *dest, int size, int count, SDL_IOStream *bufHandle);
 
 void readWorldData(void) {
     loadWorldData(&worldWaypointCount, 2);
@@ -36,20 +38,16 @@ void loadWorldData(void *destOffset, int size) {
     }
 }
 
-void readFromWorldBuf(void *dest, int size, int count, FILE *bufHandle) {
-    char far *farDest;
-    register int totalSize;
-    farDest = (char far *)dest;
-    totalSize = size * count;
-    movedata(worldBufSegment, worldBufOffset, FP_SEG(farDest), FP_OFF(farDest), totalSize);
-    worldBufOffset += totalSize;
+void readFromWorldBuf(void *dest, int size, int count, SDL_IOStream *bufHandle) {
+    int totalSize = size * count;
+    (void)bufHandle;
+    memcpy(dest, worldBufCursor, totalSize);
+    worldBufCursor += totalSize;
 }
 
-void writeToWorldBuf(void *dest, int size, int count, FILE *bufHandle) {
-    char far *farDest;
-    register int totalSize;
-    farDest = (char far *)dest;
-    totalSize = size * count;
-    movedata(FP_SEG(farDest), FP_OFF(farDest), worldBufSegment, worldBufOffset, totalSize);
-    worldBufOffset += totalSize;
+void writeToWorldBuf(void *dest, int size, int count, SDL_IOStream *bufHandle) {
+    int totalSize = size * count;
+    (void)bufHandle;
+    memcpy(worldBufCursor, dest, totalSize);
+    worldBufCursor += totalSize;
 }

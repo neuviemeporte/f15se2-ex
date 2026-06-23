@@ -47,7 +47,6 @@ void pilotSelect(int16 needSplash) {
     gfx_setDac(1);
     gfx_flipPage();
     processPilotInput();
-    Log(("pilotSelect(): processed pilot input, selected %d", selectedPilotIdx));
     pilotToGameData((uint8 *)&hallfameBuf[selectedPilotIdx]);
     screenBuf[3] = 0;
     clearRect(screenBuf, 0, 0, SCREEN_MAXX, SCREEN_MAXY);
@@ -89,7 +88,6 @@ void displayPilots(void) {
     screenBuf[3] = 0;
     pilotIdx = 0;
     do {
-        Log(("displayPilots(): iteration %d", pilotIdx));
         printPilot(pilotIdx);
     } while (++pilotIdx < HALLFAME_SLOTS);
     screenDesc.color = COLOR_WHITE;
@@ -109,27 +107,20 @@ void printPilot(int pilotIdx) {
     clearRect(screenBuf, xPos, yPos - 1, xPos + PILOT_ENTRY_WIDTH, yPos + 32);
     screenDesc.color = (pilotIdx == selectedPilotIdx) ? COLOR_WHITE : COLOR_GRAY;
     mystrcpy(todayMissStrBuf, ranks[pilot->rank & 0xf]);
-    Log(("printPilot(): strcpy %s", todayMissStrBuf));
     mystrcat(todayMissStrBuf, pilot->name);
-    Log(("printPilot(): strcat %s", todayMissStrBuf));
     drawStringCentered(screenBuf, todayMissStrBuf, xPos, yPos, 144);
-    Log(("printPilot(): drawn string %s", todayMissStrBuf));
     screenDesc.color = COLOR_RED;
     screenDesc.font = 4;
     my_ltoa(pilot->total_score, todayMissStrBuf);
-    Log(("printPilot(): ltoa 1 %ld -> %s, about to cat %s", pilot->total_score, todayMissStrBuf, " ("));
     mystrcat(todayMissStrBuf, " (");
-    Log(("printPilot(): strcat2 %s", todayMissStrBuf));
     my_itoa(pilot->last_score, &todayMissStrBuf[mystrlen(todayMissStrBuf)]);
     mystrcat(todayMissStrBuf, ")");
-    Log(("printPilot(): strcat3 %s", todayMissStrBuf));
     drawStringCentered(screenBuf, todayMissStrBuf, xPos, yPos + 9, 144);
     screenDesc.font = 1;
     for (medalIdx = 0, totalMedalWidth = 0; medalIdx < 7; medalIdx++) {
         if ((pilot->medals & (1 << medalIdx)) == 0) continue;
         totalMedalWidth += medalWidth[medalIdx] + 4;
     }
-    Log(("printPilot(): past loop 1, totalMedalWidth = %d", totalMedalWidth));
     xPos += (144 - totalMedalWidth) / 2;
     yPos += 17;
     medalIdx = 0;
@@ -154,7 +145,6 @@ void processPilotInput() {
             if ((hallfameBuf[selectedPilotIdx].medals & 0x60) == 0) {
                 restoreTimerIrqHandler();
                 pilotSelectFlag = 0;
-                Log(("processPilotInput(): accepted %d", selectedPilotIdx));
                 return;
             }
             putch(CHAR_BELL);
@@ -196,7 +186,6 @@ void processPilotInput() {
             yPos = ((selectedPilotIdx & (PILOTS_PER_COLUMN - 1)) * PILOT_ROW_HEIGHT) + PILOT_TOP_MARGIN;
             gfx_switchColor(screenBuf, xPos, yPos, xPos + PILOT_ENTRY_WIDTH, yPos + PILOT_NAME_HEIGHT, COLOR_GRAY, COLOR_WHITE);
         }
-    Log(("processPilotInput(): returning, selected %d", selectedPilotIdx));
 }
 
 void blinkPilot() {
@@ -207,6 +196,7 @@ void blinkPilot() {
     yPos = ((selectedPilotIdx & (PILOTS_PER_COLUMN - 1)) * PILOT_ROW_HEIGHT) + PILOT_TOP_MARGIN;
     gfx_switchColor(screenBuf, xPos, yPos, xPos + PILOT_ENTRY_WIDTH, yPos + PILOT_NAME_HEIGHT, blinkColors[blinkColorIdx], blinkColors[blinkColorIdx ^ 1]);
     blinkColorIdx ^= 1;
+    gfx_commitPage();
 }
 
 void gameDataToPilot(struct Pilot *pilot) {
@@ -247,7 +237,6 @@ void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
     uint16 keyCode;
     int rankWidth;
     blinkToggle = 0;
-    Log(("pilotNameInput(): entering with page = %d, abc = %d/%d/%d, pilot: %s", *page, a, b, c, pilot->name));
     xPos = (selectedPilotIdx < PILOTS_PER_COLUMN) ? PILOT_COL_LEFT : PILOT_COL_RIGHT;
     yPos = ((selectedPilotIdx & (PILOTS_PER_COLUMN - 1)) * PILOT_ROW_HEIGHT) + PILOT_TOP_MARGIN;
     clearRect(page, xPos, yPos, xPos + PILOT_ENTRY_WIDTH, yPos + 35);
@@ -260,7 +249,6 @@ void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
     misc_clearKeyFlags();
     keyCode = KEYCODE_CTRLX;
     do {
-        Log(("pilotNameInput(): loop iter, keyCode = 0x%x", keyCode));
         switch (keyCode) {
         case KEYCODE_CTRLX:
             nameLen = 0;
@@ -281,7 +269,6 @@ void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
             break;
         default:
             if (keyCode >= 0x20 && keyCode <= 0x7f && nameLen < a && stringWidth(page, pilot->name) <= 144) {
-                Log(("pilotNameInput(): case default condition true, nameLen = %d", nameLen));
                 pilot->name[nameLen++] = keyCode;
                 pilot->name[nameLen] = '\0';
                 clearRect(page, xPos, yPos, xPos + rankWidth, yPos + c);
@@ -290,18 +277,19 @@ void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
             }
             break;
         }
+        gfx_commitPage();
         while (getJoyKey() == 0) {
             waitMdaCgaStatus(3);
             gfx_switchColor(page, xPos, yPos - 1, xPos + rankWidth, yPos + c,
                             pilotNameInputColors[blinkToggle], pilotNameInputColors[blinkToggle ^ 1]);
             blinkToggle ^= 1;
             page[3] = pilotNameInputColors[blinkToggle];
+            gfx_commitPage();
         }
         keyCode = readInputKey();
         if ((keyCode & 0xff) != 0) {
             keyCode &= 0xff;
         }
-        Log(("pilotNameInput(): after sub_125e4, keyCode = 0x%x", keyCode));
         if (keyCode == KEYCODE_ENTER) {
             screenBuf[3] = 0;
             clearRect(page, 15, 192, 303, 197);
@@ -312,29 +300,27 @@ void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
 
 void loadHallfame(void) {
     int slotIdx;
-    FILE *handle;
-    Log(("loadHallfame(): reading from %s", "HallFame"));
-    handle = fopen("HallFame", "rb");
-    fread(&selectedPilotIdx, 2, 1, handle);
-    Log(("loadHallfame(): count = %d", selectedPilotIdx));
+    SDL_IOStream *handle;
+    handle = openFile("HallFame", 0);
+    fileRead(&selectedPilotIdx, 2, 1, handle);
     slotIdx = 0;
     do {
-        fread(hallfameBuf + slotIdx, HALLFAME_RECORDSZ, 1, handle);
+        fileRead(hallfameBuf + slotIdx, HALLFAME_RECORDSZ, 1, handle);
         slotIdx++;
     } while (slotIdx < HALLFAME_SLOTS);
-    fclose(handle);
+    fileClose(handle);
 }
 
 void saveHallfame() {
-    FILE *fp;
+    SDL_IOStream *fp;
     int idx;
-    fp = fopen("HallFame", "wb");
-    fwrite(&selectedPilotIdx, 2, 1, fp);
+    fp = createFile("HallFame", 0);
+    fileWrite(&selectedPilotIdx, 2, 1, fp);
     idx = 0;
     do {
-        fwrite(&hallfameBuf[idx], HALLFAME_RECORDSZ, 1, fp);
+        fileWrite(&hallfameBuf[idx], HALLFAME_RECORDSZ, 1, fp);
     } while (++idx < HALLFAME_SLOTS);
-    fclose(fp);
+    fileClose(fp);
 }
 
 int getJoyKey() {

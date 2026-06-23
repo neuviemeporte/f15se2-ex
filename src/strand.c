@@ -9,5 +9,6 @@ void seedRandom() {
 }
 
 int randMul(uint16 arg) {
-    return (rand() * (long)arg) >> 0xf;
+    /* DOS rand() is 15-bit (RAND_MAX 0x7fff); mask to match so the >>15 scaling yields [0, arg). */
+    return ((rand() & 0x7fff) * (long)arg) >> 0xf;
 }

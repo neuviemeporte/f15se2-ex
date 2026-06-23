@@ -9,13 +9,12 @@
 #include "offsets.h"
 #include "pointers.h"
 #include "log.h"
+#include "gfx.h"
 #include "slot.h"
 #include "const.h"
 #include "comm.h"
 
 #include <dos.h>
-#include <conio.h>
-#include <bios.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,33 +28,14 @@ void __cdecl gfxInit();
 
 // ==== seg000:0x10 ====
 int egame_main(void) {
-    uint16 FAR *commPtr;
-    log_set_app("egame");
-    FP_SEG(commPtr) = SEG_LOWMEM;
-    FP_OFF(commPtr) = OFF_IACA_START;
-#ifdef DEBUG
-    /* DEBUG-only: normalize commData to (commSeg-1):0x10 -- physically IDENTICAL
-       to commSeg:0 for every field access, but makes the copy-prot reads at
-       commData-4 / commData-2 alias the durable COMM MCB magic that f15.com
-       writes at (commSeg-1):0x0C / 0x0E (see f15.c). With the release form
-       (FP_OFF=0) those reads wrap to commSeg:0xFFFC, which egame clobbers during
-       init, so the in-game copy-prot check fails ~frame 256+ and kills the game.
-       Release keeps the original form (adding the -1 would break verify). */
-    FP_SEG(commData) = *commPtr - 1;
-    FP_OFF(commData) = 0x10;
-#else
-    FP_SEG(commData) = *commPtr;
-    FP_OFF(commData) = 0;
-#endif
-    FP_SEG(gameData) = *commPtr;
-    FP_OFF(gameData) = COMM_GAMEDATA_OFFSET;
-    Log(("main: commData=%04x:%04x gameData=%04x:%04x", FP_SEG(commData), FP_OFF(commData), FP_SEG(gameData), FP_OFF(gameData)));
-#ifdef DEBUG
-    LogInfo(("SIG@startup: commData-4/-2 (=MCB magic now) = %04x/%04x",
-             *(int far *)((char far *)commData - 4), *(int far *)((char far *)commData - 2)));
-#endif
-    hercFlag = commData->setupMono;
-    gfxModeUnset = commData->gfxModeNum == 0;
+    /* Per-mission state reset (persists across missions in the merged build).
+     * g_initPhase=0 re-arms the init block; the indicator colour trackers (+7 of
+     * the four rects at [3..22]) must match the cockpit base colour (3). */
+    g_initPhase = 0;
+    g_missionEndedFlag[0] = g_missionEndedFlag[1] = 0;
+    g_eventLogCount = 0;
+    g_ejectState = 0;
+    g_tacmapIndicators[7] = g_tacmapIndicators[12] = g_tacmapIndicators[17] = g_tacmapIndicators[22] = 3;
     installCBreakHandler();
     if (commData->setupUseJoy == 1) {
         copyJoystickData(commData->joyData);
@@ -64,7 +44,6 @@ int egame_main(void) {
     }
     gfxInit();
     gfx_initOverlay();
-    gfx_setMonoFlag(commData->setupMono);
     if (gameData->theater < 2) {
         gfx_setFadeSteps(12);
     } else {
@@ -83,22 +62,16 @@ int egame_main(void) {
         regs.h.al = 3;
         int86(IRQ_VIDEO, &regs, &regs);
     }
-    LogInfo(("main: EXITING with code %d, tick=%d", exitCode, frameTick));
-    exit(exitCode);
+    return exitCode;
 }
 
 // ==== seg000:0x147 ====
 void drawCockpit() {
-    LogInfo(("drawCockpit: theater=%d regnStr=%s 38FDC=%d", gameData->theater, regnStr, g_detailLevel));
     initMissionStrings();
     load15Flt3d3();
-    Log(("drawCockpit: after load15Flt3d3, scenPlh0=%04x, scenarioPlh@%04x", (unsigned)scenarioPlh[0], (unsigned)&scenarioPlh[0]));
     strcpy(regnStr, scenarioPlh[gameData->theater]);
-    LogInfo(("drawCockpit: regnStr=%s theater=%d", regnStr, gameData->theater));
     loadRegion3D();
-    LogInfo(("drawCockpit: after load3D, 38FDC=%d sizes3dt=%d/%d/%d/%d/%d", g_detailLevel, sizes3dt[0], sizes3dt[1], sizes3dt[2], sizes3dt[3], sizes3dt[4]));
     f15DgtlResult = loadF15DgtlBin();
-    Log(("drawCockpit: f15DgtlResult=%d", f15DgtlResult));
     g_horizonGroundColor = g_world3dData[47];
     if ((g_dacSupported = gfx_getModeFlag()) != 0) {
         setupDac();
@@ -116,16 +89,10 @@ void drawCockpit() {
 
 // ==== seg000:0x211 ====
 void runGameSession() {
-    FP_OFF(g_floppyMotorPtr) = OFF_BDA_FLOPPYMOTOR; // floppy motor runtime in bda???
-    FP_SEG(g_floppyMotorPtr) = 0;
-    if (*g_floppyMotorPtr > 1) {
-        *g_floppyMotorPtr = 1;
-    }
+    /* The original capped the BIOS floppy motor-off countdown in the BDA;
+       there is no floppy access natively, so that poke is dropped. */
     audio_shutdown();
-    audio_setup(*(int16 FAR *)(OFF_IACA_UNK), f15DgtlResult);
-    /* The shared C timer ISR has no built-in per-tick game work; register
-     * egame's advanceFrameTick (frame-pacing tick + DAC colour-cycle) before
-     * installing it. */
+    audio_setup(0, f15DgtlResult);
     setTimerTickHook(egAdvanceFrameTick);
     setTimerIrqHandler();
     if (commData->setupUseJoy == 0) {
@@ -139,6 +106,7 @@ void runGameSession() {
     gfx_setDacAnimCount(1);
     waitFrameSync(2);
     restoreTimerIrqHandler();
+    setTimerTickHook(nullptr);
     audio_shutdown();
 }
 
@@ -155,7 +123,6 @@ void gfxInit() {
     int var_2;
     gfx_allocPage(0);
     var_2 = gfx_allocPage(1);
-    Log(("gfxInit: allocPage(1) returned %d", var_2));
     gfx_storeBufPtr(var_2, 1);
     gfx_storeBufPtr(commData->gfxInitResult, 2);
 }

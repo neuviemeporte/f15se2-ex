@@ -20,7 +20,7 @@
 #include "egdata.h"
 #include "inttype.h"
 #include "struct.h"
-#include "slot.h"
+#include "gfx.h"
 #include "pointers.h"
 
 #define W16(p) (*(int16 *)(p))
@@ -107,7 +107,8 @@ int far drawClipLineGlobal(void) {
 static const int g_ladderGeom[12] = {
     71, 248, 120, 200, 26, 26, 68, 68, 86, 86, 98, 98};
 void FAR CDECL hudComplex(int bxArg, int dxArg, int cxArg, int siArg) {
-    uint8 FAR *page = (uint8 FAR *)MK_FP((uint16)gfx_getCurPageSeg(), 0);
+    int pitch;
+    uint8 *page = gfx_pagePixelsForSeg((uint16)gfx_getCurPageSeg(), &pitch);
     uint8 color = 0x0f;
     int dir = (siArg == 0) ? -1 : 1;
     int cl = cxArg & 0xff, dl = dxArg & 0xff;
@@ -115,7 +116,8 @@ void FAR CDECL hudComplex(int bxArg, int dxArg, int cxArg, int siArg) {
     uint16 base, loY, hiY;
     int wi;
     long t;
-    if ((int8)dl >= 1) bx += 20;
+    if (!page) return;
+    if ((int8)dl >= 1) bx += 0x14;
     if (cl != 0) {
         siArg += 4;
         bx++;
@@ -135,20 +137,23 @@ void FAR CDECL hudComplex(int bxArg, int dxArg, int cxArg, int siArg) {
         int phase = (int)((t - 1L) % 10L);
         int thick = (phase == 0) ? 10 : phase;
         if (bx < loY) break;
-        if (bx <= hiY) {
-            uint16 off = (uint16)((uint16)bx * 320u + base);
+        if (bx <= hiY && bx < 200) {
+            /* All marks land on row bx at columns base, base+dir, ...; index by
+             * the surface pitch instead of the old linear MK_FP offset. */
+            uint8 *p = page + (size_t)bx * pitch;
+            int col = (int)base;
             if (thick == 5) {
-                page[off] = color;
-                off = (uint16)(off + dir);
-                page[off] = color;
+                p[col] = color;
+                col += dir;
+                p[col] = color;
             } else if (thick == 10) {
-                page[off] = color;
-                off = (uint16)(off + dir);
-                page[off] = color;
-                off = (uint16)(off + dir);
-                if (cl == 0) page[off] = color;
+                p[col] = color;
+                col += dir;
+                p[col] = color;
+                col += dir;
+                if (cl == 0) p[col] = color;
             } else {
-                page[off] = color;
+                p[col] = color;
             }
         }
         bx -= 2;

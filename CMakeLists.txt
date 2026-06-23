@@ -14,6 +14,15 @@ project(F15SE2-EX
 # (configuration fails if one is missing).
 option(DOWNLOAD_DEPENDENCIES "Download and build missing third-party dependencies from source" ON)
 
+# Sanitizers (GCC/Clang only). Off by default; enable for debugging.
+option(ASAN "Build with AddressSanitizer" OFF)
+option(UBSAN "Build with UndefinedBehaviorSanitizer" OFF)
+
+# When ON, skip the interactive menus and drop straight into a hardcoded
+# mission (egame). Handy for iterating on the flight code without clicking
+# through the front end each run.
+option(AUTOSTART "Skip menus and start a mission directly (DEBUG_AUTOSTART)" OFF)
+
 #==============================================================================
 # Global settings
 #==============================================================================
@@ -60,7 +69,6 @@ set(SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(F15SE2_SOURCES
 
     # Shared gfx-slot / timer / misc / pic / overlay basics
-    ${SRC_DIR}/shared/gfximpl.c
     ${SRC_DIR}/shared/miscimpl.c
     ${SRC_DIR}/shared/ovlimpl.c
     ${SRC_DIR}/shared/picimpl.c
@@ -78,8 +86,6 @@ set(F15SE2_SOURCES
     ${SRC_DIR}/dosfunc.c
     ${SRC_DIR}/biosfunc.c
     ${SRC_DIR}/log.c
-    ${SRC_DIR}/overlay.c
-    ${SRC_DIR}/f15util.c
     ${SRC_DIR}/gfx_impl.c
 
     # start
@@ -98,9 +104,6 @@ set(F15SE2_SOURCES
 
 # egame (in-flight) module
 set(EGAME_SOURCES
-    # egame-side cdecl->register gfx shims (counterpart of gfx_regshim.c)
-    ${SRC_DIR}/compat64/egregsh.c
-
     ${SRC_DIR}/egmain.c
     ${SRC_DIR}/egsphere.c
     ${SRC_DIR}/egframe.c
@@ -165,6 +168,13 @@ set_target_properties(f15se2 PROPERTIES
 # Compile C as C++ for extra linting.
 set_source_files_properties(${F15SE2_SOURCES} PROPERTIES LANGUAGE CXX)
 
+# Keep the new log.h diagnostics live (the Log* macros compile out without DEBUG).
+target_compile_definitions(f15se2 PRIVATE DEBUG)
+
+if(AUTOSTART)
+    target_compile_definitions(f15se2 PRIVATE DEBUG_AUTOSTART)
+endif()
+
 target_include_directories(f15se2 BEFORE PRIVATE
     ${SRC_DIR}/compat64
     ${SRC_DIR}
@@ -174,10 +184,6 @@ target_include_directories(f15se2 BEFORE PRIVATE
 # SDL3::SDL3 is exported by both the system package and the FetchContent build,
 # so this works regardless of how SDL3 was provided.
 target_link_libraries(f15se2 PRIVATE SDL3::SDL3)
-
-# Enable the log.c logging facility (Log/LogInfo/.../LogCritical). Without DEBUG
-# the log macros compile to no-ops (and LogCritical's exit-on-fatal is lost).
-target_compile_definitions(f15se2 PRIVATE DEBUG)
 
 #==============================================================================
 # Compiler warnings
@@ -206,10 +212,27 @@ if(
         $<$<CXX_COMPILER_ID:AppleClang>:-ferror-limit=1000>
         $<$<CXX_COMPILER_ID:GNU>:-fmax-errors=1000>
 
-        -fpermissive
-        -Wno-int-to-pointer-cast
         -Wno-narrowing
     )
+
+    # Sanitizers must be passed to both the compiler and the linker.
+    set(SANITIZERS "")
+    if(ASAN)
+        list(APPEND SANITIZERS address)
+    endif()
+    if(UBSAN)
+        list(APPEND SANITIZERS undefined)
+    endif()
+    if(SANITIZERS)
+        list(JOIN SANITIZERS "," SANITIZER_LIST)
+        message(STATUS "Building with sanitizers: ${SANITIZER_LIST}")
+        target_compile_options(f15se2 PRIVATE
+            -fsanitize=${SANITIZER_LIST}
+            -fno-omit-frame-pointer
+            -g                      # DWARF line info so ASan/UBSan reports symbolize to file:line
+        )
+        target_link_options(f15se2 PRIVATE -fsanitize=${SANITIZER_LIST})
+    endif()
 
 elseif(
     MSVC

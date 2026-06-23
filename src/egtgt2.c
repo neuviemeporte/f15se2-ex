@@ -16,14 +16,11 @@
 #include "offsets.h"
 #include "pointers.h"
 #include "log.h"
-#include "slot.h"
 #include "const.h"
 
 #include "comm.h"
 
 #include <dos.h>
-#include <conio.h>
-#include <bios.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -154,8 +151,7 @@ int computeTargetBearing(int targetX, int targetY, int wantBearing) {
         g_targetBearing = computeBearing(-dx, dy);
     }
     g_targetRange = rangeApprox(dx, dy);
-    goto done;
-done:;
+    return g_targetRange;
 }
 
 // ==== seg000:0xc82d ====

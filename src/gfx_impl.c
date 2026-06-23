@@ -2,16 +2,90 @@
  * gfx_impl.c Pure-C replacement for MGRAPHIC.EXE overlay (Mode 13h, 320x200x256)
  */
 
+#include <SDL3/SDL.h>
+
 #include "gfx_impl.h"
+#include "gfx.h"
 #include "struct.h"
-#include "slot.h"
+#include "log.h"
 #include <dos.h>
 #include <stdio.h>
 
 #include "fontdata.h"
 
-/* dos_alloc is provided by lowlvl.asm (start.exe) or dosfunc.c (f15.exe) */
-extern uint16 dos_alloc(uint16 size);
+/* The SDL window and renderer are owned here: the graphics layer brings up the
+ * video output and every gfx_* function presents through it. The original game
+ * rendered to a 320x200 MCGA framebuffer; we present that through an SDL renderer
+ * scaled to a resizable window. The 320x200 / 640x350 logical resolutions live
+ * in gfx.h. */
+#define INITIAL_WINDOW_WIDTH 640
+#define INITIAL_WINDOW_HEIGHT 400
+
+/* Fixed fire colour-cycle rate, independent of render frame rate. The original
+ * stepped the cycle once per rendered frame; we pin it at 15 Hz so the pulse
+ * looks the same regardless of how fast we present. */
+#define FIRE_CYCLE_HZ 15
+#define FIRE_CYCLE_NS (SDL_NS_PER_SECOND / FIRE_CYCLE_HZ)
+static SDL_Window *sdlWindow = NULL;
+static SDL_Renderer *sdlRenderer = NULL;
+
+/* Forward declarations for the page-surface model, used by gfx_videoShutdown
+ * before their definitions further down. */
+static GfxState FAR *gfx_getState(void);
+static SDL_Palette *gfxPalette; /* shared 256-entry VGA DAC palette */
+
+/* Bring up the SDL window and renderer. The 320x200 logical surface is stretched
+ * to fill the resizable window (SDL_LOGICAL_PRESENTATION_STRETCH). */
+void gfx_videoInit(void) {
+    if (!SDL_Init(SDL_INIT_VIDEO))
+        LogCritical(("SDL_Init failed: %s", SDL_GetError()));
+
+    sdlWindow = SDL_CreateWindow(
+        "F-15 SE2 EX v0.0.1",
+        INITIAL_WINDOW_WIDTH,
+        INITIAL_WINDOW_HEIGHT,
+        SDL_WINDOW_RESIZABLE);
+    if (!sdlWindow)
+        LogCritical(("Window creation failed: %s", SDL_GetError()));
+
+    /* Enable SDL_EVENT_TEXT_INPUT so the keyboard slots (ovlimpl.c) receive
+     * shifted/localised ASCII for pilot-name entry. */
+    SDL_StartTextInput(sdlWindow);
+
+    sdlRenderer = SDL_CreateRenderer(sdlWindow, NULL);
+    if (!sdlRenderer)
+        LogCritical(("Renderer creation failed: %s", SDL_GetError()));
+
+    SDL_SetRenderVSync(sdlRenderer, 1);
+
+    if (!SDL_SetRenderLogicalPresentation(sdlRenderer, LOGICAL_WIDTH, LOGICAL_HEIGHT,
+                                          SDL_LOGICAL_PRESENTATION_LETTERBOX))
+        LogInfo(("SetRenderLogicalPresentation failed: %s", SDL_GetError()));
+}
+
+/* Toggle borderless-desktop fullscreen (Alt+Enter). */
+void gfx_toggleFullscreen(void) {
+    bool full = (SDL_GetWindowFlags(sdlWindow) & SDL_WINDOW_FULLSCREEN) != 0;
+    SDL_SetWindowFullscreen(sdlWindow, !full);
+}
+
+void gfx_videoShutdown(void) {
+    GfxState FAR *s = gfx_getState();
+    int i;
+    for (i = 0; i < 16; i++) {
+        if (s->pageSurfaces[i]) {
+            SDL_DestroySurface(s->pageSurfaces[i]);
+            s->pageSurfaces[i] = NULL;
+        }
+    }
+    if (gfxPalette) {
+        SDL_DestroyPalette(gfxPalette);
+        gfxPalette = NULL;
+    }
+    if (sdlRenderer) SDL_DestroyRenderer(sdlRenderer);
+    if (sdlWindow) SDL_DestroyWindow(sdlWindow);
+    SDL_Quit();
+}
 
 /* File-scope object used only for its address: FP_SEG of its far pointer
  * yields f15.exe's DGROUP segment, recorded in GfxState.f15DataSeg so the
@@ -19,22 +93,273 @@ extern uint16 dos_alloc(uint16 size);
  * regardless of which process's DS is current at call time (Finding A). */
 static int dgroupAnchor;
 
-/* Byte offset of GfxState within the virtual overlay block */
-#define GFX_STATE_OFFSET 0x2EC
+/* The graphics layer's shared state. In the original game this lived in the
+ * MGRAPHIC overlay segment so it survived far-calls from start/egame/end into
+ * the overlay's namespace; in the merged single-process build every caller is
+ * in the same address space, so it is just a file-scope global shared directly. */
+static GfxState gfxState;
 
-/* Constants for IACA/COMM access */
-#define SEG_LOWMEM 0
-#define OFF_IACA_START 0x4f0
-#define COMM_GFXOVL_ADDR_OFFSET 0x1a
-
-/**
- * @brief Retrieves a far pointer to the shared GfxState structure in the virtual overlay.
- * This function must be called by all gfx functions needing access to shared state.
- */
 static GfxState FAR *gfx_getState(void) {
-    uint16 commSeg = *(uint16 FAR *)MK_FP(SEG_LOWMEM, OFF_IACA_START);
-    uint16 ovlSeg = *(uint16 FAR *)MK_FP(commSeg, COMM_GFXOVL_ADDR_OFFSET);
-    return (GfxState FAR *)MK_FP(ovlSeg, GFX_STATE_OFFSET);
+    return &gfxState;
+}
+
+/* ---- Page backbuffers (SDL surface model) ----------------------------------
+ * The original game drew into 64KB DOS segments (pageSegs[]) with the visible
+ * page at VGA segment 0xA000. Those segments are not real memory in the native
+ * port, so each page is instead backed by a 320x200 8-bit SDL_Surface. The pic
+ * decoder writes palette indices into the current page's surface; gfx_flipPage /
+ * gfx_commitPage push the visible page (index 0) to the renderer.
+ *
+ * The surfaces share one 256-entry palette holding the standard VGA DAC table,
+ * generated below (ported from vgapal.c). Per-image DAC palettes (gfx_setDac)
+ * are not wired into it yet — that follows when the DAC path is ported. */
+
+/* Standard VGA 256-colour palette generator, ported from vgapal.c. Fills the
+ * module-static table in 64-level VGA values, then up-converts to 8-bit. */
+static uint8 s_vgaPal[256 * 3];
+static int s_palWritten;
+
+static void palAdd(int r, int g, int b) {
+    int i = s_palWritten * 3;
+    s_vgaPal[i] = (uint8)r;
+    s_vgaPal[i + 1] = (uint8)g;
+    s_vgaPal[i + 2] = (uint8)b;
+    s_palWritten++;
+}
+static void palAddGray(int v) { palAdd(v, v, v); }
+
+static void palAdd16(int lo, int melo, int mehi, int hi) {
+    int r, g, b, i, h, l;
+    for (i = 0; i < 16; i++) {
+        if (i & 8) {
+            h = hi;
+            l = melo;
+        } else {
+            h = mehi;
+            l = lo;
+        }
+        r = g = b = l;
+        if (i & 4) r = h;
+        if (i & 2) g = h;
+        if (i & 1) b = h;
+        if (i == 6) g = melo; /* brown, not dark yellow */
+        palAdd(r, g, b);
+    }
+}
+
+static int palAddRun(int start, int ch, int lo, int melo, int me, int mehi, int hi) {
+    int r = lo, g = lo, b = lo, i, up, v = 0;
+    if (start & 4) r = hi;
+    if (start & 2) g = hi;
+    if (start & 1) b = hi;
+    palAdd(r, g, b);
+    up = (start & ch) ? 0 : 1;
+    for (i = 0; i < 3; i++) {
+        if (up)
+            v = (i == 0) ? melo : (i == 1) ? me
+                                           : mehi;
+        else
+            v = (i == 0) ? mehi : (i == 1) ? me
+                                           : melo;
+        if (ch == 4)
+            r = v;
+        else if (ch == 2)
+            g = v;
+        else
+            b = v;
+        palAdd(r, g, b);
+    }
+    return start ^ ch;
+}
+
+static void palAddCycle(int lo, int melo, int me, int mehi, int hi) {
+    int hue = 1;
+    hue = palAddRun(hue, 4, lo, melo, me, mehi, hi);
+    hue = palAddRun(hue, 1, lo, melo, me, mehi, hi);
+    hue = palAddRun(hue, 2, lo, melo, me, mehi, hi);
+    hue = palAddRun(hue, 4, lo, melo, me, mehi, hi);
+    hue = palAddRun(hue, 1, lo, melo, me, mehi, hi);
+    (void)palAddRun(hue, 2, lo, melo, me, mehi, hi);
+}
+
+static SDL_Palette *gfx_buildPalette(void) {
+    static const int gray[16] = {0, 5, 8, 11, 14, 17, 20, 24, 28, 32, 36, 40, 45, 50, 56, 63};
+    SDL_Color colors[256];
+    SDL_Palette *pal;
+    int i;
+
+    s_palWritten = 0;
+    palAdd16(0, 21, 42, 63);
+    for (i = 0; i < 16; i++) palAddGray(gray[i]);
+    palAddCycle(0, 16, 31, 47, 63);
+    palAddCycle(31, 39, 47, 55, 63);
+    palAddCycle(45, 49, 54, 58, 63);
+    palAddCycle(0, 7, 14, 21, 28);
+    palAddCycle(14, 17, 21, 24, 28);
+    palAddCycle(20, 22, 24, 26, 28);
+    palAddCycle(0, 4, 8, 12, 16);
+    palAddCycle(8, 10, 12, 14, 16);
+    palAddCycle(11, 12, 13, 15, 16);
+    for (i = 0; i < 8; i++) palAddGray(0);
+
+    /* 64-level -> 8-bit: shift left 2 and replicate the top 2 bits. */
+    for (i = 0; i < 256; i++) {
+        int r = s_vgaPal[i * 3] << 2, g = s_vgaPal[i * 3 + 1] << 2, b = s_vgaPal[i * 3 + 2] << 2;
+        colors[i].r = (uint8)(r | (r >> 6));
+        colors[i].g = (uint8)(g | (g >> 6));
+        colors[i].b = (uint8)(b | (b >> 6));
+        colors[i].a = 255;
+    }
+    pal = SDL_CreatePalette(256);
+    if (pal) SDL_SetPaletteColors(pal, colors, 0, 256);
+    return pal;
+}
+
+/* Lazily create the 320x200 8-bit surface backing a page index. */
+static SDL_Surface *ensurePage(int page) {
+    GfxState FAR *s = gfx_getState();
+    if (page < 0 || page >= 16) return NULL;
+    if (!s->pageSurfaces[page]) {
+        SDL_Surface *surf = SDL_CreateSurface(LOGICAL_WIDTH, LOGICAL_HEIGHT,
+                                              SDL_PIXELFORMAT_INDEX8);
+        if (!surf) LogCritical(("SDL_CreateSurface failed: %s", SDL_GetError()));
+        if (!gfxPalette) gfxPalette = gfx_buildPalette();
+        if (gfxPalette) SDL_SetSurfacePalette(surf, gfxPalette);
+        s->pageSurfaces[page] = surf;
+    }
+    return s->pageSurfaces[page];
+}
+
+struct SDL_Surface *gfx_getPageSurface(int page) { return ensurePage(page); }
+struct SDL_Surface *gfx_getCurPageSurface(void) { return ensurePage(gfx_getState()->curPage); }
+int FAR CDECL gfx_curPage(void) { return gfx_getState()->curPage; }
+
+/* Map a legacy page *segment* token to its page index (defined below). */
+static int gfx_pageForSeg(uint16 seg);
+
+/* The SDL surface backing a legacy page-segment token (curPageSeg / pageSegs[]).
+ * DOS segments are not real memory natively, so MK_FP(seg, off) is replaced by
+ * writing into the page's surface pixels. NULL if the seg names no page. */
+static SDL_Surface *gfx_surfaceForSeg(uint16 seg) {
+    int page = gfx_pageForSeg(seg);
+    return (page >= 0) ? ensurePage(page) : NULL;
+}
+
+/* Public: writable pixel base + stride of the page named by a legacy segment
+ * token, for the egame HUD primitives (eghudr/eghudm) that drew straight into
+ * the page segment. Replaces their MK_FP(seg, off). NULL if seg names no page.
+ * The image is always LOGICAL_WIDTH x LOGICAL_HEIGHT. */
+uint8 *gfx_pagePixelsForSeg(uint16 seg, int *pitchOut) {
+    SDL_Surface *surf = gfx_surfaceForSeg(seg);
+    if (!surf) return NULL;
+    if (pitchOut) *pitchOut = surf->pitch;
+    return (uint8 *)surf->pixels;
+}
+
+/* ---- Sprite buffers --------------------------------------------------------
+ * The DOS build decoded sprite sheets into 64KB "segments" (allocBuffer) and
+ * gfx_blitSprite read palette indices straight out of them. Natively each
+ * sprite buffer is a 320x200 8-bit SDL surface addressed by a small integer
+ * handle (which the caller keeps where the old build kept the segment value).
+ * decodePic fills the surface; gfx_blitSprite reads it. */
+#define MAX_SPRITE_BUFS 8
+static SDL_Surface *s_spriteBufs[MAX_SPRITE_BUFS];
+
+int gfx_allocSpriteBuf(void) {
+    int i;
+    for (i = 0; i < MAX_SPRITE_BUFS; i++) {
+        if (!s_spriteBufs[i]) {
+            SDL_Surface *surf = SDL_CreateSurface(LOGICAL_WIDTH, LOGICAL_HEIGHT,
+                                                  SDL_PIXELFORMAT_INDEX8);
+            if (!surf) LogCritical(("SDL_CreateSurface failed: %s", SDL_GetError()));
+            if (!gfxPalette) gfxPalette = gfx_buildPalette();
+            if (gfxPalette) SDL_SetSurfacePalette(surf, gfxPalette);
+            s_spriteBufs[i] = surf;
+            return i + 1; /* 1-based handle; 0 means "none" */
+        }
+    }
+    return 0;
+}
+
+struct SDL_Surface *gfx_getSpriteSurface(int handle) {
+    if (handle < 1 || handle > MAX_SPRITE_BUFS) return NULL;
+    return s_spriteBufs[handle - 1];
+}
+
+void gfx_freeSpriteBuf(int handle) {
+    if (handle < 1 || handle > MAX_SPRITE_BUFS) return;
+    if (s_spriteBufs[handle - 1]) {
+        SDL_DestroySurface(s_spriteBufs[handle - 1]);
+        s_spriteBufs[handle - 1] = NULL;
+    }
+}
+
+/* While the 640x350 title is up, the renderer presents the separate hi-res
+ * surface (see gfx_presentHiRes). video_setHiRes sets this; gfx_setMode13
+ * clears it when the title is dismissed. */
+static bool gfxHiResActive = false;
+
+/* Push a page's surface to the renderer (vsync-paced present). */
+static void gfx_presentPage(int page) {
+    SDL_Surface *surf;
+    SDL_Texture *tex;
+    /* During the hi-res title, the page-0 framebuffer still holds the prior
+     * 320x200 image (e.g. labs.pic). Redirect generic flips/commits to the
+     * hi-res title surface so frame-pacing presents don't clobber it. */
+    if (gfxHiResActive) {
+        gfx_presentHiRes();
+        return;
+    }
+    surf = ensurePage(page);
+    if (!surf || !sdlRenderer) return;
+    tex = SDL_CreateTextureFromSurface(sdlRenderer, surf);
+    if (!tex) return;
+    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
+    SDL_RenderClear(sdlRenderer);
+    {
+        /* Explosion screen-shake: the original jittered the CRTC display-start
+         * byte (gfx_dacCycle); natively we shift the presented frame left by the
+         * same 0-3 pixels. Drawn into the full logical 320x200 area otherwise. */
+        int shake = gfx_getState()->shakeOffset;
+        if (shake) {
+            SDL_FRect dst = {(float)-shake, 0.0f, (float)LOGICAL_WIDTH, (float)LOGICAL_HEIGHT};
+            SDL_RenderTexture(sdlRenderer, tex, NULL, &dst);
+        } else {
+            SDL_RenderTexture(sdlRenderer, tex, NULL, NULL);
+        }
+    }
+    SDL_RenderPresent(sdlRenderer);
+    SDL_DestroyTexture(tex);
+}
+
+/* Hi-res (640x350) title surface. The EGA-title path (picimpl.c picBlit)
+ * decodes the planar Title640.pic into this surface; gfx_presentHiRes pushes
+ * it. video_setHiRes already switched the renderer's logical presentation to
+ * 640x350; gfx_setMode13 restores 320x200 once the title is dismissed. */
+static SDL_Surface *gfxHiResSurface;
+
+SDL_Surface *gfx_getHiResSurface(void) {
+    if (!gfxHiResSurface) {
+        gfxHiResSurface = SDL_CreateSurface(HIRES_WIDTH, HIRES_HEIGHT,
+                                            SDL_PIXELFORMAT_INDEX8);
+        if (!gfxHiResSurface) LogCritical(("SDL_CreateSurface failed: %s", SDL_GetError()));
+        if (!gfxPalette) gfxPalette = gfx_buildPalette();
+        if (gfxPalette) SDL_SetSurfacePalette(gfxHiResSurface, gfxPalette);
+    }
+    return gfxHiResSurface;
+}
+
+void gfx_presentHiRes(void) {
+    SDL_Surface *surf = gfx_getHiResSurface();
+    SDL_Texture *tex;
+    if (!surf || !sdlRenderer) return;
+    tex = SDL_CreateTextureFromSurface(sdlRenderer, surf);
+    if (!tex) return;
+    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
+    SDL_RenderClear(sdlRenderer);
+    SDL_RenderTexture(sdlRenderer, tex, NULL, NULL);
+    SDL_RenderPresent(sdlRenderer);
+    SDL_DestroyTexture(tex);
 }
 
 /* Initialize row offset table */
@@ -48,21 +373,20 @@ static void initRowOffsets(void) {
 
 /* ---- Slot 0x00: gfx_allocPage ---- */
 int FAR CDECL gfx_allocPage(int n) {
-    GfxState FAR *s;
     uint16 seg;
-    union REGS r;
     initRowOffsets();
+    if (n < 0 || n >= 16) return 0;
     /* In the original game, the MGRAPHIC overlay persists across exes and
      * gfx_setMode13 was already called by start.exe. In our NO_ASM build,
      * each exe has fresh static state. Bootstrap mode 13h on first use. */
     if (gfx_getState()->pageSegs[0] == 0) {
-        gfx_setMode13(0);
+        gfx_setMode13();
     }
-    /* Allocate 0x1000 paragraphs = 64KB directly via INT 21h */
-    r.h.ah = 0x48;
-    r.x.bx = 0x1000;
-    intdos(&r, &r);
-    seg = r.x.cflag ? 0 : r.x.ax;
+    /* DOS allocated a fresh 64KB segment per page; natively each page is an SDL
+     * surface addressed by index. Hand out a stable, unique non-zero token per
+     * page (gfx_pageForSeg maps it back) and create the backing surface now. */
+    seg = (uint16)(0xC000 + n);
+    ensurePage(n);
     /* Don't overwrite page 0 if it's already the VGA framebuffer.
      * end.exe draws directly to 0xA000; gfx_setPageN(0) must keep
      * returning 0xA000 so all rendering is immediately visible. */
@@ -72,63 +396,42 @@ int FAR CDECL gfx_allocPage(int n) {
     return (int)seg;
 }
 
-/* ---- Slot 0x3c: gfx_setMode13 ---- */
-void FAR CDECL gfx_setMode13(int16 monoFlag) {
-    union REGS regs;
+/* ---- Slot 0x3c: gfx_setMode13 ----
+ * Switch to the 320x200 game resolution. Formerly an INT 10h mode-13h set; now
+ * the renderer presents the 320x200 logical surface through SDL. This is also
+ * the lo-res restore after the (possibly hi-res) title. */
+void FAR CDECL gfx_setMode13(void) {
     GfxState FAR *s; /* Declare at function level for MSC small model */
-
-    (void)monoFlag;
 
     initRowOffsets();
 
-    /* Disable VGA gray-scale summing (INT 10h AH=12h AL=01h BL=33h) before the
-     * mode set. Real MGRAPHIC's slot 0 only allocates, so the child sets mode
-     * 13h exactly once; our NO_ASM parent calls gfx_setMode13 during
-     * gfx_allocPage, and in that path the BIOS sums the default EGA palette to
-     * luminance (logo/adv render gray). Disabling summing makes the subsequent
-     * mode set load the colour default palette. */
-    regs.x.ax = 0x1201;
-    regs.x.bx = 0x0033;
-    int86(0x10, &regs, &regs);
+    SDL_SetRenderLogicalPresentation(sdlRenderer, LOGICAL_WIDTH, LOGICAL_HEIGHT,
+                                     SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    gfxHiResActive = false;
 
-    /* Set video mode 13h */
-    regs.x.ax = 0x0013;
-    int86(0x10, &regs, &regs);
-
-    /* Verify */
-    regs.h.ah = 0x0F;
-    int86(0x10, &regs, &regs);
-    if (regs.h.al != 0x13) return;
-
-    /* Clear page 0 (VGA framebuffer) */
     s = gfx_getState();
     s->pageSegs[0] = 0xA000;
     s->curPageSeg = s->pageSegs[1]; /* default to back buffer */
+    s->curPage = 1;
     s->modeFlag = 1;
+}
 
-    return;
+/* Title-screen hi-res attempt: ask SDL to present at 640x350 and report whether it took. */
+bool video_setHiRes(void) {
+    bool ok = SDL_SetRenderLogicalPresentation(sdlRenderer, HIRES_WIDTH, HIRES_HEIGHT,
+                                               SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    if (ok) gfxHiResActive = true;
+    return ok;
 }
 
 /* ---- Slot 0x45: gfx_waitRetrace ---- */
 void FAR CDECL gfx_waitRetrace(void) {
-    /* Wait until not in retrace */
-    while (inp(0x3DA) & 0x08) {}
-    /* Wait until retrace starts */
-    while (!(inp(0x3DA) & 0x08)) {}
-    return;
+    /* Frame pacing now comes from the vsync'd present in gfx_flipPage/gfx_presentPage. */
 }
 
 /* ---- Slot 0x46: gfx_flipPage ---- */
 void FAR CDECL gfx_flipPage(void) {
-    /* The original MGRAPHIC slot 0x46 waits for retrace then un-blanks the
-     * display (sequencer reg 1 bit 5 cleared); the companion gfx_waitRetrace
-     * (slot 0x45) blanks it. It does NOT copy video memory — the game draws
-     * directly to the visible page (0xA000). An earlier version copied
-     * curPageSeg->0xA000 here, which blacked screens (e.g. the pilot roster)
-     * whenever curPageSeg was left pointing at an off-screen work buffer by a
-     * preceding sprite blit. Just sync to retrace. */
-    gfx_waitRetrace();
-    return;
+    gfx_presentPage(0);
 }
 
 /* ---- Slot 0x4b: gfx_storeBufPtr ---- */
@@ -148,19 +451,19 @@ void FAR CDECL gfx_storeBufPtr(uint16 seg, int pageIdx) {
  * then clear it — matching MGRAPHIC's slot 0x3b (`rep stosw` to ES:0). */
 void FAR CDECL gfx_clearPage(uint16 seg) {
     GfxState FAR *s = gfx_getState();
-    uint8 far *page;
-    uint16 i;
+    SDL_Surface *surf;
+    int y;
     s->curPageSeg = seg;
-    page = (uint8 far *)MK_FP(seg, 0);
-    /* Clear 64000 bytes (32000 words) */
-    for (i = 0; i < 32000u; i++) {
-        ((uint16 far *)page)[i] = 0;
-    }
+    surf = gfx_surfaceForSeg(seg);
+    if (!surf) return;
+    for (y = 0; y < surf->h; y++)
+        SDL_memset((uint8 *)surf->pixels + (size_t)y * surf->pitch, 0, surf->w);
 }
 
 /* ---- Slot 0x0e: gfx_setPageN ---- */
 void FAR CDECL gfx_setPageN(uint16 pageNum) {
     GfxState FAR *s = gfx_getState();
+    s->curPage = (pageNum < 16) ? (int)pageNum : 0;
     /* Don't re-init mode if page 0 is VGA framebuffer */
     if (s->pageSegs[0] == 0xA000) {
         s->curPageSeg = s->pageSegs[pageNum];
@@ -169,7 +472,7 @@ void FAR CDECL gfx_setPageN(uint16 pageNum) {
     initRowOffsets();
     /* Bootstrap mode 13h for first use */
     if (s->pageSegs[0] == 0) {
-        gfx_setMode13(0);
+        gfx_setMode13();
     }
     s->curPageSeg = s->pageSegs[pageNum];
     return;
@@ -182,6 +485,9 @@ void FAR CDECL gfx_setPageN(uint16 pageNum) {
 void FAR CDECL gfx_setCurPageSeg(uint16 seg) {
     gfx_getState()->curPageSeg = seg;
 }
+
+/* Restore curPageSeg by value (was a cdecl->register shim in compat64/egregsh.c). */
+void FAR CDECL gfx_setCurPageSegReg(uint16 seg) { gfx_setCurPageSeg(seg); }
 
 /* ---- Slot 0x17: gfx_getBufSize ---- */
 int FAR CDECL gfx_getBufSize(void) {
@@ -206,8 +512,10 @@ int FAR CDECL gfx_getRowOffset(int y) {
 /* Slot 0x38: SI = page -> select it as current page, return its segment. */
 int FAR CDECL gfx_getPageSeg(uint16 page) {
     GfxState FAR *s = gfx_getState();
-    if (page < 16)
+    if (page < 16) {
         s->curPageSeg = s->pageSegs[page];
+        s->curPage = (int)page;
+    }
     return (int)s->curPageSeg;
 }
 
@@ -215,13 +523,18 @@ int FAR CDECL gfx_getPageSeg(uint16 page) {
  * Copy one 320-byte decoded row into the current page (MCGA: direct write). */
 void FAR CDECL gfx_fillRow(uint16 rowOffset, uint16 srcBuf, uint16 rowNum) {
     GfxState FAR *s = gfx_getState();
-    const uint8 *src = (const uint8 *)(size_t)srcBuf; /* near ptr, caller's DS */
-    uint8 FAR *dst;
-    int col;
+    const uint8 *src = (const uint8 *)srcBuf; /* near ptr, caller's DS */
+    SDL_Surface *surf = gfx_surfaceForSeg(s->curPageSeg);
+    int row, col;
     (void)rowNum;
-    dst = (uint8 FAR *)MK_FP(s->curPageSeg, rowOffset);
-    for (col = 0; col < 320; col++)
-        dst[col] = src[col];
+    if (!surf) return;
+    row = (int)(rowOffset / LOGICAL_WIDTH); /* rowOffset is a linear y*320 index */
+    if (row < 0 || row >= surf->h) return;
+    {
+        uint8 *dst = (uint8 *)surf->pixels + (size_t)row * surf->pitch;
+        for (col = 0; col < LOGICAL_WIDTH && col < surf->w; col++)
+            dst[col] = src[col];
+    }
 }
 
 /* Slot 0x35: DI = rowOffset. In MCGA the row is already in the page (fillRow
@@ -248,9 +561,10 @@ void FAR CDECL gfx_setBlitOffset(int offset) {
 }
 
 /* ---- Slot 0x25: gfx_dirtyRect ---- */
-void FAR CDECL gfx_dirtyRect(void) {
-    /* Register-called in overlay — stub for now */
-    return;
+/* eg3drast.c hands us the real span buffer pointer; gfx_dirtyRect2 walks rows
+ * [yMin..yMax]. Was the egame-side cdecl spelling in compat64/egregsh.c. */
+void FAR CDECL gfx_dirtyRect(int16 *spanBuf, int yMin, int yMax) {
+    gfx_dirtyRect2(spanBuf, (uint16)yMin, (uint16)yMax);
 }
 
 /* Slot 0x01 (gfx_fillDirty), 0x02 (gfx_blitTransparent), 0x03 (gfx_blitVariant),
@@ -315,50 +629,40 @@ static const uint8 g_fontBitmapRowSize[8] = {5, 8, 0, 6, 7, 6, 0, 0};
  * cdecl slot 0x05 caller, so one core serves both. */
 static void drawStringCore(int16 *params, const char *string,
                            int clipL, int clipR, int clipT, int clipB) {
-    GfxState FAR *s = gfx_getState();
-    uint16 dseg;
-    uint8 FAR *heightsFar;
-    uint8 FAR *rowSizeFar;
-    uint8 * FAR * bmpPtrsFar;
-    uint8 * FAR * wtPtrsFar;
+    SDL_Surface *surf;
+    uint8 *base;
+    int pitch, surfW, surfH;
     int x, y, color;
-    uint8 far *page;
     int charIdx;
     uint8 ch;
     int row, col;
     uint16 fontIdx;
-    uint8 height;
-    uint8 FAR *bitmaps;
-    uint8 FAR *widthTab;
+    uint8 height, rowSize;
+    uint8 *bitmaps;
+    const uint8 *widthTab;
 
     if (!string || !params) return;
 
-    /* The font tables live in f15's DGROUP. When a child far-calls in, DS is
-     * the child's DGROUP (no font data there), so reach the tables via
-     * f15DataSeg (Finding A). The g_fontBitmapPtrs / g_fontWidthTables ENTRIES
-     * are themselves near offsets into f15's DGROUP, so each selected entry
-     * must be re-based on f15DataSeg as well before it can be dereferenced. */
-    dseg = s->f15DataSeg;
-    heightsFar = (uint8 FAR *)MK_FP(dseg, PTR_OFF(g_fontHeightsArr));
-    rowSizeFar = (uint8 FAR *)MK_FP(dseg, PTR_OFF(g_fontBitmapRowSize));
-    bmpPtrsFar = (uint8 * FAR *)MK_FP(dseg, PTR_OFF(g_fontBitmapPtrs));
-    wtPtrsFar = (uint8 * FAR *)MK_FP(dseg, PTR_OFF(g_fontWidthTables));
-
+    /* The font tables are file-scope arrays in this module; in the merged
+     * single-process build they are reached directly as native pointers (the
+     * old DOS build had to re-base them on f15's DGROUP via far pointer). */
     x = (int)params[4];
     y = (int)params[5];
     color = (int)params[2];
     fontIdx = (uint16)params[6] & 7;
-    height = heightsFar[fontIdx];
-    bitmaps = bmpPtrsFar[fontIdx]
-                  ? (uint8 FAR *)MK_FP(dseg, PTR_OFF(bmpPtrsFar[fontIdx]))
-                  : (uint8 FAR *)0;
-    widthTab = wtPtrsFar[fontIdx]
-                   ? (uint8 FAR *)MK_FP(dseg, PTR_OFF(wtPtrsFar[fontIdx]))
-                   : (uint8 FAR *)0;
+    height = g_fontHeightsArr[fontIdx];
+    rowSize = g_fontBitmapRowSize[fontIdx];
+    bitmaps = g_fontBitmapPtrs[fontIdx];
+    widthTab = g_fontWidthTables[fontIdx];
 
-    /* params/string are caller-passed NEAR pointers — they correctly resolve
-     * against the caller's DS, so they must NOT be re-based on f15DataSeg. */
-    page = (uint8 far *)MK_FP(s->pageSegs[params[0]], 0);
+    /* The page is backed by an SDL surface (same buffer the pic decoder and
+     * clearRect target); glyph pixels are written straight into it. */
+    surf = gfx_getPageSurface((int)params[0]);
+    if (!surf) return;
+    base = (uint8 *)surf->pixels;
+    pitch = surf->pitch;
+    surfW = surf->w;
+    surfH = surf->h;
 
     for (charIdx = 0; string[charIdx] != 0 && charIdx < 256; charIdx++) {
         ch = (uint8)string[charIdx];
@@ -373,18 +677,20 @@ static void drawStringCore(int16 *params, const char *string,
         if (x > clipR) break; /* rest of the string is right of window */
 
         if (bitmaps && ch >= 0x20) {
-            uint8 FAR *glyph = bitmaps + (ch - 0x20) * (uint16)rowSizeFar[fontIdx];
+            uint8 *glyph = bitmaps + (ch - 0x20) * (uint16)rowSize;
             for (row = 0; row < height; row++) {
                 int py = y + row;
                 uint8 bits;
-                uint16 rowOff;
+                uint8 *dstRow;
                 if (py < clipT || py > clipB) continue; /* row outside window */
+                if (py < 0 || py >= surfH) continue;    /* off the surface */
                 bits = glyph[row];
-                rowOff = s->rowOffsets[py];
+                dstRow = base + (size_t)py * pitch;
                 for (col = 0; col < 8; col++) {
                     int px = x + col;
-                    if ((bits & 0x80) && px >= clipL && px <= clipR)
-                        page[rowOff + (uint16)px] = (uint8)color;
+                    if ((bits & 0x80) && px >= clipL && px <= clipR &&
+                        px >= 0 && px < surfW)
+                        dstRow[px] = (uint8)color;
                     bits <<= 1;
                 }
             }
@@ -439,17 +745,54 @@ void FAR CDECL gfx_blitVariant(int16 *params, const char *string) { gfx_drawStri
 void FAR CDECL gfx_copyBlock(int16 *params, const char *string) { gfx_drawStringClipped_impl(params, string, 0); }
 void FAR CDECL gfx_drawStringUnclipped(int16 *params, const char *string) { gfx_drawStringClipped_impl(params, string, 3); }
 
+/* Slots 0x01-0x06: the clipped glyph engine. The egame HUD selects the clip mode
+ * by slot index; map each to the real glyph function. Was the egame-side cdecl
+ * dispatcher in compat64/egregsh.c. */
+void FAR CDECL gfx_drawGlyphStr(int16 *desc, const char *str, int slot) {
+    switch (slot) {
+    case 0x01:
+        gfx_fillDirty(desc, str);
+        break;
+    case 0x02:
+        gfx_blitTransparent(desc, str);
+        break;
+    case 0x03:
+        gfx_blitVariant(desc, str);
+        break;
+    case 0x04:
+        gfx_copyBlock(desc, str);
+        break;
+    case 0x06:
+    default:
+        gfx_drawStringUnclipped(desc, str);
+        break;
+    }
+}
+
 /* ---- Slot 0x2a: gfx_copyRect ---- */
+/* Copy a width x height rect between two page surfaces. The original streamed
+ * rows between DOS page segments via movedata; natively the pages are SDL
+ * surfaces, so copy row-by-row between them (clipped to each surface). */
 void FAR CDECL gfx_copyRect(int srcPage, uint16 srcX, uint16 srcY,
                             int dstPage, uint16 dstX, uint16 dstY,
                             int width, int height) {
-    GfxState FAR *s = gfx_getState();
+    SDL_Surface *src = ensurePage(srcPage);
+    SDL_Surface *dst = ensurePage(dstPage);
     int row;
 
+    if (!src || !dst || width <= 0 || height <= 0) return;
+
     for (row = 0; row < height; row++) {
-        uint16 sOff = s->rowOffsets[srcY + row] + (uint16)srcX;
-        uint16 dOff = s->rowOffsets[dstY + row] + (uint16)dstX;
-        movedata(s->pageSegs[srcPage], sOff, s->pageSegs[dstPage], dOff, (uint16)width);
+        int sy = (int)srcY + row;
+        int dy = (int)dstY + row;
+        int w = width;
+        if (sy < 0 || sy >= src->h || dy < 0 || dy >= dst->h) continue;
+        if ((int)srcX + w > src->w) w = src->w - (int)srcX;
+        if ((int)dstX + w > dst->w) w = dst->w - (int)dstX;
+        if (w <= 0) continue;
+        SDL_memmove((uint8 *)dst->pixels + (size_t)dy * dst->pitch + dstX,
+                    (uint8 *)src->pixels + (size_t)sy * src->pitch + srcX,
+                    (size_t)w);
     }
     return;
 }
@@ -457,22 +800,50 @@ void FAR CDECL gfx_copyRect(int srcPage, uint16 srcX, uint16 srcY,
 /* ---- Slot 0x29: gfx_switchColor ---- */
 void FAR CDECL gfx_switchColor(int16 *pageDesc, int x1, int y1,
                                int x2, int y2, int oldColor, int newColor) {
-    GfxState FAR *s = gfx_getState();
-    uint16 pageSeg;
-    uint8 far *page;
-    int row, col;
+    SDL_Surface *surf = gfx_getPageSurface((int)*pageDesc);
+    uint8 *base;
+    int pitch, row, col;
 
-    pageSeg = s->pageSegs[*pageDesc];
-    page = (uint8 far *)MK_FP(pageSeg, 0);
+    if (!surf) return;
+    base = (uint8 *)surf->pixels;
+    pitch = surf->pitch;
+    if (x1 < 0) x1 = 0;
+    if (y1 < 0) y1 = 0;
+    if (x2 >= surf->w) x2 = surf->w - 1;
+    if (y2 >= surf->h) y2 = surf->h - 1;
 
     for (row = y1; row <= y2; row++) {
-        uint16 off = s->rowOffsets[row];
+        uint8 *dst = base + (size_t)row * pitch;
         for (col = x1; col <= x2; col++) {
-            if (page[off + col] == (uint8)oldColor)
-                page[off + col] = (uint8)newColor;
+            if (dst[col] == (uint8)oldColor)
+                dst[col] = (uint8)newColor;
         }
     }
     return;
+}
+
+/* clearRect - fill a rectangular region of a page with a solid colour.
+ * Called with a PageDesc pointer: word 0 is the page index, word 3 the fill
+ * colour. Writes straight into the page's backing SDL surface — the same buffer
+ * the pic decoder and blitters target — so no DOS segment is involved. */
+void clearRect(int16 *pageNum, int x1, int y1, int x2, int y2) {
+    SDL_Surface *surf = gfx_getPageSurface((int)*pageNum);
+    uint8 color = (uint8)pageNum[3];
+    uint8 *base;
+    int pitch, row, col;
+
+    if (!surf) return;
+    base = (uint8 *)surf->pixels;
+    pitch = surf->pitch;
+    if (x1 < 0) x1 = 0;
+    if (y1 < 0) y1 = 0;
+    if (x2 >= surf->w) x2 = surf->w - 1;
+    if (y2 >= surf->h) y2 = surf->h - 1;
+    for (row = y1; row <= y2; row++) {
+        uint8 *dst = base + (size_t)row * pitch + x1;
+        for (col = x1; col <= x2; col++)
+            *dst++ = color;
+    }
 }
 
 /* ---- Slot 0x44: gfx_setDac ---- */
@@ -504,20 +875,40 @@ static const uint8 g_palettes[5][48] = {
      0x15, 0x15, 0x15, 0x15, 0x15, 0x3f, 0x00, 0x00, 0x00, 0x15, 0x3f, 0x3f,
      0x3f, 0x15, 0x15, 0x3f, 0x15, 0x3f, 0x3f, 0x3f, 0x15, 0x3f, 0x3f, 0x3f}};
 
+/* Apply one of the baked DAC palettes by rewriting the low 16 entries of the
+ * shared surface palette. The original issued INT 10h AX=1012h to load 16 DAC
+ * registers (BX=0, CX=16); natively every page surface shares one SDL_Palette,
+ * so updating it in place recolours all pages on the next present. Only entries
+ * 0-15 are touched, matching the original's 16-register block — the upper 240
+ * VGA colours from gfx_buildPalette stay put. This is what makes palette-1
+ * screens (e.g. mission select's Wall.Pic) render colour 5 as black instead of
+ * the standard palette's magenta. */
+/* Upload `count` consecutive DAC registers starting at `startReg` from `count`
+ * 6-bit VGA RGB triples. This is the native form of INT 10h AX=1012h (load DAC
+ * register block): the shared surface palette is rewritten in place so every
+ * page recolours on the next present. setupDac (egsys.c) drives the 0x10-0xFF
+ * flight/cockpit colours through this; gfx_setDac uses it for the 0-15 block. */
+void gfx_setDacRange(uint16 startReg, uint16 count, const uint8 *vgaTriples) {
+    SDL_Color colors[256];
+    uint16 i;
+    if (count == 0) return;
+    if ((uint32)startReg + count > 256) count = (uint16)(256 - startReg);
+    if (!gfxPalette) gfxPalette = gfx_buildPalette();
+    if (!gfxPalette) return;
+    for (i = 0; i < count; i++) {
+        /* 6-bit VGA value -> 8-bit (shift left 2, replicate top 2 bits). */
+        int r = vgaTriples[i * 3] << 2, g = vgaTriples[i * 3 + 1] << 2, b = vgaTriples[i * 3 + 2] << 2;
+        colors[i].r = (uint8)(r | (r >> 6));
+        colors[i].g = (uint8)(g | (g >> 6));
+        colors[i].b = (uint8)(b | (b >> 6));
+        colors[i].a = 255;
+    }
+    SDL_SetPaletteColors(gfxPalette, colors, (int)startReg, (int)count);
+}
+
 void FAR CDECL gfx_setDac(uint16 palIdx) {
-    union REGS regs;
-    struct SREGS sregs;
-    GfxState FAR *s;
     if (palIdx > 4) return;
-    /* INT 10h AX=1012h: set block of DAC color registers */
-    regs.x.ax = 0x1012;
-    regs.x.bx = 0;  /* first register */
-    regs.x.cx = 16; /* number of registers */
-    segread(&sregs);
-    (void)s;
-    regs.x.dx = 0; /* (uint16)g_palettes[palIdx]; */
-    sregs.es = sregs.ds;
-    int86x(0x10, &regs, &regs, &sregs);
+    gfx_setDacRange(0, 16, g_palettes[palIdx]);
     gfx_waitRetrace();
 }
 
@@ -534,6 +925,7 @@ void FAR CDECL gfx_setColor(int color) {
 void FAR CDECL gfx_initOverlay(void) {
     GfxState FAR *s = gfx_getState();
     s->curPageSeg = s->pageSegs[1];
+    s->curPage = 1;
     return;
 }
 /* Slot 0x0d: register-called via the _gfx_setPage1 shim (regshim.asm) — AX = a
@@ -541,8 +933,10 @@ void FAR CDECL gfx_initOverlay(void) {
  * AX (the name is a misnomer); clearRect uses it to select the page to clear. */
 int FAR CDECL gfx_setPage1(uint16 page) {
     GfxState FAR *s = gfx_getState();
-    if (page < 16)
+    if (page < 16) {
         s->curPageSeg = s->pageSegs[page];
+        s->curPage = (int)page;
+    }
     return (int)s->curPageSeg;
 }
 /* Slot 0x10: called via the _gfx_getCurPageSeg shim, which preserves ES (a
@@ -563,25 +957,43 @@ void FAR CDECL gfx_getCurPage(int page) {
  * skip zero bytes. An earlier `flags & 0x10` gate made the HUD gun-sight blit
  * opaque, copying its black background as a square behind the reticle (bug 7). */
 int FAR CDECL gfx_blitSprite(struct SpriteParams *p) {
-    GfxState FAR *s = gfx_getState();
-    uint16 srcSeg, dstSeg;
+    SDL_Surface *srcSurf, *dstSurf;
+    uint8 *srcBase, *dstBase;
+    int srcPitch, dstPitch, srcW, srcH, dstW, dstH;
     int row, col, w, h;
 
     if (!p) return 0;
     if (p->page < 0 || p->page >= 16) return 0;
-    srcSeg = p->bufPtr;
-    dstSeg = s->pageSegs[p->page];
+    /* bufPtr is the sprite-sheet source. The radar/tac-map/HUD sheet (F15.SPR)
+     * is loaded into a page surface, so bufPtr carries that page-segment token
+     * (e.g. 0xC002 from gfx_allocPage); resolve it like gfx_blitCore does. Fall
+     * back to the 1-based sprite-buffer handle for any decodePic sprite buffer. */
+    srcSurf = gfx_surfaceForSeg((uint16)p->bufPtr);
+    if (!srcSurf) srcSurf = gfx_getSpriteSurface((int)p->bufPtr);
+    dstSurf = gfx_getPageSurface((int)p->page);
+    if (!srcSurf || !dstSurf) return 0;
+    srcBase = (uint8 *)srcSurf->pixels;
+    srcPitch = srcSurf->pitch;
+    dstBase = (uint8 *)dstSurf->pixels;
+    dstPitch = dstSurf->pitch;
+    srcW = srcSurf->w;
+    srcH = srcSurf->h;
+    dstW = dstSurf->w;
+    dstH = dstSurf->h;
     w = p->width;
     h = p->height;
 
     for (row = 0; row < h; row++) {
-        uint8 far *src = (uint8 far *)MK_FP(srcSeg,
-                                            s->rowOffsets[p->srcY + row] + (uint16)p->srcX);
-        uint8 far *dst = (uint8 far *)MK_FP(dstSeg,
-                                            s->rowOffsets[p->dstY + row] + (uint16)p->dstX);
+        int sy = (int)p->srcY + row;
+        int dy = (int)p->dstY + row;
+        if (sy < 0 || sy >= srcH || dy < 0 || dy >= dstH) continue;
         for (col = 0; col < w; col++) {
-            uint8 px = src[col];
-            if (px) dst[col] = px;
+            int sx = (int)p->srcX + col;
+            int dx = (int)p->dstX + col;
+            uint8 px;
+            if (sx < 0 || sx >= srcW || dx < 0 || dx >= dstW) continue;
+            px = srcBase[(size_t)sy * srcPitch + sx];
+            if (px) dstBase[(size_t)dy * dstPitch + dx] = px;
         }
     }
     return 0;
@@ -608,7 +1020,9 @@ static int gfx_lineOutcode(int x, int y) {
 
 void FAR CDECL gfx_drawLine(uint16 ux1, uint16 uy1, uint16 ux2, uint16 uy2) {
     GfxState FAR *s = gfx_getState();
-    uint8 far *page;
+    SDL_Surface *surf;
+    uint8 *base;
+    int pitch;
     uint8 color = s->fillColor;
     int vx, vy;         /* blitOffset decomposed into a viewport origin */
     int x1, y1, x2, y2; /* endpoints translated into absolute page coords */
@@ -667,8 +1081,12 @@ void FAR CDECL gfx_drawLine(uint16 ux1, uint16 uy1, uint16 ux2, uint16 uy2) {
         }
     }
 
-    /* Bresenham over the now-on-screen segment (deltas <= 320, no overflow). */
-    page = (uint8 far *)MK_FP(s->curPageSeg, 0);
+    /* Bresenham over the now-on-screen segment (deltas <= 320, no overflow).
+     * Writes into the current page's backing surface. */
+    surf = gfx_getCurPageSurface();
+    if (!surf) return;
+    base = (uint8 *)surf->pixels;
+    pitch = surf->pitch;
     dx = x2 - x1;
     if (dx < 0) dx = -dx;
     dy = y2 - y1;
@@ -677,7 +1095,7 @@ void FAR CDECL gfx_drawLine(uint16 ux1, uint16 uy1, uint16 ux2, uint16 uy2) {
     sy = y1 < y2 ? 1 : -1;
     err = dx - dy;
     for (;;) {
-        page[(uint16)(y1 * 320 + x1)] = color;
+        base[(size_t)y1 * pitch + x1] = color;
         if (x1 == x2 && y1 == y2) break;
         e2 = err + err;
         if (e2 > -dy) {
@@ -689,6 +1107,14 @@ void FAR CDECL gfx_drawLine(uint16 ux1, uint16 uy1, uint16 ux2, uint16 uy2) {
             y1 += sy;
         }
     }
+}
+/* drawLineWrapper - draw a line from the lineX1..lineY2 globals.
+ * The original clipped the endpoints (Cohen-Sutherland) before passing them to
+ * the line slot in registers; gfx_drawLine now does that clipping itself, so
+ * this just marshals the globals into its by-value args. */
+extern int16 lineX1, lineY1, lineX2, lineY2;
+void drawLineWrapper(void) {
+    gfx_drawLine((uint16)lineX1, (uint16)lineY1, (uint16)lineX2, (uint16)lineY2);
 }
 /* Slot 0x20: register-called via the _gfx_setDrawColor shim — AH = fill colour.
  * Stores the clearRect/fill colour (MGRAPHIC slot 0x20 = `mov [fillColor],ah`). */
@@ -708,10 +1134,13 @@ void FAR CDECL gfx_dirtyRect2(const int16 *spanMinBuf, uint16 yMin, uint16 yMax)
     const uint16 *minBuf = (const uint16 *)spanMinBuf;
     const uint16 *maxBuf = (const uint16 *)((const char *)spanMinBuf + 0x1b8);
     uint8 fill = s->fillColor;
-    uint16 seg = s->curPageSeg;
+    SDL_Surface *surf = gfx_surfaceForSeg(s->curPageSeg);
+    uint8 *pagePx;
     int16 firstRow = (int16)yMin; /* AX */
     int16 lastRow = (int16)yMax;  /* CX */
     int y;
+    if (!surf) return;
+    pagePx = (uint8 *)surf->pixels;
     /* MGRAPHIC slot 0x25: `or ax,ax; js exit` — if firstRow < 0, draw nothing. */
     if (firstRow < 0) return;
     if (lastRow > 199) lastRow = 199; /* rowOffsets[] safety */
@@ -719,7 +1148,9 @@ void FAR CDECL gfx_dirtyRect2(const int16 *spanMinBuf, uint16 yMin, uint16 yMax)
         uint16 spanLo = minBuf[y];
         uint16 spanHi = maxBuf[y];
         uint16 width, col;
-        uint8 far *dst;
+        uint16 off;
+        int row, col0;
+        uint8 *dst;
         /* MGRAPHIC's degenerate-row test is UNSIGNED (`cmp hi,lo; jc skip; ja
          * draw`): skip when hi < lo, draw when hi > lo, and when equal skip only
          * if the column is 0 or 0x13f (else a single pixel). The edge-walker in
@@ -738,8 +1169,15 @@ void FAR CDECL gfx_dirtyRect2(const int16 *spanMinBuf, uint16 yMin, uint16 yMax)
         if (spanLo > 319) continue; /* span off right edge */
         if (spanHi > 319) spanHi = 319;
         width = (uint16)(spanHi - spanLo + 1);
-        dst = (uint8 far *)MK_FP(seg, s->rowOffsets[y] + (uint16)s->blitOffset + spanLo);
-        for (col = 0; col < width; col++)
+        /* The original wrote at the linear page offset rowOffsets[y]+blitOffset+
+         * spanLo; split it into (row,col) so the surface pitch (not assumed 320)
+         * applies and the run stays inside one visible row. */
+        off = (uint16)(s->rowOffsets[y] + (uint16)s->blitOffset + spanLo);
+        row = off / LOGICAL_WIDTH;
+        col0 = off % LOGICAL_WIDTH;
+        if (row < 0 || row >= surf->h) continue;
+        dst = pagePx + (size_t)row * surf->pitch + col0;
+        for (col = 0; col < width && col0 + (int)col < LOGICAL_WIDTH; col++)
             dst[col] = fill;
     }
 }
@@ -769,18 +1207,13 @@ int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx) {
      * sums this over a string to centre text, so it MUST agree with the
      * x-advance gfx_drawString uses (wt[ch-0x20]); otherwise centred text
      * lands off-screen and drawString's clip test discards every glyph.
-     * The width tables live in f15's DGROUP, reached via f15DataSeg (Finding A),
-     * exactly as gfx_drawString rebases them. */
-    GfxState FAR *s = gfx_getState();
-    uint16 dseg = s->f15DataSeg;
-    uint8 *FAR *wtPtrsFar = (uint8 * FAR *)MK_FP(dseg, PTR_OFF(g_fontWidthTables));
-    uint8 FAR *wt;
+     * The width tables are file-scope arrays reached directly as native
+     * pointers, exactly as drawStringCore reads them. */
+    const uint8 *wt;
     if (fontIdx >= 8) return 8;
     /* Chars >= 0x80 are inline color escapes - no glyph, no width */
     if (ch >= 0x80) return 0;
-    wt = wtPtrsFar[fontIdx]
-             ? (uint8 FAR *)MK_FP(dseg, PTR_OFF(wtPtrsFar[fontIdx]))
-             : (uint8 FAR *)0;
+    wt = g_fontWidthTables[fontIdx];
     if (!wt || ch < 0x20) return 8;
     return wt[ch - 0x20];
 }
@@ -820,15 +1253,19 @@ int FAR CDECL gfx_calcRowAddr(int col, int row) {
     if (!s->rowOffsetsReady) return (int)(row * 320 + col);
     return (int)(s->rowOffsets[row] + col);
 }
-/* Slots 0x40/0x41: MGRAPHIC stores the arg to absolute 0000:0x00CC / 0x00CE — a
- * 4-byte scratch (the unused INT 0x33 vector) the overlay's clip/draw paths read
- * back as the active clip rectangle. setupViewport calls setOvlVal2(width-1). */
+/* Slots 0x40/0x41: MGRAPHIC stored the arg to absolute 0000:0x00CC / 0x00CE — a
+ * 4-byte scratch (the unused INT 0x33 vector) the asm overlay's clip/draw paths
+ * read back as the active clip rectangle. The native line drawer (gfx_drawLine)
+ * clips to the page itself and folds blitOffset in as the viewport origin, so
+ * nothing reads this scratch back; keep a real variable for the store so the
+ * old physical address (near-null on a flat address space → SEGV) is gone. */
+static uint16 gfxOvlClipScratch[2];
 void FAR CDECL gfx_setOvlVal1(int val) {
-    *(uint16 FAR *)MK_FP(0, 0xCC) = (uint16)val;
+    gfxOvlClipScratch[0] = (uint16)val;
     return;
 }
 void FAR CDECL gfx_setOvlVal2(int val) {
-    *(uint16 FAR *)MK_FP(0, 0xCE) = (uint16)val;
+    gfxOvlClipScratch[1] = (uint16)val;
     return;
 }
 int FAR CDECL gfx_getPresetOffset1(void) {
@@ -853,28 +1290,46 @@ void FAR CDECL gfx_setDacAnimCount(uint16 count) {
     return;
 }
 void FAR CDECL gfx_commitPage(void) {
-    GfxState FAR *s = gfx_getState();
-    /* Original slot 0x50 is RETF (no-op) - end.exe draws directly to VGA.
-     * Only copy if we're drawing to a back buffer. */
-    if (s->pageSegs[0] != 0xA000 && s->pageSegs[0] != 0) {
-        movedata(s->pageSegs[0], 0, 0xA000, 0, 64000u);
-    }
-    return;
+    gfx_presentPage(0);
 }
 void FAR CDECL gfx_nop51(void) { return; }
-void FAR CDECL gfx_setMonoFlag(uint16 mono) {
-    (void)mono;
-    return;
-}
 void FAR CDECL gfx_blitSpriteClipped(int16 *ptr) { gfx_blitSprite((struct SpriteParams *)ptr); }
 void FAR CDECL gfx_blitSpriteClipped2(void) { return; }
 void FAR CDECL gfx_blitSpriteOpaque(int16 *ptr) { gfx_blitSprite((struct SpriteParams *)ptr); }
 void FAR CDECL gfx_blitSpriteOpaque2(void) { return; }
 
+/* Map a legacy page *segment* value back to its page index. gfx_blitToCurrent is
+ * called with a raw segment (e.g. page1Ptr from gfx_allocPage) rather than a page
+ * index; the same value was recorded in pageSegs[] via gfx_storeBufPtr, so an
+ * exact match identifies the source page. Returns the first match (lowest index),
+ * or -1 if the segment names no page. */
+static int gfx_pageForSeg(uint16 seg) {
+    GfxState FAR *s = gfx_getState();
+    int i;
+    for (i = 0; i < 16; i++)
+        if (s->pageSegs[i] == seg) return i;
+    return -1;
+}
+
 /* ---- Slot 0x30: gfx_blitToCurrent ---- */
+/* Copy a whole source page onto the current draw page. The original block-copied
+ * 64000 bytes between DOS page segments; natively both are SDL surfaces, so copy
+ * the 320x200 image row-by-row from the source page into the current page. */
 void FAR CDECL gfx_blitToCurrent(int16 pagePtr) {
     GfxState FAR *s = gfx_getState();
-    movedata((uint16)pagePtr, 0, s->curPageSeg, 0, 64000u);
+    int srcPage = gfx_pageForSeg((uint16)pagePtr);
+    SDL_Surface *src, *dst;
+    int row;
+
+    if (srcPage < 0) return;
+    src = ensurePage(srcPage);
+    dst = ensurePage(s->curPage);
+    if (!src || !dst || src == dst) return;
+
+    for (row = 0; row < LOGICAL_HEIGHT; row++)
+        SDL_memcpy((uint8 *)dst->pixels + (size_t)row * dst->pitch,
+                   (uint8 *)src->pixels + (size_t)row * src->pitch,
+                   LOGICAL_WIDTH);
     return;
 }
 
@@ -894,19 +1349,26 @@ void FAR CDECL gfx_blitCore(int16 *blk) {
     uint16 srcSeg = (uint16)blk[0];
     uint16 srcCol = (uint16)blk[1];
     int srcRow = blk[2];
-    uint16 dstSeg;
     uint16 dstCol = (uint16)blk[4];
     int dstRow = blk[5];
     int w = blk[6];
     int h = blk[7];
     int row, col;
+    SDL_Surface *srcSurf, *dstSurf;
     if (blk[3] < 0 || blk[3] >= 16) return;
-    dstSeg = s->pageSegs[blk[3]];
+    srcSurf = gfx_surfaceForSeg(srcSeg);
+    dstSurf = gfx_surfaceForSeg(s->pageSegs[blk[3]]);
+    if (!srcSurf || !dstSurf) return;
     for (row = 0; row < h; row++) {
-        uint8 far *src = (uint8 far *)MK_FP(srcSeg, (uint16)((srcRow + row) * 320) + srcCol);
-        uint8 far *dst = (uint8 far *)MK_FP(dstSeg, (uint16)((dstRow + row) * 320) + dstCol);
+        int sr = srcRow + row, dr = dstRow + row;
+        uint8 *src, *dst;
+        if (sr < 0 || sr >= srcSurf->h || dr < 0 || dr >= dstSurf->h) continue;
+        src = (uint8 *)srcSurf->pixels + (size_t)sr * srcSurf->pitch + srcCol;
+        dst = (uint8 *)dstSurf->pixels + (size_t)dr * dstSurf->pitch + dstCol;
         for (col = 0; col < w; col++) {
-            uint8 px = src[col];
+            uint8 px;
+            if (srcCol + col >= (uint16)srcSurf->w || dstCol + col >= (uint16)dstSurf->w) break;
+            px = src[col];
             if (px) dst[col] = px;
         }
     }
@@ -946,7 +1408,8 @@ static const int g_ladderGeom[12] = {
 
 void FAR CDECL gfx_complexRender(int bxArg, int dxArg, int cxArg, int siArg) {
     GfxState FAR *s = gfx_getState();
-    uint8 far *page;
+    SDL_Surface *surf;
+    uint8 *page;
     uint8 color = 0x0f;
     int dir; /* +1 (SI!=0, cld) or -1 (SI==0, std) */
     int wi;  /* word index into the geometry table */
@@ -966,21 +1429,16 @@ void FAR CDECL gfx_complexRender(int bxArg, int dxArg, int cxArg, int siArg) {
 
     wi = siArg / 2; /* si is a byte offset; table is word-indexed */
     if (wi < 0 || wi + 8 > 11) return;
-    /* The geometry table lives in f15's DGROUP. When egame far-calls in, DS is
-     * egame's DGROUP (no table there), so reach it via f15DataSeg — exactly as
-     * MGRAPHIC reads its own data segment (its `mov ds,0` immediate is relocated
-     * to the overlay's data base) and as drawStringCore/gfx_setDac do here
-     * (Finding A). Reading it as a near array would yield garbage loY — and a
-     * garbage loY of 0 makes the unsigned `bx < loY` never true, so the loop
-     * never terminates and the flight freezes on the first HUD frame. */
-    {
-        int FAR *geom = (int FAR *)MK_FP(s->f15DataSeg, PTR_OFF(g_ladderGeom));
-        base = (uint16)geom[wi];
-        loY = (uint16)geom[wi + 4];
-        hiY = (uint16)geom[wi + 8];
-    }
+    /* g_ladderGeom is a real const array in this single-binary build; read it
+     * directly (the old MK_FP(f15DataSeg, ...) far-pointer reconstruction is the
+     * dead 16-bit-DOS path). */
+    base = (uint16)g_ladderGeom[wi];
+    loY = (uint16)g_ladderGeom[wi + 4];
+    hiY = (uint16)g_ladderGeom[wi + 8];
 
-    page = (uint8 far *)MK_FP(s->curPageSeg, 0);
+    surf = gfx_surfaceForSeg(s->curPageSeg);
+    if (!surf) return;
+    page = (uint8 *)surf->pixels;
     initRowOffsets();
 
     /* Skip the leading non-drawing iterations (bx > hiY). bx steps by 2, so the
@@ -1045,11 +1503,11 @@ void FAR CDECL gfx_setPageSeg(void) { return; }
  * it always clears the visible framebuffer. (egame only calls this from a dead
  * path, but start/end use it; implement faithfully.) */
 void FAR CDECL gfx_clearVga(void) {
-    uint16 far *vga = (uint16 far *)MK_FP(0xA000, 0);
-    uint16 i;
-    for (i = 0; i < 32000u; i++)
-        vga[i] = 0;
-    return;
+    SDL_Surface *front = ensurePage(0);
+    int y;
+    if (!front) return;
+    for (y = 0; y < front->h; y++)
+        SDL_memset((uint8 *)front->pixels + (size_t)y * front->pitch, 0, front->w);
 }
 /* Slot 0x2c: present the composited back buffer to the visible page.
  * MGRAPHIC's slot 0x2c copies the full 64000-byte page from pageSegs[1] (the
@@ -1060,8 +1518,35 @@ void FAR CDECL gfx_clearVga(void) {
  * cockpit copied to page 0 at startup, plus direct-to-page-0 draws, show. */
 void FAR CDECL gfx_dacAnimate(void) {
     GfxState FAR *s = gfx_getState();
-    movedata(s->pageSegs[1], 0, s->pageSegs[0], 0, 64000u);
+    /* Copy from the page the frame was just composited into (curPage), not a
+     * hardcoded page 1: the side/rear views render into page 0, so sourcing page 1
+     * here copied a stale frame over the live one (the alternate-view flicker). */
+    SDL_Surface *back = ensurePage(s->curPage);
+    SDL_Surface *front = ensurePage(0);
+    if (back && front && back != front) {
+        int y, w = (back->w < front->w) ? back->w : front->w;
+        int h = (back->h < front->h) ? back->h : front->h;
+        for (y = 0; y < h; y++) {
+            SDL_memcpy((uint8 *)front->pixels + (size_t)y * front->pitch,
+                       (const uint8 *)back->pixels + (size_t)y * back->pitch,
+                       (size_t)w);
+        }
+    }
     s->displayPage = 1;
+    /* Advance the fire colour-cycle on a fixed FIRE_CYCLE_HZ wall-clock schedule. */
+    {
+        Uint64 now = SDL_GetTicksNS();
+        int guard = 0;
+        if (s->cycleClockNs == 0)
+            s->cycleClockNs = now - FIRE_CYCLE_NS;
+        while (now - s->cycleClockNs >= FIRE_CYCLE_NS && guard++ < 4) {
+            s->cycleClockNs += FIRE_CYCLE_NS;
+            gfx_dacCycle();
+        }
+        if (now - s->cycleClockNs >= FIRE_CYCLE_NS)
+            s->cycleClockNs = now; /* fell far behind: snap forward */
+    }
+    gfx_presentPage(0);
     return;
 }
 /* ---- Slot 0x2e: gfx_dacCycle — DAC fire/target colour-cycle ----
@@ -1084,292 +1569,67 @@ void FAR CDECL gfx_dacCycle(void) {
     GfxState FAR *s = gfx_getState();
     uint16 phase;
     uint8 idx;
-    uint8 FAR *idxTab;
-    uint8 FAR *pal; /* flat 16x3 RGB table */
-    uint8 r, g, b;
+    SDL_Color col;
     uint8 reg;
+    int r, g, b;
 
-    /* The fire palette + index tables live in f15's DGROUP; egame far-calls in
-     * with its own DS, so reach them via f15DataSeg (Finding A) — otherwise the
-     * RGB reads are garbage (the symptom: the warning colour pulsed magenta/black
-     * instead of the red->dark-red->red->yellow fire ramp). */
-    idxTab = (uint8 FAR *)MK_FP(s->f15DataSeg, PTR_OFF(g_dacFireIndex));
-    pal = (uint8 FAR *)MK_FP(s->f15DataSeg, PTR_OFF(g_dacFirePalette));
+    if (!gfxPalette) gfxPalette = gfx_buildPalette();
+    if (!gfxPalette) return;
 
     /* Advance the phase counter (ax = ax*5 + 1) and pick the fire colour. */
     phase = (uint16)(s->dacPhase * 5u + 1u);
     s->dacPhase = phase;
-    idx = (uint8)(idxTab[(uint8)phase & 3] & 0x0f);
-    r = pal[idx * 3 + 0];
-    g = pal[idx * 3 + 1];
-    b = pal[idx * 3 + 2];
+    idx = (uint8)(g_dacFireIndex[(uint8)phase & 3] & 0x0f);
+    /* 6-bit VGA value -> 8-bit (shift left 2, replicate top 2 bits). */
+    r = g_dacFirePalette[idx][0] << 2;
+    g = g_dacFirePalette[idx][1] << 2;
+    b = g_dacFirePalette[idx][2] << 2;
+    col.r = (uint8)(r | (r >> 6));
+    col.g = (uint8)(g | (g >> 6));
+    col.b = (uint8)(b | (b >> 6));
+    col.a = 255;
 
-    /* Write the triple to 9 DAC entries: 0x8d,0x9d,..,0xfd,0x0d (reg wraps). */
+    /* Pulse the triple into the 9 DAC entries 0x8d,0x9d,..,0xfd,0x0d (reg wraps)
+     * — natively just rewrite those shared-palette colours in place. */
     reg = 0x8d;
     do {
-        outp(0x3C8, reg);
-        outp(0x3C9, r);
-        outp(0x3C9, g);
-        outp(0x3C9, b);
+        SDL_SetPaletteColors(gfxPalette, &col, (int)reg, 1);
         reg = (uint8)(reg + 0x10);
     } while (reg != 0x1d);
 
-    /* Screen-shake: while the countdown is nonzero, jitter CRTC start-addr-low
-     * (reg 0x0D) by the phase high byte, decrementing the countdown and resetting
-     * the register to 0 on the frame it reaches zero. */
+    /* Screen-shake: while the countdown is nonzero, shift the presented frame by
+     * the phase high byte (0-3 px), decrementing the countdown and clearing the
+     * shift on the frame it reaches zero. The original jittered the CRTC
+     * display-start byte; gfx_presentPage applies shakeOffset instead. */
     if (s->dacCounter != 0) {
-        uint8 jitter = (uint8)((phase >> 8) & 3);
-        if (--s->dacCounter == 0) jitter = 0;
-        outp(0x3D4, 0x0D);
-        outp(0x3D5, jitter);
+        s->shakeOffset = (int)((phase >> 8) & 3);
+        if (--s->dacCounter == 0) s->shakeOffset = 0;
+    } else {
+        s->shakeOffset = 0;
     }
     return;
 }
 void FAR CDECL gfx_setPageBuf(void) { return; }
 int FAR CDECL gfx_getConst1(void) { return 1; } /* baked constant 1 (cs:0x1d8 in MGRAPHIC) */
 
-/* ---- Slot function pointer table (84 entries, slots 0x00–0x53) ---- */
-/* MSC 5.1 forbids cast expressions in static initializers (C2097), so this
- * array starts zero-initialised and is filled at runtime by gfx_buildVirtualOverlay. */
-GfxSlotFn gfxSlotTable[0x54];
+/* ---- Initialise the shared GfxState ----
+ * Called once at startup from game_init(). The slot-dispatch table, OvlHeader
+ * and MISC/SOUND stub overlays that used to live here are gone: in the merged
+ * single-process build the gfx functions are called directly, so only the
+ * state defaults remain. */
+void gfx_initState(void) {
+    GfxState FAR *s = gfx_getState();
 
-static void fillSlotTable(void) {
-    gfxSlotTable[0x00] = (GfxSlotFn)gfx_allocPage;
-    gfxSlotTable[0x01] = (GfxSlotFn)gfx_fillDirty;
-    gfxSlotTable[0x02] = (GfxSlotFn)gfx_blitTransparent;
-    gfxSlotTable[0x03] = (GfxSlotFn)gfx_blitVariant;
-    gfxSlotTable[0x04] = (GfxSlotFn)gfx_copyBlock;
-    gfxSlotTable[0x05] = (GfxSlotFn)gfx_drawString;
-    gfxSlotTable[0x06] = (GfxSlotFn)gfx_drawStringUnclipped;
-    gfxSlotTable[0x07] = (GfxSlotFn)gfx_clipRight;
-    gfxSlotTable[0x08] = (GfxSlotFn)gfx_clipTop;
-    gfxSlotTable[0x09] = (GfxSlotFn)gfx_clipLeft;
-    gfxSlotTable[0x0a] = (GfxSlotFn)gfx_clipBottom;
-    gfxSlotTable[0x0b] = (GfxSlotFn)gfx_complexRender;
-    gfxSlotTable[0x0c] = (GfxSlotFn)gfx_initOverlay;
-    gfxSlotTable[0x0d] = (GfxSlotFn)gfx_setPage1;
-    gfxSlotTable[0x0e] = (GfxSlotFn)gfx_setPageN;
-    gfxSlotTable[0x0f] = (GfxSlotFn)gfx_setCurPageSeg;
-    gfxSlotTable[0x10] = (GfxSlotFn)gfx_getCurPageSeg;
-    gfxSlotTable[0x11] = (GfxSlotFn)gfx_blitSprite;
-    gfxSlotTable[0x12] = (GfxSlotFn)gfx_blitCore;
-    gfxSlotTable[0x13] = (GfxSlotFn)gfx_spriteVariant1;
-    gfxSlotTable[0x14] = (GfxSlotFn)gfx_spriteVariant2;
-    gfxSlotTable[0x15] = (GfxSlotFn)gfx_nop15;
-    gfxSlotTable[0x16] = (GfxSlotFn)gfx_nop16;
-    gfxSlotTable[0x17] = (GfxSlotFn)gfx_getBufSize;
-    gfxSlotTable[0x18] = (GfxSlotFn)gfx_setBlitOffset2;
-    gfxSlotTable[0x19] = (GfxSlotFn)gfx_setBlitOffset3;
-    gfxSlotTable[0x1a] = (GfxSlotFn)gfx_setBlitOffset;
-    gfxSlotTable[0x1b] = (GfxSlotFn)gfx_setBlitOffsetReg;
-    gfxSlotTable[0x1c] = (GfxSlotFn)gfx_getPresetOffset1;
-    gfxSlotTable[0x1d] = (GfxSlotFn)gfx_getPresetOffset2;
-    gfxSlotTable[0x1e] = (GfxSlotFn)gfx_getBlitOffset;
-    gfxSlotTable[0x1f] = (GfxSlotFn)gfx_drawLine;
-    gfxSlotTable[0x20] = (GfxSlotFn)gfx_setDrawColor;
-    gfxSlotTable[0x21] = (GfxSlotFn)gfx_setColor;
-    gfxSlotTable[0x22] = (GfxSlotFn)gfx_nop22;
-    gfxSlotTable[0x23] = (GfxSlotFn)gfx_nop23;
-    gfxSlotTable[0x24] = (GfxSlotFn)gfx_plotPixel;
-    gfxSlotTable[0x25] = (GfxSlotFn)gfx_dirtyRect2; /* 0x25 == 0x28 in MGRAPHIC */
-    gfxSlotTable[0x26] = (GfxSlotFn)gfx_storePageSeg;
-    gfxSlotTable[0x27] = (GfxSlotFn)gfx_setPageSeg;
-    gfxSlotTable[0x28] = (GfxSlotFn)gfx_dirtyRect2;
-    gfxSlotTable[0x29] = (GfxSlotFn)gfx_switchColor;
-    gfxSlotTable[0x2a] = (GfxSlotFn)gfx_copyRect;
-    gfxSlotTable[0x2b] = (GfxSlotFn)gfx_clearVga;
-    gfxSlotTable[0x2c] = (GfxSlotFn)gfx_dacAnimate;
-    gfxSlotTable[0x2d] = (GfxSlotFn)gfx_getDisplayPage;
-    gfxSlotTable[0x2e] = (GfxSlotFn)gfx_dacCycle;
-    gfxSlotTable[0x2f] = (GfxSlotFn)gfx_setFont;
-    gfxSlotTable[0x30] = (GfxSlotFn)gfx_blitToCurrent;
-    gfxSlotTable[0x31] = (GfxSlotFn)gfx_getAuxBufSize;
-    gfxSlotTable[0x32] = (GfxSlotFn)gfx_getFreeMem;
-    gfxSlotTable[0x33] = (GfxSlotFn)gfx_fillRow;
-    gfxSlotTable[0x34] = (GfxSlotFn)gfx_fillRow;
-    gfxSlotTable[0x35] = (GfxSlotFn)gfx_copyRow;
-    gfxSlotTable[0x36] = (GfxSlotFn)gfx_nop36;
-    gfxSlotTable[0x37] = (GfxSlotFn)gfx_nop37;
-    gfxSlotTable[0x38] = (GfxSlotFn)gfx_getPageSeg;
-    gfxSlotTable[0x39] = (GfxSlotFn)gfx_setPageBuf;
-    gfxSlotTable[0x3a] = (GfxSlotFn)gfx_getRowOffset;
-    gfxSlotTable[0x3b] = (GfxSlotFn)gfx_clearPage;
-    gfxSlotTable[0x3c] = (GfxSlotFn)gfx_setMode13;
-    gfxSlotTable[0x3d] = (GfxSlotFn)gfx_setFadeSteps;
-    gfxSlotTable[0x3e] = (GfxSlotFn)gfx_calcRowAddr;
-    gfxSlotTable[0x3f] = (GfxSlotFn)gfx_getModecode;
-    gfxSlotTable[0x40] = (GfxSlotFn)gfx_setOvlVal1;
-    gfxSlotTable[0x41] = (GfxSlotFn)gfx_setOvlVal2;
-    gfxSlotTable[0x42] = (GfxSlotFn)gfx_getModeFlag2;
-    gfxSlotTable[0x43] = (GfxSlotFn)gfx_getConst1;
-    gfxSlotTable[0x44] = (GfxSlotFn)gfx_setDac;
-    gfxSlotTable[0x45] = (GfxSlotFn)gfx_waitRetrace;
-    gfxSlotTable[0x46] = (GfxSlotFn)gfx_flipPage;
-    gfxSlotTable[0x47] = (GfxSlotFn)gfx_blitSpriteClipped;
-    gfxSlotTable[0x48] = (GfxSlotFn)gfx_blitSpriteClipped2;
-    gfxSlotTable[0x49] = (GfxSlotFn)gfx_blitSpriteOpaque;
-    gfxSlotTable[0x4a] = (GfxSlotFn)gfx_blitSpriteOpaque2;
-    gfxSlotTable[0x4b] = (GfxSlotFn)gfx_storeBufPtr;
-    gfxSlotTable[0x4c] = (GfxSlotFn)gfx_getModeFlag;
-    gfxSlotTable[0x4d] = (GfxSlotFn)gfx_getVal2;
-    gfxSlotTable[0x4e] = (GfxSlotFn)gfx_getVal;
-    gfxSlotTable[0x4f] = (GfxSlotFn)gfx_setDacAnimCount;
-    gfxSlotTable[0x50] = (GfxSlotFn)gfx_commitPage;
-    gfxSlotTable[0x51] = (GfxSlotFn)gfx_nop51;
-    gfxSlotTable[0x52] = (GfxSlotFn)gfx_setMonoFlag;
-    gfxSlotTable[0x53] = (GfxSlotFn)gfx_getCurPage;
-}
-
-/* ---- Build the virtual overlay block ---- */
-/* OvlHeader-compatible block so setupOverlaySlots (lowlvl.asm) can patch
- * start/end slot stubs to far-jump into f15.exe's gfx functions. */
-void gfx_buildVirtualOverlay(uint16 ovlSeg) {
-    uint16 codeSeg;
-    int i;
-    uint16 FAR *base;
-    GfxState FAR *s;
-
-    /* Populate slot table */
-    fillSlotTable();
-
-    /* Get f15.exe's code segment via a far pointer to a FAR-declared gfx function.
-     * In small model, FAR functions still reside in the one code segment (CS),
-     * so FP_SEG of any FAR function pointer gives CS. */
-    {
-        typedef int(FAR * FarFn)(void);
-        FarFn fp = (FarFn)gfx_allocPage;
-        codeSeg = FP_SEG(fp);
-    }
-
-    /* Zero the entire 80-paragraph (1280-byte) block */
-    base = (uint16 FAR *)MK_FP(ovlSeg, 0);
-    for (i = 0; i < 640; i++)
-        base[i] = 0;
-
-    /* OvlHeader fields read by setupOverlaySlots (lowlvl.asm) */
-    *(uint16 FAR *)MK_FP(ovlSeg, 0x18) = codeSeg; /* OVL_HDR_CODESEG  */
-    *(uint16 FAR *)MK_FP(ovlSeg, 0x1C) = 0;       /* OVL_HDR_FIRSTIDX */
-    *(uint16 FAR *)MK_FP(ovlSeg, 0x22) = 0x54;    /* OVL_HDR_SLOTCOUNT */
-
-    /* Slot offset table at 0x24 (immediately after slotCount@0x22): one uint16
-     * per slot. This is where the ASM setupOverlaySlots (overlay_slots.inc reads
-     * `mov si,24h`) expects it — NOT 0x244. */
-    for (i = 0; i < 0x54; i++)
-        *(uint16 FAR *)MK_FP(ovlSeg, 0x24 + i * 2) = PTR_OFF(gfxSlotTable[i]);
-
-    /* Initialize GfxState defaults */
-    s = (GfxState FAR *)MK_FP(ovlSeg, GFX_STATE_OFFSET);
     s->modeFlag = 1;
-    s->rowOffsetsReady = 0;
     s->displayPage = 1;  /* MGRAPHIC cs:0x1a2 default; back buffer = page 1 */
     s->dacPhase = 0x4d2; /* MGRAPHIC data-seg 0x1ccc seed (dacCycle phase) */
-    for (i = 0; i < 16; i++) {
-        s->pageSegs[i] = 0;
-    }
-    /* Record f15.exe's DGROUP segment so gfx const tables remain reachable
-     * when a child far-calls in with its own DS (Finding A). This runs in
-     * f15.exe, so the far address of any DGROUP object carries f15's DS.
-     * FP_SEG needs an lvalue, so stage the far pointer in a local first. */
+    /* pageSegs[] and rowOffsetsReady are zero by default (file-scope global). */
+
+    /* Record f15's DGROUP segment so the gfx const tables (palettes, font
+     * tables) remain reachable via far pointer regardless of the caller's DS
+     * (Finding A). */
     {
         void FAR *anchorFp = (void FAR *)&dgroupAnchor;
         s->f15DataSeg = FP_SEG(anchorFp);
     }
-}
-
-/* ===================================================================
- * Stub MISC and SOUND overlays — provided by f15.exe itself so the
- * pure-DOS build does not depend on the original MISC.EXE / NSOUND.EXE.
- *
- *   - Sound is intentionally absent under DOS (roadmap: real audio only
- *     on non-DOS targets), so every audio slot is a no-op.
- *   - Misc is a placeholder: keyboard/joystick report "nothing pending"
- *     so the splash auto-advances. Its real behaviour must be replicated
- *     for a functional game.
- *
- * These reuse the same OvlHeader-compatible layout as the gfx overlay
- * (codeSeg@0x18, firstIdx@0x1C, slotCount@0x22, offsets@0x24), so the
- * child's ASM setupOverlaySlots patches them just like the real overlays.
- * =================================================================== */
-
-/* Generic no-op far slot (return value lands in AX). */
-int FAR CDECL ovl_nop(void) { return 0; }
-
-/* Misc/input slots (0x5a-0x5f), reimplemented faithfully from MISC.EXE so the
- * pure-DOS build has working keyboard input without loading MISC.EXE.
- *
- * Original MISC.EXE disassembly:
- *   0x5a keybuf: mov ah,1; int 16h; jz empty; sub ax,ax; retf  (0 = key avail)
- *                empty: sub ax,ax; not ax; retf                (0xFFFF = empty)
- *   0x5b getkey: sub ah,ah; int 16h; retf  (raw BIOS AX: AH=scan, AL=ascii;
- *                callers in pollMenuInput mask &0xff when AL!=0)
- *   0x5e clearKeyFlags: zero the low nibble of BDA 0040:0417 (shift state) */
-
-/* Slot 0x5a: 0 if a key is waiting, 0xFFFF if the buffer is empty. INT 16h
- * AH=01h sets ZF when empty, but int86() does not expose ZF — so test the
- * BIOS keyboard buffer head/tail (0040:001A / 0040:001C), which is exactly
- * what AH=01h inspects (equal => empty). */
-int FAR CDECL miscStub_keybuf(void) {
-    uint16 FAR *head = (uint16 FAR *)MK_FP(0x40, 0x1a);
-    uint16 FAR *tail = (uint16 FAR *)MK_FP(0x40, 0x1c);
-    return (*head == *tail) ? (int)0xFFFF : 0;
-}
-
-/* Slot 0x5b: return the raw BIOS keystroke (AH=scancode, AL=ascii). Blocks
- * until a key is available, matching the original. */
-int FAR CDECL miscStub_getkey(void) {
-    union REGS r;
-    r.h.ah = 0;
-    int86(0x16, &r, &r);
-    return (int)r.x.ax;
-}
-
-int FAR CDECL miscStub_readJoy(void) { return 0; }
-
-/* Slot 0x5e: clear the active-modifier low nibble of the BDA shift-flags byte. */
-int FAR CDECL miscStub_clearKeyFlags(void) {
-    uint8 FAR *flags = (uint8 FAR *)MK_FP(0x40, 0x17);
-    *flags &= 0xf0;
-    return 0;
-}
-
-/* Write an OvlHeader-compatible stub overlay covering `count` slots starting
- * at `firstIdx`, pointing each at the corresponding fn (an f15.exe offset). */
-static void buildStubOverlay(uint16 ovlSeg, uint16 firstIdx, uint16 count,
-                             const GfxSlotFn *fns) {
-    uint16 codeSeg;
-    uint16 i;
-    uint16 FAR *base;
-    {
-        typedef int(FAR * FarFn)(void);
-        FarFn fp = (FarFn)ovl_nop;
-        codeSeg = FP_SEG(fp);
-    }
-    /* zero the header region (0x00..0x23) plus the offset table */
-    base = (uint16 FAR *)MK_FP(ovlSeg, 0);
-    for (i = 0; i < (uint16)(0x12 + count); i++)
-        base[i] = 0;
-    *(uint16 FAR *)MK_FP(ovlSeg, 0x18) = codeSeg;
-    *(uint16 FAR *)MK_FP(ovlSeg, 0x1C) = firstIdx;
-    *(uint16 FAR *)MK_FP(ovlSeg, 0x22) = count;
-    for (i = 0; i < count; i++)
-        *(uint16 FAR *)MK_FP(ovlSeg, 0x24 + i * 2) = PTR_OFF(fns[i]);
-}
-
-void gfx_buildMiscOverlay(uint16 ovlSeg) {
-    GfxSlotFn fns[6];
-    fns[0] = (GfxSlotFn)miscStub_keybuf;        /* 0x5a */
-    fns[1] = (GfxSlotFn)miscStub_getkey;        /* 0x5b */
-    fns[2] = (GfxSlotFn)ovl_nop;                /* 0x5c */
-    fns[3] = (GfxSlotFn)miscStub_readJoy;       /* 0x5d */
-    fns[4] = (GfxSlotFn)miscStub_clearKeyFlags; /* 0x5e */
-    fns[5] = (GfxSlotFn)ovl_nop;                /* 0x5f */
-    buildStubOverlay(ovlSeg, 0x5a, 6, fns);
-}
-
-void gfx_buildSoundOverlay(uint16 ovlSeg) {
-    GfxSlotFn fns[10]; /* slots 0x64-0x6d, all no-op (no sound) */
-    int i;
-    for (i = 0; i < 10; i++)
-        fns[i] = (GfxSlotFn)ovl_nop;
-    buildStubOverlay(ovlSeg, 0x64, 10, fns);
 }

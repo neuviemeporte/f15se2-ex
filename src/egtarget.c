@@ -15,14 +15,11 @@
 #include "offsets.h"
 #include "pointers.h"
 #include "log.h"
-#include "slot.h"
 #include "const.h"
 
 #include "comm.h"
 
 #include <dos.h>
-#include <conio.h>
-#include <bios.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -463,7 +460,7 @@ void drawHudWorldOverlay(void) {
                                     g_lockToneFlag = 1;
                                     lockFlag = 1;
                                     if (sams[missileSpec].lockRange > (-g_projDepth >> 1 >> 1)) {
-                                        setDrawColor(*(char *)&gfxModeUnset != 0 ? 0 : 0x0c);
+                                        setDrawColor(0x0c);
                                     }
                                 }
                             } else {
@@ -562,7 +559,7 @@ void drawHudWorldOverlay(void) {
                                 g_lockToneFlag = 1;
                                 lockFlag = 1;
                                 if (-g_projDepth >> 1 >> 1 < sams[missileSpec].lockRange) {
-                                    setDrawColor(*(char *)&gfxModeUnset != 0 ? 0 : 0x0c);
+                                    setDrawColor(0x0c);
                                 }
                             }
                         }

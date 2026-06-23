@@ -28,9 +28,9 @@ void positionUnit(int, int);
 int approxDistance(int, int);
 void parseWorld(const char *);
 int calcBearing(int, int);
-int setMoveDstComm7A(const char *filename, const char *mode);
-void memAppend(const void *ptr, int itemsz, int count, FILE *unused);
-void doNothing(FILE *);
+void setMoveDstComm7A(const char *filename, const char *mode);
+void memAppend(void *ptr, int itemsz, int count, SDL_IOStream *unused);
+void doNothing(SDL_IOStream *);
 char *formatGridRef(int16, int16, int16);
 int clampValue(int, int, int);
 
@@ -38,7 +38,6 @@ void missionGenerate() {
     difficultySaved = gameData->difficulty;
     theaterSaved = gameData->theater & 3;
     flag4Saved = gameData->isCampaignMission;
-    Log(("missionGenerate(): parsing world %s", worldFiles[gameData->theater]));
     parseWorld(worldFiles[gameData->theater]);
     mystrcpy(regnPlhPtr, plhFiles[gameData->theater]);
     parseGridTerrain();
@@ -70,7 +69,6 @@ void runGenerator() {
     minDist = 250;
 restart_40a8:
     do {
-        Log(("runGenerator(): outer, %d", attempt));
         attempt = attempt + 1;
         if (999 < attempt) goto counterMore1k;
         do {
@@ -84,7 +82,7 @@ restart_40a8:
                         randIdx = randMul(224) * 0x80 + 0x840;
                         randY = randMul(224) * 0x80 + 0x840;
                     } while ((terrainGrid[(randIdx >> 0xb) + ((randY >> 0xb) * 16)] & 3) != 0);
-                } while ((uint16)(targets[0].targetIdx = findOrPlaceItem(randIdx, randY, 1)) == 0xffffu);
+                } while ((targets[0].targetIdx = findOrPlaceItem(randIdx, randY, 1)) == -1);
             }
             if (missionPick == 7) {
                 targets[1].targetIdx = findOrPlaceItem(targetCoordsXPtrs[missionPick][randIdx],
@@ -374,21 +372,21 @@ int approxDistance(int dx, int dy) {
 
 void parseWorld(const char *filename) {
     int nameIdx, scanPos;
-    if ((fileHandle = fopen(filename, "rb")) == NULL) return;
-    // fread(buffer, size, count, stream)
-    fread(wldReadBuf1, 2, 1, fileHandle);
-    fread(&readItemSize, 2, 1, fileHandle);
-    fread(&groundUnitCount, 2, 1, fileHandle);
-    fread(&worldObjectCount, 2, 1, fileHandle);
-    fread(worldObjects, WORLDOBJECT_SIZE, readItemSize, fileHandle);
-    fread(&flightUnitCount, 2, 1, fileHandle);
-    fread(flightUnits, FLIGHTUNIT_SIZE, flightUnitCount, fileHandle);
-    fread(wldReadBuf7, BUF7SIZE, 1, fileHandle);
-    fread(wldReadBuf8, BUF7SIZE, 1, fileHandle);
-    fread(objectTypeTable, BUF7SIZE, 1, fileHandle);
-    fread(terrainGrid, 1, BUF10SIZE, fileHandle);
-    fread(wldReadBuf11, 1, WORLD_BUFSZ, fileHandle);
-    fclose(fileHandle);
+    if ((fileHandle = openFile(filename, 0)) == NULL) return;
+    // fileRead(buffer, size, count, stream)
+    fileRead(wldReadBuf1, 2, 1, fileHandle);
+    fileRead(&readItemSize, 2, 1, fileHandle);
+    fileRead(&groundUnitCount, 2, 1, fileHandle);
+    fileRead(&worldObjectCount, 2, 1, fileHandle);
+    fileRead(worldObjects, WORLDOBJECT_SIZE, readItemSize, fileHandle);
+    fileRead(&flightUnitCount, 2, 1, fileHandle);
+    fileRead(flightUnits, FLIGHTUNIT_SIZE, flightUnitCount, fileHandle);
+    fileRead(wldReadBuf7, BUF7SIZE, 1, fileHandle);
+    fileRead(wldReadBuf8, BUF7SIZE, 1, fileHandle);
+    fileRead(objectTypeTable, BUF7SIZE, 1, fileHandle);
+    fileRead(terrainGrid, 1, BUF10SIZE, fileHandle);
+    fileRead(wldReadBuf11, 1, WORLD_BUFSZ, fileHandle);
+    fileClose(fileHandle);
     wldOffsets[0] = wldReadBuf11;
     nameIdx = 1;
     // iterate over the place name strings in the world data, find null bytes, build char pointer table
@@ -401,7 +399,7 @@ void parseWorld(const char *filename) {
 
 void exportWorldToComm(const char *filename) {
     int unused;
-    if ((fileHandle = (FILE *)setMoveDstComm7A(filename, "wb")) == NULL) return;
+    setMoveDstComm7A(filename, "wb");
     memAppend(wldReadBuf1, 2, 1, fileHandle);
     memAppend(&readItemSize, 2, 1, fileHandle);
     memAppend(&groundUnitCount, 2, 1, fileHandle);
@@ -415,7 +413,18 @@ void exportWorldToComm(const char *filename) {
     memAppend(terrainGrid, 1, 0x100, fileHandle);
     memAppend(&missionDistAccum, 2, 1, fileHandle);
     memAppend(&escortMissionFlag, 2, 1, fileHandle);
-    memAppend(&missionMidX, 4, 4, fileHandle);
+    /* Originally one 16-byte block read (4x4) over the contiguous mission
+     * coordinate words; the port split these into separate globals (and widened
+     * missionTargetX/Y to 32-bit), so append each 16-bit word explicitly to keep
+     * the on-wire layout the reader (waypoints, 16 bytes) expects. */
+    memAppend(&missionMidX, 2, 1, fileHandle);
+    memAppend(&missionMidY, 2, 1, fileHandle);
+    memAppend(&missionTargetX, 2, 1, fileHandle);
+    memAppend(&missionTargetY, 2, 1, fileHandle);
+    memAppend(&missionTarget2X, 2, 1, fileHandle);
+    memAppend(&missionTarget2Y, 2, 1, fileHandle);
+    memAppend(&missionBase2X, 2, 1, fileHandle);
+    memAppend(&missionBase2Y, 2, 1, fileHandle);
     memAppend(targets, 18, 2, fileHandle);
     doNothing(fileHandle);
 }
@@ -457,19 +466,19 @@ int calcBearing(int dx, int dy) {
     return result;
 }
 
-int setMoveDstComm7A(const char *filename, const char *mode) {
-    moveDst = (uint8 FAR *)(&commData->worldBuf);
-    return 1;
+void setMoveDstComm7A(const char *filename, const char *mode) {
+    moveDst = (uint8 FAR *)(commData->worldBuf);
 }
 
-void memAppend(const void *ptr, int itemsz, int count, FILE *unused) {
-    const void FAR *farptr;
-    farptr = ptr;
-    movedata(FP_SEG(farptr), FP_OFF(farptr), FP_SEG(moveDst), FP_OFF(moveDst), itemsz * count);
+void memAppend(void *ptr, int itemsz, int count, SDL_IOStream *unused) {
+    /* moveDst is a real cursor into commData->worldBuf (set by
+     * setMoveDstComm7A); the original DOS movedata segment copy is dead. */
+    (void)unused;
+    memcpy(moveDst, ptr, (size_t)itemsz * count);
     moveDst += itemsz * count;
 }
 
-void doNothing(FILE *handle) {
+void doNothing(SDL_IOStream *handle) {
 }
 
 char *getItemCoordStr(int16 idx) {

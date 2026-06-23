@@ -13,13 +13,11 @@
 #include "offsets.h"
 #include "pointers.h"
 #include "log.h"
-#include "slot.h"
+#include "gfx.h"
 #include "const.h"
 #include "comm.h"
 
 #include <dos.h>
-#include <conio.h>
-#include <bios.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,10 +47,8 @@ void renderHudFrame(int unused) {
     // probably x,y
     deltaX = waypoints[waypointIndex].mapX - g_viewX_;
     deltaY = waypoints[waypointIndex].mapY - g_viewY_;
-    Log(("renderHudFrame: after waypoints, g_hudVisible=%d", g_hudVisible));
     g_waypointBearing = computeBearing(deltaX, -deltaY);
     if (g_hudVisible != 0) {
-        Log(("renderHudFrame: g_hudVisible branch, g_damageTakenFlag=%d", g_damageTakenFlag));
         if (g_damageTakenFlag != 0) {
             g_damageTakenFlag = 0;
             if (!(keyValue & 0x80)) {
@@ -61,10 +57,8 @@ void renderHudFrame(int unused) {
                 gfx_setDacAnimCount(60);
             }
         }
-        Log(("renderHudFrame: past 8ed2, keyValue=%d g_halfScaleRender=%d", keyValue, g_halfScaleRender));
         g_hudDrawnFlag = 1;
         if (keyValue == 0 && g_halfScaleRender == 0) {
-            Log(("renderHudFrame: entering keyValue==0 branch, setupUseJoy=%d", commData->setupUseJoy));
             if (!commData->setupUseJoy) {
                 setDrawColor(0);
                 drawViewportLine(277, 83, 293, 83);
@@ -113,7 +107,7 @@ void renderHudFrame(int unused) {
                 }
                 // 7 = air to air? Only Sidewinder and Amraam have it
                 if (sams[missiles[missleSpec[missileSpecIndex].weaponIdx].specIndex].weaponClass == 7) {
-                    setDrawColor((uint8)gfxModeUnset != 0 ? 0xf : 7);
+                    setDrawColor(7);
                     for (angle = 0; angle <= 0x100; angle += 0x10) {
                         angleFixed = angle << 8;
                         circleX = sinMul(angleFixed, 40) + 159;
@@ -222,7 +216,7 @@ void redrawTacMap(int centerX, int centerY) {
     g_mapCenterX = clampRange(sinMul(g_ourHead, 0x4000 >> g_mapZoomLevel) + centerX, idx, 0x7fff - idx);
     idx = (56 << (9 - g_mapZoomLevel)) / 3 * 4;
     g_mapCenterY = clampRange(centerY - cosMul(g_ourHead, 0x4000 >> g_mapZoomLevel), idx, 0x7fff - idx);
-    loadColorPalette(commData->gfxModeNum != 0 ? 0 : 3);
+    loadColorPalette(0);
     gfx_setFadeSteps(19);
     renderMapTerrain(g_mapTerrainMode, g_mapCenterX / 2, -(g_mapCenterY / 2 - 0x4000), 9 - g_mapZoomLevel);
     if (gameData->theater < 2) {
@@ -239,13 +233,13 @@ void redrawTacMap(int centerX, int centerY) {
         }
         if (((g_planeTable.planes[idx].flags & 0x481) == 0x401 || (g_planeTable.planes[idx].flags & 0x200)) &&
             objectToScreen(g_planeTable.planes[idx].mapX, g_planeTable.planes[idx].mapY, &screenX, &screenY)) {
-            blitSprite(screenX - 1, screenY - 1, (uint8)gfxModeUnset != 0 ? 0xac : 0xb0, 0, 4, 4, 0);
+            blitSprite(screenX - 1, screenY - 1, 0xb0, 0, 4, 4, 0);
         }
     }
     for (idx = 0; idx < 2; idx++) {
         if (!(g_playerPlaneFlags & (0x4000 >> idx)) &&
             objectToScreen(waypoints[idx + 1].mapX, waypoints[idx + 1].mapY, &screenX, &screenY)) {
-            blitSprite(screenX - 1, screenY - 1, (uint8)gfxModeUnset != 0 ? 0xb4 : 0xa8, 0, 4, 4, 0);
+            blitSprite(screenX - 1, screenY - 1, 0xa8, 0, 4, 4, 0);
         }
     }
     g_drawPage = savedPage;
@@ -542,11 +536,14 @@ void drawStringActivePage(const char *text, int screenX, int screenY, int color)
 
 // ==== seg000:0xa13a ====
 void egDrawStringCentered(int16 *strStruct, const char *text, int screenX, int screenY, int color) {
+    char buf[256];
     strStruct[6] = 0;
     strStruct[4] = screenX;
     strStruct[5] = screenY;
     strStruct[2] = color;
-    gfx_drawString(strStruct, strupr((char *)text));
+    strncpy(buf, text, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+    gfx_drawString(strStruct, strupr(buf));
 }
 
 // ==== seg000:0xa183 ====

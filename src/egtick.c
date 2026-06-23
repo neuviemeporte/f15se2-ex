@@ -11,9 +11,6 @@
  *      so after the autostart warmup the plane is way past its spawn (the
  *      "wrong spawn position" symptom - it is actually a pacing bug, not a
  *      mission-init bug).
- *   2. Run the MGRAPHIC DAC fire/target colour-cycle (slot 0x2e) so animated
- *      palette entries (target markers, fire warning) pulse instead of sitting
- *      at their un-cycled base colour (the "pink marker" symptom).
  * g_frameTimingAccum is also bumped (the frame-rate pacer recalibrates against
  * it). audio_timerTick and the PIT rate-recalibration the original also did here
  * are out of scope: audio is stubbed and the C timer runs a fixed PIT rate.
@@ -37,5 +34,4 @@ void far egAdvanceFrameTick(void) {
     g_frameSyncPending = 0;
     g_timerTickByte[0]++;
     g_frameTimingAccum++;
-    gfx_dacCycle();
 }

@@ -1,5 +1,5 @@
 /* enaward.c — memory/pics/awards, compiled with /Gs */
-#include "slot.h"
+#include "gfx.h"
 #include "pointers.h"
 #include "log.h"
 #include "endata.h"
@@ -7,31 +7,22 @@
 #include "enaward.h"
 #include "eninput.h"
 #include "shared/common.h"
+#include <SDL3/SDL.h>
 
-/* Private helpers for this translation unit. */
-int dos_free(int segment);
-void loadPicFromFile(const char *name, uint16 segment);
-void loadPicFromFileAt(const char *name, uint16 segment, int off, int whence);
+void loadPicFromFile(const char *name, int segment);
+void loadPicFromFileAt(const char *name, int segment, int off, SDL_IOWhence whence);
 
-void freeBuffer(uint16 segment) {
-    if (dos_free(segment) != 0) {
-        cleanup();
-        dos_printstring("Buffer dealloc error$");
-        exit(0);
-    }
-}
-
-void loadPicFromFile(const char *name, uint16 segment) {
-    int handle;
+void loadPicFromFile(const char *name, int segment) {
+    SDL_IOStream *handle;
     handle = openFileWrapper(name, 0);
     decodePicRaw(handle, segment);
     closeFileWrapper(handle);
 }
 
-void loadPicFromFileAt(const char *name, uint16 segment, int off, int whence) {
-    int handle;
+void loadPicFromFileAt(const char *name, int segment, int off, SDL_IOWhence whence) {
+    SDL_IOStream *handle;
     handle = openFileWrapper(name, 0);
-    lseek(handle, off, whence);
+    SDL_SeekIO(handle, off, whence);
     decodePic(handle, segment);
     closeFileWrapper(handle);
 }
@@ -40,7 +31,7 @@ void loadPicFromFileAt(const char *name, uint16 segment, int off, int whence) {
 void showPostMissionAwards(void) {
     int idx;
     awardPage[3] = 0;
-    if (commData->gfxModeChar != 0)
+    if (commData->trainingFlag != 0)
         goto done;
     if (gameData->campaignProgress == 1) {
         gfx_setFadeSteps(3);
