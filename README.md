@@ -4,7 +4,7 @@ This is a work in progress project to port, fix and enhance the [reconstructed s
 
 Unlike the old project, whose aim was a bug-for-bug, instruction-level faithful recreation of the game for the orginal MS-DOS platform and the MS C v5.1 compiler, here we aim to keep as much of the game's spirit intact, while taking it forward into the 21st century with modern language features, better graphics and enhanced features.
 
-The repository was forked off from tag `v0.9.2`, and the idea is that the reconstruction might see occasional backports from this project which clarify or document the original code, but of course these will need to make sure to preserve the reconstruction's contract of instruction-level identity with the original. 
+The repository was forked off from tag `v0.9.2`, and the idea is that the reconstruction might see occasional backports from this project which clarify or document the original code, but of course these will need to make sure to preserve the reconstruction's contract of instruction-level identity with the original.
 
 The project is based on the [SDL3 library](https://github.com/libsdl-org/SDL/releases) for the graphical frontend. Initially, we're going to keep the original, software-based 3d rendering engine that outputs to a flat framebuffer, but the goal is to switch to a modern 3D rendering API like OpenGL or Vulkan at some point in the future.
 
@@ -21,7 +21,7 @@ $ cmake --preset <preset-name> # only needed the first time around, or when maki
 $ cmake --build build
 ```
 
-The project includes the default preset `base-ninja` in `CMakePresets.json`. It's possible to manually override platform-specific values for the build using CMake's user presets. 
+The project includes the default preset `base-ninja` in `CMakePresets.json`. It's possible to manually override platform-specific values for the build using CMake's user presets.
 
 ### Linux
 
