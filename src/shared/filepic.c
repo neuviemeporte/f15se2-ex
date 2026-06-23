@@ -8,7 +8,7 @@
 
 int openFile(const char *name, int mode);
 void fileClose(int handle);
-void decodePic(int handle, int segment);
+void decodePic(int handle, uint16 segment);
 
 void mystrcpy(char *dest, const char *source) {
     do {
@@ -38,7 +38,7 @@ void openShowPic(char *filename, int page) /* Original chain: OpenFile + show/de
     TRACE(("openShowPic: file closed, returning"));
 }
 
-void loadPic(const char *filename, int segment) { /* Original chain: OpenFile + DecodePic(InSeg, OutSeg) + CloseFile. Load PIC into segment. */
+void loadPic(const char *filename, uint16 segment) { /* Original chain: OpenFile + DecodePic(InSeg, OutSeg) + CloseFile. Load PIC into segment. */
     int handle;
     handle = openFileWrapper(filename, 0);
     TRACE(("loadPic(): opened %s, loading into segment 0x%x", filename, segment));

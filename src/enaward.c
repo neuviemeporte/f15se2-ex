@@ -10,10 +10,10 @@
 
 /* Private helpers for this translation unit. */
 int dos_free(int segment);
-void loadPicFromFile(char *name, int segment);
-void loadPicFromFileAt(char *name, int segment, int off, int whence);
+void loadPicFromFile(char *name, uint16 segment);
+void loadPicFromFileAt(char *name, uint16 segment, int off, int whence);
 
-void freeBuffer(int segment) {
+void freeBuffer(uint16 segment) {
     TRACE(("freeBuffer"));
     if (dos_free(segment) != 0) {
         cleanup();
@@ -23,7 +23,7 @@ void freeBuffer(int segment) {
 }
 
 
-void loadPicFromFile(char *name, int segment) {
+void loadPicFromFile(char *name, uint16 segment) {
     int handle;
     TRACE(("loadPicFromFile"));
     handle = openFileWrapper(name, 0);
@@ -32,7 +32,7 @@ void loadPicFromFile(char *name, int segment) {
 }
 
 
-void loadPicFromFileAt(char *name, int segment, int off, int whence) {
+void loadPicFromFileAt(char *name, uint16 segment, int off, int whence) {
     int handle;
     TRACE(("loadPicFromFileAt"));
     handle = openFileWrapper(name, 0);
@@ -72,7 +72,7 @@ void showPostMissionAwards(void) {
         goto show;
     }
     // 1fa8
-    if (((unsigned)gameData->rank < 6) && (*(long *)&promoThresholds[gameData->rank] < gameData->totalScore)) {
+    if (((unsigned)gameData->rank < 6) && (promoThresholds[gameData->rank] < gameData->totalScore)) {
         gfx_setFadeSteps(6);
         openShowPic("promo.pic", *awardPage);
         awardColor = 1;
@@ -87,7 +87,7 @@ void showPostMissionAwards(void) {
 medals:
     idx = 4;
     for (; idx >= 0; idx--) {
-        if (*(long *)&missionScore > *(long *)&medalThresholds[idx])
+        if (missionScore > medalThresholds[idx])
             break;
     }
     if (idx < 0)

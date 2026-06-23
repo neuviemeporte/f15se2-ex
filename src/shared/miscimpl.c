@@ -84,7 +84,9 @@ unsigned long scaleCoordByLevel(int level, unsigned long coord)
     return coord;
 }
 
+#if !defined(MSDOS)
 uint16 dos_alloc(int size)
 {
     return 0;
 }
+#endif
