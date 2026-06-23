@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include "egtypes.h"
 
+typedef struct SDL_IOStream SDL_IOStream;
+
 /*
  * The 3D world data lives in one contiguous far buffer. The aircraft-model region
  * (g_aircraftModels) sits AIRCRAFT_MODELS_OFFSET bytes into the region/object buffer
@@ -32,7 +34,6 @@ extern struct SpriteParams blitSpriteParams;
 extern struct BulletTrack bulletTracks[20];
 extern uint8 g_dacSupported;
 extern uint8 exitCode;
-extern int16 gfxModeUnset;
 extern int16 f15DgtlResult;
 extern char *regnStr;
 extern const char *scenarioPlh[];
@@ -223,7 +224,7 @@ extern int g_detailLevel;
 extern int16 g_autoCrashDive;
 extern int16 g_missionTick;
 extern uint8 far *g_floppyMotorPtr;
-extern FILE *fileHandle;
+extern SDL_IOStream *fileHandle;
 extern int16 g_gunFiredFlag;
 extern int16 g_damageTakenFlag;
 extern int16 g_threatRefHead;
@@ -275,7 +276,6 @@ extern int16 g_liftForce;
 extern int16 g_wreckFallVel;
 extern int16 g_camEyeZ;
 extern int16 g_threatRefY;
-extern uint8 hercFlag;
 extern int16 g_viewRoll;
 extern struct DynTileOverride g_dynTileEntries[]; // overlaps the following bytes with structs
 extern int16 g_threatRefZ;

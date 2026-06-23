@@ -7,6 +7,8 @@
 /* ---- graphics (first slot 0, 84 used) ---- */
 /* dseg:0xab8 */
 int FAR CDECL gfx_allocPage(int pageNum);              /* slot 0x00: alloc 64K page, returns seg */
+int gfx_allocSpriteBuf(void);                          /* alloc a sprite-sheet surface, returns a handle */
+void gfx_freeSpriteBuf(int handle);                    /* release a sprite-sheet surface handle */
 void FAR CDECL gfx_fillDirty(int16 *params, const char *string);       /* slot 0x01: clipped glyph variant (vertical window) */
 void FAR CDECL gfx_blitTransparent(int16 *params, const char *string); /* slot 0x02: clipped glyph variant (horizontal window) */
 void FAR CDECL gfx_blitVariant(int16 *params, const char *string);     /* slot 0x03: clipped glyph variant (horizontal window) */
@@ -68,7 +70,7 @@ void FAR CDECL gfx_setPageBuf();                        /* slot 0x39: pageSegs[i
 int FAR CDECL gfx_getRowOffset(int y);                 /* slot 0x3a: returns y*320 */
 void FAR CDECL gfx_clearPage(uint16 seg);              /* slot 0x3b: select seg as curPage and clear it */
 /* dseg:0xbe4 */
-void FAR CDECL gfx_setMode13(int16 monoFlag);           /* slot 0x3c: INT 10h mode 13h */
+void FAR CDECL gfx_setMode13(void);                     /* slot 0x3c: switch to 320x200 (lo-res) */
 void FAR CDECL gfx_setFadeSteps(int steps);             /* slot 0x3d: setFadeSteps */
 int FAR CDECL gfx_calcRowAddr(int y, int x);           /* slot 0x3e: calcRowAddr */
 /* dseg:0xbf3 */
@@ -92,7 +94,6 @@ int FAR CDECL gfx_getVal();                            /* slot 0x4e: getter */
 void FAR CDECL gfx_setDacAnimCount(uint16 count);       /* slot 0x4f: setDacAnimCount */
 void FAR CDECL gfx_commitPage();                        /* slot 0x50: commitPage */
 void FAR CDECL gfx_nop51();                             /* slot 0x51: retf */
-void FAR CDECL gfx_setMonoFlag(uint16 mono);            /* slot 0x52: setMonoFlag */
 void FAR CDECL gfx_getCurPage(int page);                /* slot 0x53: bare RETF no-op */
 int FAR CDECL gfx_slot54();
 int FAR CDECL gfx_slot55();

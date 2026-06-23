@@ -28,29 +28,29 @@ void load15Flt3d3() {
     TRACE(("load15Flt3d3: a15flt_xxx=%s", a15flt_xxx));
     strcpyFromDot(a15flt_xxx, ".3D3");
     TRACE(("load15Flt3d3: after strcpyFromDot=%s", a15flt_xxx));
-    fileHandle = fopen(a15flt_xxx, "rb");
-    TRACE(("load15Flt3d3: fopen returned %d", (int)fileHandle));
+    fileHandle = openFile(a15flt_xxx, 0);
+    TRACE(("load15Flt3d3: openFile returned %p", (void *)fileHandle));
     if (fileHandle == NULL) {
         printError("Open Error on *.3D3");
         return;
     }
-    fread(&flt15HeaderWord, 2, 1, fileHandle);
-    fread(&flt15_size, 2, 1, fileHandle);
-    fread(flt15_buf1, 2, flt15_size, fileHandle);
-    fread(&bytesLeft, 2, 1, fileHandle);
+    fileRead(&flt15HeaderWord, 2, 1, fileHandle);
+    fileRead(&flt15_size, 2, 1, fileHandle);
+    fileRead(flt15_buf1, 2, flt15_size, fileHandle);
+    fileRead(&bytesLeft, 2, 1, fileHandle);
     TRACE(("load15Flt3d3: var_A=%d", bytesLeft));
     segread(&segs);
     dest = g_aircraftModels;
     TRACE(("load15Flt3d3: DS=%04x var_10=%04x:%04x", segs.ds, FP_SEG(dest), FP_OFF(dest)));
     while(bytesLeft > 0) {
         chunkSize = bytesLeft <= 0x800 ? bytesLeft : 0x800;
-        fread(flt15_buf2, 1, chunkSize, fileHandle);
-        movedata(segs.ds, PTR_OFF(flt15_buf2), FP_SEG(dest), FP_OFF(dest), chunkSize);
+        fileRead(flt15_buf2, 1, chunkSize, fileHandle);
+        movedata(segs.ds, (uint16)flt15_buf2, FP_SEG(dest), FP_OFF(dest), chunkSize);
         bytesLeft -= 0x800;
         FP_OFF(dest) += 0x800;
     }
     TRACE(("load15Flt3d3: loop done"));
-    fclose(fileHandle);
+    fileClose(fileHandle);
     TRACE(("load15Flt3d3: done"));
 }
 
@@ -114,9 +114,6 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
     char categoryLow;
 
     g_targetInHudFlag = 1;
-    if (mode == 1 && g_detailLevel == 0 && *(char*)&gfxModeUnset != 0 && (frameTick & 3) != 0) {
-        return;
-    }
 
     dataOff = shapeDataOffset(shapeId);
     if (g_drawPage == 0) {

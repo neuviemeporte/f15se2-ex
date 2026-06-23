@@ -12,12 +12,11 @@
 #include "inttype.h"
 #include "pointers.h"
 
-/* Byte offset of GfxState within the virtual overlay block */
-#define GFX_STATE_OFFSET 0x2EC
+/* Forward declaration so GfxState can hold SDL backbuffers without pulling the
+ * full SDL header. */
+struct SDL_Surface;
 
-/* Shared gfx state stored in the virtual overlay block.
- * gfx_impl.c functions will migrate to accessing this via far pointer in Phase 2.
- */
+/* Shared gfx state. */
 typedef struct {
     uint16 rowOffsets[200]; /* replaces g_rowOffsets[] */
     uint16 curPageSeg;      /* replaces g_curPageSeg  */
@@ -37,28 +36,21 @@ typedef struct {
                              * visible page 0 by gfx_dacAnimate (slot 0x2c). */
     uint16 dacPhase;        /* MGRAPHIC data-seg 0x1ccc — the DAC fire-cycle phase
                              * counter advanced by gfx_dacCycle (slot 0x2e) each
-                             * frame (LCG x*5+1); seeded 0x4d2 in gfx_buildVirtualOverlay. */
+                             * frame (LCG x*5+1); seeded 0x4d2 in gfx_initState. */
+    struct SDL_Surface *pageSurfaces[16]; /* SDL draw buffers, one per page index
+                             * . Lazily created 320x200 8-bit surfaces;
+			     * gfx_flipPage pushes page 0 to the renderer. */
+    int    curPage;         /* index of the current draw page. */
 } GfxState;
 
-/* Near function pointer type for the gfx slot table */
-typedef int (*GfxSlotFn)(void);
+/* Initialise the shared GfxState defaults. Called once at startup. */
+void gfx_initState(void);
 
-/* Far function pointer type for the slot trampoline table */
-typedef int (FAR *GfxFarFn)(void);
-
-/* 84-entry slot table used by f15.exe to call gfx functions directly and to
- * fill the virtual overlay's slot_offsets[] array at startup */
-extern GfxSlotFn gfxSlotTable[84];
-
-/* Build the virtual overlay block at ovlSeg: write OvlHeader-compatible fields,
- * fill slot_offsets[] with FP_OFF of each gfx function, init GfxState. */
-void gfx_buildVirtualOverlay(uint16 ovlSeg);
-
-/* Build stub MISC (slots 0x5a-0x5f) and SOUND (slots 0x64-0x6d) overlays from
- * f15.exe — removes the dependency on MISC.EXE / NSOUND.EXE. Sound is a no-op
- * (no DOS audio); misc is a placeholder (input reports nothing pending). */
-void gfx_buildMiscOverlay(uint16 ovlSeg);
-void gfx_buildSoundOverlay(uint16 ovlSeg);
+/* Page backbuffers: each page index is backed by a 320x200 8-bit SDL_Surface.
+ * The pic decoder renders into these; gfx_flipPage/gfx_commitPage push the visible
+ * page (index 0) to the renderer. Both lazily create the surface on first use. */
+struct SDL_Surface *gfx_getPageSurface(int page);
+struct SDL_Surface *gfx_getCurPageSurface(void);
 
 /*
  * Reference structures documenting how the overlay accesses caller data.

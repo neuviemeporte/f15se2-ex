@@ -6,6 +6,9 @@
 
 #include "../inttype.h"
 #include "../const.h"
+#include <stddef.h>
+
+typedef struct SDL_IOStream SDL_IOStream;
 
 /* program teardown - cleanup.c */
 void cleanup(void);
@@ -20,15 +23,19 @@ void my_ltoa(int32 value, char *buf);
 void my_itoa(int value, char *buf);
 
 /* file/picture wrappers & strcpy - filepic.c */
-int openFileWrapper(const char *filename, int mode);
-void closeFileWrapper(int handle);
+SDL_IOStream *openFileWrapper(const char *filename, int mode);
+void closeFileWrapper(SDL_IOStream *handle);
 void mystrcpy(char *dest, const char *source);
-void loadPic(const char *filename, uint16 segment);
+void loadPic(const char *filename, int segment);
 void openShowPic(char *filename, int page);
-void showPicFile(int handle, int pageNum);
+void showPicFile(SDL_IOStream *handle, int pageNum);
 
-/* functions provided by file_io.c / file_*.inc */
-int openFile(const char *filename, int mode);
+/* functions provided by file_io.c / file_*.inc - case-insensitive asset I/O */
+SDL_IOStream *openFile(const char *filename, int mode);
+SDL_IOStream *createFile(const char *filename, int attr);
+void fileClose(SDL_IOStream *handle);
+size_t fileRead(void *ptr, size_t size, size_t count, SDL_IOStream *handle);
+size_t fileWrite(const void *ptr, size_t size, size_t count, SDL_IOStream *handle);
 
 /* functions provided by miscimpl.c / overlay_dispatch.inc */
 void intDispatch(int intNum, uint8 *inRegs, uint8 *outRegs);

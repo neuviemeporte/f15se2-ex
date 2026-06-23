@@ -78,7 +78,6 @@ inline unsigned short _psp = 0;
 #include <io.h>
 #endif
 
-inline int getch(void) { return 0; }
 inline int putch(int c) { (void)c; return 0; }
 inline int kbhit(void) { return 0; }
 

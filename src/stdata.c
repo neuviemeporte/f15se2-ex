@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <dos.h>
 
+typedef struct SDL_IOStream SDL_IOStream;
+
 /* === Group 1 (0x0042-0x0530): Filename, mission selection, UI strings === */
 
 /* Mission selection strings */
@@ -538,10 +540,7 @@ extern const int16 targetCoordsCount[9] = {3, 2, 2, 3, 4, 1, 8, 3, 0};
 struct Pilot hallfameBuf[8];
 struct GameComm far *commData;
 struct Game far *gameData;
-FILE *fileHandle;
-int far *needSplash;
-int far *gfxModeSetPtr;
-uint8 hercFlag;
+SDL_IOStream *fileHandle;
 int selectedPilotIdx;
 int readItemSize;
 int flightUnitCount;

@@ -30,7 +30,6 @@ extern char aJp_xxx[];
 extern char aNa_xxx[];
 uint8 g_dacSupported = 0;
 
-int16 gfxModeUnset = 0;
 int16 f15DgtlResult = 0;
 char *regnStr = aRegn_xxx;
 extern const char *scenarioPlh[8] = {

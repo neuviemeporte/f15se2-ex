@@ -1,3 +1,4 @@
+#include "SDL3/SDL_oldnames.h"
 #include "inttype.h"
 #include "offsets.h"
 #include "pointers.h"
@@ -20,50 +21,35 @@
 
 int start_main(void)
 {
-    uint8 unused[14];
     uint8 introStage;
-    uint16 FAR *commPtr;
     uint16 difficulty;
     int16 theater;
     uint16 bufSize;
     register bool isPcSpeaker;
 
-    TRACE(("main: entering", difficulty, theater, bufSize));
-    FP_SEG(needSplash) = SEG_LOWMEM;
-    FP_OFF(needSplash) = OFF_IACA_NEEDSPLASH;
-    FP_SEG(gfxModeSetPtr) = SEG_LOWMEM;
-    FP_OFF(gfxModeSetPtr) = OFF_IACA_FLAG2;
-    FP_SEG(commPtr) = SEG_LOWMEM;
-    FP_OFF(commPtr) = OFF_IACA_START;
-    FP_SEG(commData) = *commPtr;
-    FP_OFF(commData) = 0;
-    FP_SEG(gameData) = *commPtr;
-    FP_OFF(gameData) = COMM_GAMEDATA_OFFSET;
-    TRACE(("main: installing cbreak handler"));
+    SDL_Log("start: entering");
+    SDL_Log("start: installing cbreak handler");
     installCBreakHandler();
-    TRACE(("main: slot 4b"));
+    /* gfx/misc/sound are called directly in the merged build — no overlay
+     * slot trampolines to populate. */
+    SDL_Log("start: gfx_storeBufPtr");
     gfx_storeBufPtr(commData->gfxInitResult, 2);
-    hercFlag = commData->setupMono;
-    TRACE(("main: init graphics"));
+    SDL_Log("start: init graphics");
     initGraphics();
-    TRACE(("main: init audio"));
+    SDL_Log("start: init audio");
     audio_shutdown();
     audio_setup(0, 0);
 #ifndef DEBUG_AUTOSTART
-    if (*needSplash == 1) {
-        TRACE(("main: doing splash"));
-        /* 0xc1 doSplash:  */
+    if (commData->needSplash == 1) {
+        SDL_Log("start: doing splash");
         gameData->campaignProgress = 1;
         gameData->difficulty = 0xffff;
         gameData->theater = 0xffff;
         gfx_setFadeSteps(5);
-        TRACE(("main: showing labs"));
-        openShowPic("labs.pic", 0);
-#ifdef DEBUG
-        dumpbuf("LABSPIX.BIN", (const char far *)MK_FP(0xA000, 0), 64000UL);
-#endif
+        SDL_Log("start: showing labs");
+        openShowPic("Labs.pic", 0);
         gfx_commitPage();
-        TRACE(("main: setting timer irq handler"));
+        SDL_Log("start: setting timer irq handler");
         setTimerIrqHandler();
         for (timerCounter = 0; timerCounter < MPS_TIMEOUT;) {
             if (misc_checkKeyBuf() == 0) {
@@ -73,8 +59,8 @@ int start_main(void)
         }
         if (timerCounter >= MPS_TIMEOUT) { // key was not pressed, show adv.pic
             gfx_waitRetrace();
-            gfx_setFadeSteps(15);
-            TRACE(("main: showing adv"));
+            gfx_setFadeSteps(0xf);
+            SDL_Log("start: showing adv");
             openShowPic("adv.pic", 0);
             gfx_commitPage();
             gfx_flipPage();
@@ -88,7 +74,6 @@ int start_main(void)
             }
         }
 
-        TRACE(("main: checking ega"));
 checkEga:
         if (commData->gfxModeNum >= GFX_MODE_EGA && (*MAKEFAR(uint8, SEG_BDA, OFF_BDA_EGASWITCH) & EGA_SWITCH_MASK) == EGA_SWITCH_VALUE) {
             TRACE(("main: switching to ega for title"));
@@ -128,13 +113,10 @@ checkEga:
     }
 #endif /* !DEBUG_AUTOSTART */
 
-    TRACE(("main: setting difficulty and theater"));
+    SDL_Log("start: setting difficulty and theater");
 #ifdef DEBUG_AUTOSTART
     /* Auto-start: skip UI, set hardcoded difficulty/theater, go straight to egame */
-    TRACE(("main: DEBUG_AUTOSTART - skipping UI"));
-    /* f15.com normally writes copy-protection magic into the COMM MCB; replicate here */
-    *(int16 far *)((char far *)commData - 4) = COMM_MCB_VALUE_MAGIC1;
-    *(int16 far *)((char far *)commData - 2) = COMM_MCB_VALUE_MAGIC2;
+    SDL_Log("start: DEBUG_AUTOSTART - skipping UI");
     gameData->difficulty = 0;  /* 0=green (airborne start), 1=veteran, 2=ace, 3=max, 4=demo */
     gameData->theater = 0;     /* 0=Libya, 1=Desert, 2=Europe, 3=Kuril */
     gameData->missionReady = 1;
@@ -148,7 +130,7 @@ checkEga:
 #else
     difficulty = gameData->difficulty;
     theater = gameData->theater;
-    if (commData->gfxModeChar == 0 && gameData->campaignProgress == 0 && gameData->theater < NUM_THEATERS &&
+    if (commData->trainingFlag == 0 && gameData->campaignProgress == 0 && gameData->theater < NUM_THEATERS &&
             ++(gameData->theater) == NUM_THEATERS) {
         gameData->theater = 0;
         if (gameData->difficulty < MAX_DIFFICULTY) {
@@ -156,7 +138,7 @@ checkEga:
         }
     }
 
-    TRACE(("main: setting up kbd/joy"));
+    SDL_Log("start: setting up kbd/joy");
     clearKeybuf();
     if (commData->setupUseJoy == 1) {
         /*
@@ -167,14 +149,14 @@ checkEga:
     else {
         joyAxes[0] = joyAxes[1] = JOY_CENTER;
     }
-    TRACE(("main: init pilot/mission"));
+    SDL_Log("start: init pilot/mission");
     joyReady[0] = 1;
     bufSize = gfx_getBufSize();
     menuSprites = allocBuffer(bufSize);
-    pilotSelect(*needSplash);
-    TRACE(("main: pilot selected"));
+    pilotSelect(commData->needSplash);
+    SDL_Log("start: pilot selected");
     missionSelect();
-    TRACE(("main: mission selected"));
+    SDL_Log("start: mission selected");
     gameData->missionReady = 1;
     gameData->isCampaignMission = 1;
     gameData->campaignProgress = 0;
@@ -184,10 +166,10 @@ checkEga:
         goto doSrand;
     gameData->rand = rand();
 doSrand:
-    TRACE(("main: mission decoding"));
+    SDL_Log("start: mission decoding");
     srand(gameData->rand);
     missionDecode();
-    TRACE(("main: mission generation"));
+    SDL_Log("start: mission generation");
     missionGenerate();
 #endif
 #ifdef DEBUG_AUTOSTART
@@ -198,47 +180,43 @@ doSrand:
        tactical-map / HUD sprites. */
     exitCode[0] = 12;
     restoreCbreakHandler();
-    *needSplash = 0;
+    commData->needSplash = 0;
     gfx_setFadeSteps(8);
-    TRACE(("main: DEBUG_AUTOSTART - loading sprites"));
+    TRACE(("start: DEBUG_AUTOSTART - loading sprites"));
     if (gfx_getVal() == 0) {
         openShowPic("f15.spr", 2);
     }
     else {
         loadPic("f15.spr", commData->gfxInitResult);
     }
-    TRACE(("main: DEBUG_AUTOSTART - write world"));
-    exportWorldToComm("temp.wld");
+    TRACE(("start: DEBUG_AUTOSTART - write world"));
+    exportWorldToComm(aTemp_wld);
     commData->setupDone = 3;
     commData->continueFlag = 0;
     commData->restartFlag = 0;
     if (gameData->missionReady > 1) {
-        commData->gfxModeChar = 1;
+        commData->trainingFlag = 1;
     }
     else {
-        commData->gfxModeChar = 0;
+        commData->trainingFlag = 0;
     }
     misc_clearKeyFlags();
     clearRect(bufPtr, 0, 0, SCREEN_MAXX, SCREEN_MAXY);
-    gfx_setMonoFlag(0);
-    TRACE(("main: DEBUG_AUTOSTART - exiting with code %hd", exitCode[0]));
-#ifdef DEBUG
-    log_close();
-#endif
+    TRACE(("start: DEBUG_AUTOSTART - exiting with code %hd", exitCode[0]));
     exit(exitCode[0]);
 #else
     if (gameData->difficulty != DIFFICULTY_DEMO) {
-        TRACE(("main: printing mission"));
+        TRACE(("start: printing mission"));
         printMission();
     }
-    TRACE(("main: checking disk"));
+    TRACE(("start: checking disk"));
     checkDiskA();
-    exitCode[0] = 12;
-    TRACE(("main: restoring cbreak handler and clearing splash"));
+    exitCode[0] = 0xc;
+    TRACE(("start: restoring cbreak handler and clearing splash"));
     restoreCbreakHandler();
-    *needSplash = 0;
+    commData->needSplash = 0;
     gfx_setFadeSteps(8);
-    TRACE(("main: loading sprites"));
+    TRACE(("start: loading sprites"));
     if (gfx_getVal() == 0) {
         openShowPic("f15.spr", 2);
     }
@@ -246,26 +224,21 @@ doSrand:
         loadPic("f15.spr", commData->gfxInitResult);
     }
     // 403
-    TRACE(("main: write world"));
-    exportWorldToComm("temp.wld");
+    TRACE(("start: write world"));
+    exportWorldToComm(aTemp_wld);
     commData->setupDone = 3;
     commData->continueFlag = 0;
     commData->restartFlag = 0;
     if (gameData->missionReady > 1) {
-        commData->gfxModeChar = 1;
+        commData->trainingFlag = 1;
     }
     else {
-        commData->gfxModeChar = 0;
+        commData->trainingFlag = 0;
     }
-    TRACE(("main: clearing keyflags and screen"));
+    TRACE(("start: clearing keyflags and screen"));
     misc_clearKeyFlags();
-    // 461
     clearRect(bufPtr, 0, 0, SCREEN_MAXX, SCREEN_MAXY);
-    gfx_setMonoFlag(0);
-    TRACE(("main: exiting with code %hd", exitCode[0]));
-#ifdef DEBUG
-    log_close();
-#endif
+    TRACE(("start: exiting with code %hd", exitCode[0]));
     exit(exitCode[0]);
 #endif /* !DEBUG_AUTOSTART */
 }

@@ -32,7 +32,7 @@ uint16 dictionaryIndex = 0;
 
 /* File I/O state */
 static uint8 picFileReadBuf[512];
-static int picFileHandle;
+static SDL_IOStream *picFileHandle;
 static uint16 picBufPos;
 
 /* Bit reader state - matches ASM exactly */
@@ -52,21 +52,6 @@ static uint16 picSignedFlag;
 static uint8 rlePrevByte;
 static uint8 rleProcessFlag;  /* remaining RLE repeats */
 
-static void picAllocBuffers(void)
-{
-    union REGS r;
-    if (picBufSeg) return;
-    /* Allocate (4096 + 8192 + 8192) = 20480 bytes = 0x500 paragraphs */
-    r.h.ah = 0x48;
-    r.x.bx = 0x500;
-    intdos(&r, &r);
-    if (r.x.cflag) return;
-    picBufSeg = r.x.ax;
-    picWorkDataFar = (uint8 far *)MK_FP(picBufSeg, 0);
-    picDecodeDictionaryFar = (uint16 far *)MK_FP(picBufSeg, 4096);
-    picDecodeIncrementFar = (uint16 far *)MK_FP(picBufSeg, 4096 + 8192);
-}
-
 /* Dictionary - 2048 entries max */
 static uint16 dictParent[2048];
 static uint8 dictChar[2048];
@@ -79,12 +64,7 @@ static int lzwFirstCode; /* flag: first code after init/reset */
 
 static void read512FromFile(void)
 {
-    union REGS r;
-    r.h.ah = 0x3F;
-    r.x.bx = picFileHandle;
-    r.x.cx = 512;
-    r.x.dx = 0; //(uint16)picFileReadBuf;
-    intdos(&r, &r);
+    fileReadRaw(picFileHandle, picFileReadBuf, 512);
     picBufPos = 0;
 }
 

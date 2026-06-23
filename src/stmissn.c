@@ -66,16 +66,7 @@ int joyOrKey() {
 
 void waitMdaCgaStatus(int16 iter)
 {
-    while (iter-- != 0) {
-        if (commData->setupMono != 0) {
-            while ((inp(PORT_MDA_STATUS) & MDA_STATUS_RETRACE) == 0) {}
-            while ((inp(PORT_MDA_STATUS) & MDA_STATUS_RETRACE) != 0) {}
-        }
-        else {
-            while ((inp(PORT_CGA_STATUS) & CGA_STATUS_RETRACE) == 0) {}
-            while ((inp(PORT_CGA_STATUS) & CGA_STATUS_RETRACE) != 0) {}
-        }
-    }
+    SDL_Delay(1000 * iter / 60);
 }
 
 void drawLine(const int16 *pageNum, int x1, int y1, int x2, int y2, int color) {
@@ -91,7 +82,7 @@ void drawLine(const int16 *pageNum, int x1, int y1, int x2, int y2, int color) {
 
 void showPic640(const char* filename)
 {
-    int fileHandle;
+    SDL_IOStream *fileHandle;
     intRegs[1] = INT_VID_MODESET;
     intRegs[0] = MODE_640_350;
     intDispatch(IRQ_VIDEO, intRegs, intRegs);
@@ -126,8 +117,8 @@ selectTheater:
             plh3d3Ptr[0] = *scenarioCodePtr[index];
             plh3d3Ptr[1] = *(scenarioCodePtr[index] + 1);
 
-            if ((scenarioFoundArr[index] = ((fileHandle = fopen(plh3d3Ptr, "rb")) == NULL))) count--;
-            fclose(fileHandle);
+            if ((scenarioFoundArr[index] = ((fileHandle = openFile(plh3d3Ptr, 0)) == NULL))) count--;
+            fileClose(fileHandle);
         }
         if (count == 0) { // no scenarios found, print message and go back to previous screen
             clearBriefing();
@@ -221,7 +212,7 @@ again:
 void animateArm(int a, int b)
 {
     int spriteIdx;
-    while (timerCounter3 < 6) {}
+    while (timerCounter3 < 6) timerYield();
     timerCounter3 = 0;
     armPosition = b;
     spriteIdx = armSpriteIndex[b];
@@ -234,24 +225,7 @@ void animateArm(int a, int b)
         }
         showSprite(*page1NumPtr, armBlitX[spriteIdx], armBlitY[spriteIdx], armSrcX[spriteIdx], armSrcY[spriteIdx], armBlitW[spriteIdx], armBlitH[spriteIdx]);
     }
-    if (commData->gfxModeNum == GFX_MODE_MDA || commData->gfxModeNum == GFX_MODE_EGA) { // mda or cga?
-        gfx_setMonoFlag(*page1NumPtr);
-        waitMdaCgaStatus(1);
-        *page1NumPtr ^= 1;
-        if (a == -1) {
-            gfx_copyRect(*page2NumPtr, 0, 0, *page1NumPtr, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
-        } else {
-            gfx_copyRect(*page2NumPtr, spriteBlitX, spriteBlitY, *page1NumPtr, spriteBlitX, spriteBlitY, spriteBlitW, spriteBlitH);
-            if (a < 5 && enableHighlight != 0) {
-                gfx_switchColor(page1NumPtr, 113, (21 * a) + 34, 297, (21 * a) + 42, COLOR_BRIEF_DESC_HL, COLOR_BRIEF_DESC_NORMAL);
-            }
-        }
-        spriteBlitX = armBlitX[spriteIdx];
-        spriteBlitY = armBlitY[spriteIdx];
-        spriteBlitW = armBlitW[spriteIdx];
-        spriteBlitH = armBlitH[spriteIdx];
-    }
-    else {
+    {
         gfx_setPageN(0);
         gfx_blitToCurrent(page1Ptr);
         spriteBlitX = armBlitX[spriteIdx];
@@ -260,8 +234,8 @@ void animateArm(int a, int b)
         spriteBlitH = armBlitH[spriteIdx];
         gfx_copyRect(*page2NumPtr, spriteBlitX, spriteBlitY, *page1NumPtr, spriteBlitX, spriteBlitY, spriteBlitW, spriteBlitH);
         if (b < 5 && enableHighlight != 0) {
-            gfx_switchColor(page1NumPtr, 113, b * 21 + 34, 297, b * 21 + 42, COLOR_BRIEF_DESC_HL, COLOR_BRIEF_DESC_NORMAL);
-        } //cd9
+            gfx_switchColor(page1NumPtr, 113, b * 21 + 0x22, 297, b * 21 + 0x2a, COLOR_BRIEF_DESC_HL, COLOR_BRIEF_DESC_NORMAL);
+        }
     }
 }
 
@@ -281,7 +255,7 @@ int askRepeatMission() {
 }
 
 void checkDiskA() {
-    while ((fileHandle = fopen("F15.spr", "rb")) == NULL) {
+    while ((fileHandle = openFile("F15.spr", 0)) == NULL) {
         clearBriefing();
         drawStringCentered(page1NumPtr, "Please reinsert F15 Disk A", 113, 61, 185);
         page1NumPtr[6] = FONT_SMALL; // page1Desc.font?
@@ -292,7 +266,7 @@ void checkDiskA() {
         animateArm(armPosition, armPosition);
         waitJoyKey();
     }
-    fclose(fileHandle);
+    fileClose(fileHandle);
     clearBriefing();
 }
 

@@ -21,25 +21,10 @@ void enInitGraphics(void);
 void checkQuitFlag(void);
 
 int end_main(void) {
-    int spriteBufSize;
-    int a;
     int auxBufSize;
-    uint16 far *lowmemPtr;
-    int e;
-    register int commSeg;
 
-    (void)a; (void)e;
-
-    FP_SEG(lowmemPtr) = SEG_LOWMEM;
-    FP_OFF(lowmemPtr) = OFF_IACA_START;
-    commSeg = *lowmemPtr;
-    FP_SEG(commData) = commSeg;
-    FP_OFF(commData) = 0;
-    FP_SEG(gameData) = commSeg;
-    FP_OFF(gameData) = COMM_GAMEDATA_OFFSET;
     misc_clearKeyFlags();
     clearKeybuf();
-    hercFlag = (char)commData->setupMono;
     installCBreakHandler();
     enInitGraphics();
     if (commData->setupUseJoy == 1) {
@@ -49,14 +34,12 @@ int end_main(void) {
     }
     loadWorldStrings();
     auxBufSize = gfx_getAuxBufSize();
-    spriteBufSize = gfx_getBufSize();
     gfxBufSeg = allocBuffer(auxBufSize);
     if (hasVgaMode == 1) {
         vgaBufSeg = allocBuffer(VGA_BUF_SIZE);
         vgaBufSeg2 = vgaBufSeg;
         vgaBufOffset = 0;
     }
-    spriteBufSeg = allocBuffer(spriteBufSize);
     missionResult = 3;
     if (commData->setupDone == 2) {
         computeMissionResult();
@@ -67,7 +50,7 @@ int end_main(void) {
     clearKeybuf();
     showPostMissionAwards();
     restoreCbreakHandler();
-    exit(EXIT_DEBRIEF);
+    return EXIT_DEBRIEF;
 }
 
 void checkQuitFlag(void) {
@@ -87,7 +70,6 @@ void enInitGraphics(void) {
     gfx_setPageN(0);
     gfx_allocPage(0);
     gfx_getCurPage(0);
-    gfx_setMonoFlag(commData->setupMono);
     gfx_setDac(1);
     gfx_storeBufPtr(commData->gfxInitResult, 1);
 }

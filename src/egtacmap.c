@@ -120,7 +120,7 @@ void renderHudFrame(int unused) {
                 }
                 // 7 = air to air? Only Sidewinder and Amraam have it
                 if (sams[missiles[missleSpec[missileSpecIndex].weaponIdx].specIndex].weaponClass == 7) {
-                    setDrawColor((uint8)gfxModeUnset != 0 ? 0xf : 7);
+                    setDrawColor(7);
                     for (angle = 0; angle <= 0x100; angle += 0x10) {
                         angleFixed = angle << 8;
                         circleX = sinMul(angleFixed, 40) + 159;
@@ -229,8 +229,8 @@ void redrawTacMap(int centerX, int centerY) {
     g_mapCenterX = clampRange(sinMul(g_ourHead, 0x4000 >> g_mapZoomLevel) + centerX, idx, 0x7fff - idx);
     idx = (56 << (9 - g_mapZoomLevel)) / 3 * 4;
     g_mapCenterY = clampRange(centerY - cosMul(g_ourHead, 0x4000 >> g_mapZoomLevel), idx, 0x7fff - idx);
-    loadColorPalette(commData->gfxModeNum != 0 ? 0 : 3);
-    gfx_setFadeSteps(19);
+    loadColorPalette(0);
+    gfx_setFadeSteps(0x13);
     renderMapTerrain(g_mapTerrainMode, g_mapCenterX / 2, -(g_mapCenterY / 2 - 0x4000), 9 - g_mapZoomLevel);
     if (gameData->theater < 2) {
         gfx_setFadeSteps(12);
@@ -246,13 +246,13 @@ void redrawTacMap(int centerX, int centerY) {
         }
         if (((g_planeTable.planes[idx].flags & 0x481) == 0x401 || (g_planeTable.planes[idx].flags & 0x200)) &&
             objectToScreen(g_planeTable.planes[idx].mapX, g_planeTable.planes[idx].mapY, &screenX, &screenY)) {
-            blitSprite(screenX - 1, screenY - 1, (uint8)gfxModeUnset != 0 ? 0xac : 0xb0, 0, 4, 4, 0);
+            blitSprite(screenX - 1, screenY - 1, 0xb0, 0, 4, 4, 0);
         }
     }
     for (idx = 0; idx < 2; idx++) {
         if (!(g_playerPlaneFlags & (0x4000 >> idx)) &&
             objectToScreen(waypoints[idx + 1].mapX, waypoints[idx + 1].mapY, &screenX, &screenY)) {
-            blitSprite(screenX - 1, screenY - 1, (uint8)gfxModeUnset != 0 ? 0xb4 : 0xa8, 0, 4, 4, 0);
+            blitSprite(screenX - 1, screenY - 1, 0xa8, 0, 4, 4, 0);
         }
     }
     g_drawPage = savedPage;

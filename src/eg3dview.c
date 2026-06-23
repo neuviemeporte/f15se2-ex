@@ -3,6 +3,7 @@
 #include "eg3dmap.h"
 #include "eg3dproj.h"
 #include "eg3dview.h"
+#include "egcode.h"
 #include "egdata.h"
 #include "egtarget.h"
 #include "egtypes.h"
@@ -54,6 +55,7 @@ void waitFrameSync(int frames) {
             unsigned long spins = 0;
             uint8 start = g_timerTickByte[0];
             while (targetTick != g_timerTickByte[0]) {
+                timerYield();
                 if (++spins > 3000000UL) {
                     TRACE_KEY(("12278: SPIN TIMEOUT arg=%d want=%d cur=%d start=%d (ISR frozen?)", frames, (int)targetTick, (int)g_timerTickByte[0], (int)start));
                     break;
@@ -61,7 +63,7 @@ void waitFrameSync(int frames) {
             }
         }
 #else
-        while (targetTick != g_timerTickByte[0]) {}
+        while (targetTick != g_timerTickByte[0]) timerYield();
 #endif
     }
 }

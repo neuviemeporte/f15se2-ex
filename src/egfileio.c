@@ -12,13 +12,13 @@
 #include <memory.h>
 
 /* Private helpers for this translation unit. */
-int createFileWrapper(const char* filename, int attr);
+SDL_IOStream *createFileWrapper(const char* filename, int attr);
 int readFile1Wrapper(int handle, int count, int bufOffset);
 int readFile2Wrapper(int handle, int count, int bufOffset, int bufSegment);
 int writeFileAtRawWrapper(int handle, int count, int bufOffset, int bufSegment, int offsetAddend);
 
 // ==== seg000:0xdd5e ====
-int createFileWrapper(const char* filename, int attr) { /* Original: CreateFile(file). Create resident file service; returns a file handle/status. */
+SDL_IOStream *createFileWrapper(const char* filename, int attr) { /* Original: CreateFile(file). Create resident file service; returns a file handle/status. */
     /* attr is kept for the wrapper ABI; the resident create service uses it. */
     return createFile(filename, attr);
 }

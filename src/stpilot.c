@@ -353,29 +353,29 @@ void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
 void loadHallfame(void)
 {
     int slotIdx;
-    FILE *handle;
+    SDL_IOStream *handle;
     TRACE(("loadHallfame(): reading from %s", "HallFame"));
-    handle = fopen("HallFame", "rb");
-    fread(&selectedPilotIdx, 2, 1, handle);
+    handle = openFile("HallFame", 0);
+    fileRead(&selectedPilotIdx, 2, 1, handle);
     TRACE(("loadHallfame(): count = %d", selectedPilotIdx));
     slotIdx = 0;
     do {
-        fread(hallfameBuf + slotIdx, HALLFAME_RECORDSZ, 1, handle);
+        fileRead(hallfameBuf + slotIdx, HALLFAME_RECORDSZ, 1, handle);
         slotIdx++;
     } while (slotIdx < HALLFAME_SLOTS);
-    fclose(handle);
+    fileClose(handle);
 }
 
 void saveHallfame() {
-    FILE *fp;
+    SDL_IOStream *fp;
     int idx;
-    fp = fopen("HallFame", "wb");
-    fwrite(&selectedPilotIdx, 2, 1, fp);
+    fp = createFile("HallFame", 0);
+    fileWrite(&selectedPilotIdx, 2, 1, fp);
     idx = 0;
     do {
-        fwrite(&hallfameBuf[idx], HALLFAME_RECORDSZ, 1, fp);
+        fileWrite(&hallfameBuf[idx], HALLFAME_RECORDSZ, 1, fp);
     } while (++idx < HALLFAME_SLOTS);
-    fclose(fp);
+    fileClose(fp);
 }
 
 int getJoyKey() {

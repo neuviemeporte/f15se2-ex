@@ -1,10 +1,13 @@
 /*
- * file_io.c - C implementations of shared file I/O routines for NO_ASM build.
+ * file_io.c - shared file I/O, backed by SDL_IOStream.
  */
 
 #include "inttype.h"
 #include "pointers.h"
-#include <dos.h>
+#include <SDL3/SDL.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
 
 /* file_alloc.inc: Allocate DOS memory. Callers pass BYTE count. */
 uint16 dos_alloc(uint16 size)
@@ -52,92 +55,6 @@ void dos_printstring(const char *str)
     segread(&s);
     r.x.dx = 0; // (uint16)str;
     intdosx(&r, &r, &s);
-}
-
-/* file_write.inc: Write to file */
-int writeFileAtRaw(int handle, const void far *buf, uint16 count)
-{
-    union REGS r;
-    struct SREGS s;
-    r.h.ah = 0x40;
-    r.x.bx = handle;
-    r.x.cx = count;
-    s.ds = FP_SEG(buf);
-    r.x.dx = FP_OFF(buf);
-    intdosx(&r, &r, &s);
-    if (r.x.cflag) return -1;
-    return r.x.ax;
-}
-
-/* dos_free: Free DOS memory block (INT 21h/49h) */
-int dos_free(int segment)
-{
-    union REGS r;
-    struct SREGS s;
-    r.h.ah = 0x49;
-    s.es = segment;
-    intdosx(&r, &r, &s);
-    if (r.x.cflag) return r.x.ax;
-    return 0;
-}
-
-/* createFile: Create or truncate file (INT 21h/3Ch) */
-int createFile(const char *filename, int attr)
-{
-    union REGS r;
-    struct SREGS s;
-    r.h.ah = 0x3C;
-    r.x.cx = attr;
-    segread(&s);
-    r.x.dx = 0; // (uint16)filename;
-    intdosx(&r, &r, &s);
-    if (r.x.cflag) return -1;
-    return r.x.ax;
-}
-
-/* readFile: Read from file into DS-relative buffer (INT 21h/3Fh) */
-int readFile(int handle, int count, int bufOffset)
-{
-    union REGS r;
-    struct SREGS s;
-    r.h.ah = 0x3F;
-    r.x.bx = handle;
-    r.x.cx = count;
-    r.x.dx = bufOffset;
-    segread(&s);
-    intdosx(&r, &r, &s);
-    if (r.x.cflag) return -1;
-    return r.x.ax;
-}
-
-/* readFileAt: Read from file into specific segment:offset (INT 21h/3Fh) */
-int readFileAt(int handle, int count, int offset, int segment)
-{
-    union REGS r;
-    struct SREGS s;
-    r.h.ah = 0x3F;
-    r.x.bx = handle;
-    r.x.cx = count;
-    r.x.dx = offset;
-    s.ds = segment;
-    intdosx(&r, &r, &s);
-    if (r.x.cflag) return -1;
-    return r.x.ax;
-}
-
-/* writeFile: Write to file from specific segment:offset (INT 21h/40h) */
-int writeFile(int handle, int count, int offset, int segment, int unused)
-{
-    union REGS r;
-    struct SREGS s;
-    r.h.ah = 0x40;
-    r.x.bx = handle;
-    r.x.cx = count;
-    r.x.dx = offset;
-    s.ds = segment;
-    intdosx(&r, &r, &s);
-    if (r.x.cflag) return -1;
-    return r.x.ax;
 }
 
 /* file_read512.inc: Read 512 bytes from file - stub */

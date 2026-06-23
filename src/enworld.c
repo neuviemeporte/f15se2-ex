@@ -4,10 +4,12 @@
 #include "endata.h"
 #include "enworld.h"
 
+typedef struct SDL_IOStream SDL_IOStream;
+
 /* Private helpers for this translation unit. */
 void loadWorldData(void* destOffset, int size);
-void readFromWorldBuf(void *dest, int size, int count, FILE *bufHandle);
-void writeToWorldBuf(void *dest, int size, int count, FILE *bufHandle);
+void readFromWorldBuf(void *dest, int size, int count, SDL_IOStream *bufHandle);
+void writeToWorldBuf(void *dest, int size, int count, SDL_IOStream *bufHandle);
 
 void readWorldData(void) {
     loadWorldData(&worldWaypointCount, 2);
@@ -36,7 +38,7 @@ void loadWorldData(void* destOffset, int size) {
     }
 }
 
-void readFromWorldBuf(void *dest, int size, int count, FILE *bufHandle) {
+void readFromWorldBuf(void *dest, int size, int count, SDL_IOStream *bufHandle) {
     char far *farDest;
     register int totalSize;
     farDest = (char far *)dest;
@@ -45,7 +47,7 @@ void readFromWorldBuf(void *dest, int size, int count, FILE *bufHandle) {
     worldBufOffset += totalSize;
 }
 
-void writeToWorldBuf(void *dest, int size, int count, FILE *bufHandle) {
+void writeToWorldBuf(void *dest, int size, int count, SDL_IOStream *bufHandle) {
     char far *farDest;
     register int totalSize;
     farDest = (char far *)dest;

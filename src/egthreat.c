@@ -60,12 +60,8 @@ void updateThreatSites()
         }
     }
 
-    if (commData->gfxModeNum == 0) {
-        g_scopeArcColor = 0;
-    }
-
     if (g_mapMode == 0 && g_scopeSweepTimer > 0 && g_hudVisible != 0 && g_scopeArcRange > 1) {
-        if (g_detailLevel != 0 && commData->gfxModeNum != 0) {
+        if (g_detailLevel != 0) {
             captureScopePanel();
             arcRadius = (int)((long)clampRange(g_frameRateScaling - g_scopeSweepTimer, 1, g_frameRateScaling) * (long)g_scopeArcRange / (long)g_frameRateScaling) << 6;
         } else {

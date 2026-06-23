@@ -978,7 +978,7 @@ void renderFrame() {
     }
     g_horizonGroundColor = g_world3dData[47];
     *(uint8*)(&g_skyColorIndex) = 3;
-    if (g_detailLevel == 0 && commData->gfxModeNum != 0) {
+    if (g_detailLevel == 0) {
         g_horizonGroundColor = 3;
         *(uint8*)(&g_skyColorIndex) = 0x0b;
     }

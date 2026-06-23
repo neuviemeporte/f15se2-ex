@@ -29,35 +29,8 @@ void __cdecl gfxInit();
 
 // ==== seg000:0x10 ====
 int egame_main(void) {
-    uint16 FAR *commPtr;
     TRACE(("egame main: entering"));
-    TRACE(("egame main: start, about to read commPtr"));
-    FP_SEG(commPtr) = SEG_LOWMEM;
-    FP_OFF(commPtr) = OFF_IACA_START;
-#ifdef DEBUG
-    /* DEBUG-only: normalize commData to (commSeg-1):0x10 -- physically IDENTICAL
-       to commSeg:0 for every field access, but makes the copy-prot reads at
-       commData-4 / commData-2 alias the durable COMM MCB magic that f15.com
-       writes at (commSeg-1):0x0C / 0x0E (see f15.c). With the release form
-       (FP_OFF=0) those reads wrap to commSeg:0xFFFC, which egame clobbers during
-       init, so the in-game copy-prot check fails ~frame 256+ and kills the game.
-       Release keeps the original form (adding the -1 would break verify). */
-    FP_SEG(commData) = *commPtr - 1;
-    FP_OFF(commData) = 0x10;
-#else
-    FP_SEG(commData) = *commPtr;
-    FP_OFF(commData) = 0;
-#endif
-    FP_SEG(gameData) = *commPtr;
-    FP_OFF(gameData) = COMM_GAMEDATA_OFFSET;
-    TRACE(("egame main: commData=%04x:%04x gameData=%04x:%04x", FP_SEG(commData), FP_OFF(commData), FP_SEG(gameData), FP_OFF(gameData)));
-#ifdef DEBUG
-    TRACE_KEY(("SIG@startup: commData-4/-2 (=MCB magic now) = %04x/%04x",
-        *(int far *)((char far *)commData - 4), *(int far *)((char far *)commData - 2)));
-#endif
     TRACE(("egame main: setup overlays"));
-    hercFlag = commData->setupMono;
-    gfxModeUnset = commData->gfxModeNum == 0;
     TRACE(("egame main: install cbreak"));
     installCBreakHandler();
     if (commData->setupUseJoy == 1) {
@@ -71,8 +44,6 @@ int egame_main(void) {
     TRACE(("egame main: after gfxInit"));
     TRACE(("egame main: calling initOverlay"));
     gfx_initOverlay();
-    TRACE(("egame main: calling setMonoFlag"));
-    gfx_setMonoFlag(commData->setupMono);
     TRACE(("egame main: calling setFadeSteps"));
     if (gameData->theater < 2) {
         gfx_setFadeSteps(12);
@@ -96,7 +67,7 @@ int egame_main(void) {
         int86(IRQ_VIDEO, &regs, &regs);
     }
     TRACE_KEY(("egame main: EXITING with code %d, tick=%d", exitCode, frameTick));
-    exit(exitCode);
+    return exitCode;
 }
 
 // ==== seg000:0x147 ====

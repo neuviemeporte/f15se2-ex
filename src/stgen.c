@@ -28,9 +28,9 @@ void positionUnit(int, int);
 int approxDistance(int, int);
 void parseWorld(const char *);
 int calcBearing(int, int);
-int setMoveDstComm7A(const char *filename, const char* mode);
-void memAppend(const void *ptr, int itemsz, int count, FILE* unused);
-void doNothing(FILE*);
+void setMoveDstComm7A(const char *filename, const char* mode);
+void memAppend(void *ptr, int itemsz, int count, SDL_IOStream* unused);
+void doNothing(SDL_IOStream*);
 char *formatGridRef(int16, int16, int16);
 int clampValue(int, int, int);
 
@@ -93,10 +93,10 @@ restart_40a8:
           TRACE(("runGenerator(): inner branch 2 loop 1"));
           do {
             TRACE(("runGenerator(): inner branch 2 loop 2"));
-            randIdx = randMul(224) * 0x80 + 0x840;
-            randY = randMul(224) * 0x80 + 0x840;
-          } while ((terrainGrid[(randIdx >> 0xb) + ((randY >> 0xb) * 16)] & 3) != 0);
-        } while ((uint16)(targets[0].targetIdx = findOrPlaceItem(randIdx,randY,1)) == 0xffffu);
+            randIdx = randMul(0xe0) * 0x80 + 0x840;
+            randY = randMul(0xe0) * 0x80 + 0x840;
+          } while ((terrainGrid[(randIdx >> 0xb) + ((randY >> 0xb) * 0x10)] & 3) != 0);
+        } while ((targets[0].targetIdx = findOrPlaceItem(randIdx,randY,1)) == -1);
       }
       TRACE(("runGenerator(): past inner check 1"));
       if (missionPick == 7) {
@@ -418,21 +418,21 @@ int approxDistance(int dx, int dy) {
 
 void parseWorld(const char *filename) {
     int nameIdx, scanPos;
-    if ((fileHandle = fopen(filename, "rb")) == NULL) return;
-    // fread(buffer, size, count, stream)
-    fread(wldReadBuf1, 2, 1, fileHandle);
-    fread(&readItemSize, 2, 1, fileHandle);
-    fread(&groundUnitCount, 2, 1, fileHandle);
-    fread(&worldObjectCount, 2, 1, fileHandle);
-    fread(worldObjects, WORLDOBJECT_SIZE, readItemSize, fileHandle);
-    fread(&flightUnitCount, 2, 1, fileHandle);
-    fread(flightUnits, FLIGHTUNIT_SIZE, flightUnitCount, fileHandle);
-    fread(wldReadBuf7, BUF7SIZE, 1, fileHandle);
-    fread(wldReadBuf8, BUF7SIZE, 1, fileHandle);
-    fread(objectTypeTable, BUF7SIZE, 1, fileHandle);
-    fread(terrainGrid, 1, BUF10SIZE, fileHandle);
-    fread(wldReadBuf11, 1, WORLD_BUFSZ, fileHandle);
-    fclose(fileHandle);
+    if ((fileHandle = openFile(filename, 0)) == NULL) return;
+    // fileRead(buffer, size, count, stream)
+    fileRead(wldReadBuf1, 2, 1, fileHandle);
+    fileRead(&readItemSize, 2, 1, fileHandle);
+    fileRead(&groundUnitCount, 2, 1, fileHandle);
+    fileRead(&worldObjectCount, 2, 1, fileHandle);
+    fileRead(worldObjects, WORLDOBJECT_SIZE, readItemSize, fileHandle);
+    fileRead(&flightUnitCount, 2, 1, fileHandle);
+    fileRead(flightUnits, FLIGHTUNIT_SIZE, flightUnitCount, fileHandle);
+    fileRead(wldReadBuf7, BUF7SIZE, 1, fileHandle);
+    fileRead(wldReadBuf8, BUF7SIZE, 1, fileHandle);
+    fileRead(objectTypeTable, BUF7SIZE, 1, fileHandle);
+    fileRead(terrainGrid, 1, BUF10SIZE, fileHandle);
+    fileRead(wldReadBuf11, 1, WORLD_BUFSZ, fileHandle);
+    fileClose(fileHandle);
     wldOffsets[0] = wldReadBuf11;
     nameIdx = 1;
     // iterate over the place name strings in the world data, find null bytes, build char pointer table
@@ -445,7 +445,7 @@ void parseWorld(const char *filename) {
 
 void exportWorldToComm(const char *filename) {
     int unused;
-    if ((fileHandle = (FILE*)setMoveDstComm7A(filename, "wb")) == NULL) return;
+    setMoveDstComm7A(filename, "wb");
     memAppend(wldReadBuf1, 2, 1, fileHandle);
     memAppend(&readItemSize, 2, 1, fileHandle);
     memAppend(&groundUnitCount, 2, 1, fileHandle);
@@ -506,19 +506,18 @@ int calcBearing(int dx, int dy) {
     return result;
 }
 
-int setMoveDstComm7A(const char *filename, const char* mode) {
-    moveDst = (uint8 FAR*)(&commData->worldBuf);
-    return 1;
+void setMoveDstComm7A(const char *filename, const char* mode) {
+    moveDst = (uint8 FAR*)(commData->worldBuf);
 }
 
-void memAppend(const void *ptr, int itemsz, int count, FILE* unused) {
-    const void FAR *farptr;
+void memAppend(void *ptr, int itemsz, int count, SDL_IOStream* unused) {
+    void FAR *farptr;
     farptr = ptr;
     movedata(FP_SEG(farptr), FP_OFF(farptr), FP_SEG(moveDst), FP_OFF(moveDst), itemsz * count);
     moveDst += itemsz * count;
 }
 
-void doNothing(FILE* handle) {
+void doNothing(SDL_IOStream* handle) {
 }
 
 char* getItemCoordStr(int16 idx) {
@@ -530,57 +529,57 @@ char* formatGridRef(int16 wx, int16 wy, int16 theater) {
     (void)theater;
     switch (gameData->theater) {
     case 0:
-        mystrcpy(&bufCoordStr, "TD00");
+        mystrcpy(bufCoordStr, aTd00);
         gridOffX = 6;
         gridOffY = 4;
         break;
     case 1:
-        mystrcpy(&bufCoordStr, "JZ00");
+        mystrcpy(bufCoordStr, aJz00);
         gridOffX = 0;
         gridOffY = 0;
         break;
     case 2:
-        mystrcpy(&bufCoordStr, "XV00");
+        mystrcpy(bufCoordStr, aXv00);
         gridOffX = 0;
         gridOffY = 0;
         break;
     case 3:
-        mystrcpy(&bufCoordStr, "ES00");
+        mystrcpy(bufCoordStr, aEs00);
         gridOffX = 0;
         gridOffY = 0;
         break;
     case 4:
-        mystrcpy(&bufCoordStr, "WX00");
+        mystrcpy(bufCoordStr, aWx00);
         gridOffX = 0;
         gridOffY = 0;
         break;
     case 5:
-        mystrcpy(&bufCoordStr, "CC00");
+        mystrcpy(bufCoordStr, aCc00);
         gridOffX = 3;
         gridOffY = 5;
         break;
     case 6:
-        mystrcpy(&bufCoordStr, "HZ00");
+        mystrcpy(bufCoordStr, aHz00);
         gridOffX = 0;
         gridOffY = 0;
         break;
     default:
-        bufCoordStr = 0;
-        return &bufCoordStr;
+        bufCoordStr[0] = 0;
+        return bufCoordStr;
     }
     wx = (((wx >> WORLD_COORD_SHIFT) * 20) >> 0xa) + gridOffX;
     while (wx > 9) {
-        wx -= 10;
-        bufCoordStr++;
+        wx -= 0xa;
+        bufCoordStr[0]++;
     }
-    gridRefCol += (int8)wx;
-    wy = (((wy >> WORLD_COORD_SHIFT) * 20) >> 0xa) + gridOffY;
+    bufCoordStr[2] += (int8)wx;
+    wy = (((wy >> WORLD_COORD_SHIFT) * 0x14) >> 0xa) + gridOffY;
     while (wy > 9) {
-        wy -= 10;
-        gridRefRow--;
+        wy -= 0xa;
+        bufCoordStr[1]--;
     }
-    gridRefRowDigit[0] += 9 - (int8)wy;
-    return &bufCoordStr;
+    bufCoordStr[3] += 9 - (int8)wy;
+    return bufCoordStr;
 }
 
 int clampValue(int val, int lo, int hi) {

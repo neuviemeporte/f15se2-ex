@@ -376,6 +376,7 @@ void setup3DTransform(const int16 *model, int angleX, int angleY, int angleZ, in
         {
             unsigned long spins = 0;
             while (g_frameSyncPending != 0) {
+                timerYield();
                 if (++spins > 3000000UL) {
                     TRACE_KEY(("13932: SPIN TIMEOUT - timer ISR not clearing 378EE"));
                     g_frameSyncPending = 0;
@@ -385,7 +386,7 @@ void setup3DTransform(const int16 *model, int angleX, int angleY, int angleZ, in
         }
 #else
         while (g_frameSyncPending != 0)
-            ;
+            timerYield();
 #endif
         drawProjectionSphere(model[2]);
     }

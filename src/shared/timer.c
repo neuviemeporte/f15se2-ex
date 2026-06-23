@@ -9,6 +9,7 @@
 #include "inttype.h"
 #include "pointers.h"
 #include <dos.h>
+#include <SDL3/SDL.h>
 
 extern uint8 timerCounter;
 extern uint8 timerCounter2;
@@ -69,10 +70,6 @@ void setTimerIrqHandler(void)
 
 void restoreTimerIrqHandler(void)
 {
-    /* Restore PIT to default 18.2 Hz (divisor 0 = 65536) */
-    outp(0x43, 0x36);
-    outp(0x40, 0x00);
-    outp(0x40, 0x00);
-    _dos_setvect(0x08, oldTimerIsr);
+    timerRunning = false;
     timerHandlerInstalled = 0;
 }

@@ -17,8 +17,8 @@ void srandInit(int seed) {
 }
 
 
-int loadFileSection(const char *name, int b, int c) {
-    int handle;
+int loadFileSection(char *name, int b, int c) {
+    SDL_IOStream *handle;
     int result;
     TRACE(("loadFileSection"));
     handle = openFileWrapper(name, 0);
@@ -28,8 +28,8 @@ int loadFileSection(const char *name, int b, int c) {
 }
 
 
-int writeFileSection(const char *name, int b, int c, int d, int e) {
-    int handle;
+int writeFileSection(char *name, int b, int c, int d, int e) {
+    SDL_IOStream *handle;
     int result;
     TRACE(("writeFileSection"));
     handle = createFile(name, 0);

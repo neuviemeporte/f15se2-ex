@@ -5,6 +5,8 @@
 #include "pointers.h"
 #include "egtypes.h"
 
+typedef struct SDL_IOStream SDL_IOStream;
+
 int loadF15DgtlBin();
 void setupDac();
 int fixedMulQ14(int a, int b);
@@ -14,13 +16,13 @@ void restoreCbreakHandler();
 void runGameLoop();
 void gameMainLoop();
 void advanceFrameTick();
-int __cdecl drawCenteredLabelBox(int panel, const char *text);
-int createFile(const char *path, int attr);
+int __cdecl drawCenteredLabelBox(int panel, char *text);
+SDL_IOStream *createFile(const char *path, int attr);
 void closeFile(int handle);
 int readFile1(int handle, int count, int bufOffset);
 int readFile2(int handle, int count, int bufOffset, int bufSegment);
 int writeFileAtRaw(int handle, int count, int bufOffset, int bufSegment, int offsetAddend);
-void picBlit(int handle, int unk);
+void picBlit(SDL_IOStream *handle, int unk);
 void pascal shiftLongLeftInPlace(int count, long *ptr);
 void pascal shiftLongRightInPlace(int count, long *ptr);
 int far drawPolygonOutline(int fillColor, int pointCount, int* points, int edgeColor);
@@ -64,7 +66,7 @@ void restoreTimerIrqHandler();
 void setTimerTickHook(void (far *fn)(void));
 void far egAdvanceFrameTick(void);
 int getTimeOfDay();
-int __cdecl openFile(const char *path, int mode);
+SDL_IOStream * __cdecl openFile(const char *path, int mode);
 
 void far projectSceneObject(char far *model, int yaw, int pitch, int roll, int posX, int posY, int posZ);
 

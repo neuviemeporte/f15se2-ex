@@ -492,7 +492,7 @@ static void drawInstrumentGauges(void)
         if (g_highGeeFlag[0] != 0) {
             int savedMaxX = g_clipMaxX;
             int savedMaxY = g_clipMaxY;
-            setFill(gfxModeUnset != 0 ? 0 : 7);
+            setFill(7);
             gfx_setBlitOffset(g_pitchBlitOfs);
             g_clipMaxX = g_pitchClipMaxX;
             g_clipMaxY = g_pitchClipMaxY;

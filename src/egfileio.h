@@ -3,7 +3,9 @@
 /* public interface of egfileio.c */
 #include "egtypes.h"
 
-int __cdecl openFileWrapper(const char *filename, int mode);
-void closeFileWrapper(int handle);
+typedef struct SDL_IOStream SDL_IOStream;
+
+SDL_IOStream * __cdecl openFileWrapper(const char *filename, int mode);
+void closeFileWrapper(SDL_IOStream *handle);
 
 #endif /* F15_SE2_EGFILEIO */

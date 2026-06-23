@@ -75,7 +75,7 @@ int selectMenuItem(MenuItem *items, int unused, int itemCount, int16* inputState
     gfx_commitPage();
     colorAnimEnabled = 0;
     curIdx = 0;
-    while (isPointInRect(&items[curIdx]) == 0 && curIdx < itemCount)
+    while (curIdx < itemCount && isPointInRect(&items[curIdx]) == 0)
         curIdx++;
     joyRepeatFlag = 0;
     for (;;) {
@@ -92,7 +92,7 @@ int selectMenuItem(MenuItem *items, int unused, int itemCount, int16* inputState
         if (enterPressed != 0) { // 22f2
             if (curIdx != selectedMenuItem) { // 22fa
                 curIdx = 0;
-                while (isPointInRect(&items[curIdx]) == 0 && curIdx < itemCount)
+                while (curIdx < itemCount && isPointInRect(&items[curIdx]) == 0)
                     curIdx++;
             } // 2320
             // 232c
@@ -110,7 +110,7 @@ int selectMenuItem(MenuItem *items, int unused, int itemCount, int16* inputState
             continue;
         } // 23c2
         curIdx = 0;
-        while (isPointInRect(&items[curIdx]) == 0 && curIdx < itemCount)
+        while (curIdx < itemCount && isPointInRect(&items[curIdx]) == 0)
             curIdx++;
         if (curIdx != selectedMenuItem) {
             if ((items[curIdx].flags & MENUITEM_SELECTABLE) != 0) {
@@ -297,7 +297,7 @@ int isPointInRect(const MenuItem *p)
         }
         spriteToggle = (spriteToggle == 0);
 skip_sprite:
-        ;
+        gfx_commitPage();
     }
 
     /* post-loop input handling */
@@ -375,7 +375,7 @@ skip_sprite:
 void drawMenuItem(const MenuItem *items, unsigned int index, int16* gfxPage) {
     char p[2]; char a[2]; char prefix[2]; char d[2];
     int m;
-    char numBuf[4]; unsigned int unitIdx;
+    char numBuf[22]; unsigned int unitIdx;
     p[0] = 0x0a; p[1] = 0;
     prefix[0] = 0x89; prefix[1] = 0;
     a[0] = 0x8d; a[1] = 0;
@@ -600,6 +600,7 @@ int drawEventSprite(int recordIdx)
         spriteWaypoint->dstY = mapToScreenY(flightRecords[recordIdx].mapY) + mapViewY1;
         return gfx_blitSprite(spriteWaypoint);
     }
+    return 0; /* status matched no event type: nothing drawn */
 }
 
 
@@ -644,7 +645,7 @@ loop_top:
         drawStringCentered(gfxPage, scoreString, 232, 86, 87);
         timerCounter = 0;
 wait_loop:
-        if (timerCounter <= 5) goto wait_loop;
+        if ((unsigned char)timerCounter <= 5) { timerYield(); goto wait_loop; }
                 goto loop_top;
             }
         }
@@ -755,8 +756,8 @@ void timerWait(unsigned int ticks) {
     TRACE(("timerWait"));
     timerCounter = 0;
     setTimerIrqHandler();
-    while (ticks >= timerCounter)
-        ;
+    while (ticks >= (unsigned char)timerCounter)
+        timerYield();
     restoreTimerIrqHandler();
 }
 

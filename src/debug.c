@@ -68,50 +68,11 @@ void ftoncpy(void *near_ptr, const void far *far_ptr, uint32 size) {
     }
 }
 
-#define CHUNK_SIZE 512
-
-void dumpbuf(const char *filename, const uint8 far *buf, const uint32 size) {
-    char buffer[CHUNK_SIZE];
-    uint32 bytes_written = 0;
-    FILE *file = fopen(filename, "wb");
-    size_t result;
-
-    if (!file) {
-        my_trace("Unable to open file for buffer dump: %s", filename);
-        return;
-    }
-    my_trace("Dumping %lu bytes from %p to %s", size, buf, filename);
-    while (bytes_written < size) {
-        uint32 bytes_to_copy = (size - bytes_written > CHUNK_SIZE) ? CHUNK_SIZE : (size - bytes_written);
-#ifdef DEBUGDUMP
-        my_trace("remaining = %lu", bytes_to_copy);
-#endif
-        // Copy data from far pointer to near buffer
-        ftoncpy(buffer, buf, bytes_to_copy);
-        // Write near buffer to file
-        result = fwrite(buffer, 1, bytes_to_copy, file);
-        if (result != bytes_to_copy) {
-            my_trace("Write error occurred!");
-            break;
-        }
-        bytes_written += bytes_to_copy;
-#ifdef DEBUGDUMP
-        my_trace("written = %lu", bytes_written);
-#endif
-        buf += bytes_to_copy;  // Increment far pointer
-    }
-#ifdef DEBUGDUMP    
-    my_trace("Successfully written %lu bytes to %s", bytes_written, filename);
-#endif
-    fclose(file);
-}
-
 void changeext(char *filename, const char *ext) {
     char *dot = strchr(filename, '.');
     if (!dot) {
         dot = filename + strlen(filename);
         *dot = '.';
-    }  
+    }
     strncpy(dot + 1, ext, 3);
 }
-

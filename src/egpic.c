@@ -12,9 +12,9 @@
 #include <dos.h>
 #include <memory.h>
 
-void showPicFile(int handle, int pageNum);
-void openBlitClosePic(const char* filename, int page) { /* Original chain: OpenFile + blit/decode + CloseFile. Open, blit PIC to page, then close. */
-    int handle = openFileWrapper(filename, 0);
+void showPicFile(SDL_IOStream *handle, int pageNum);
+void openBlitClosePic(char* filename, int page) { /* Original chain: OpenFile + blit/decode + CloseFile. Open, blit PIC to page, then close. */
+    SDL_IOStream *handle = openFileWrapper(filename, 0);
     /* The PIC decoder/blitter consumes the already-open file handle. */
     showPicFile(handle, page);
     /* Always close immediately after the synchronous blit/decode call. */

@@ -6,18 +6,10 @@
 #include "inttype.h"
 #include "pointers.h"
 #include "comm.h"
-#include <stdio.h>
+#include "const.h"
 #include <dos.h>
-#include <conio.h>
+#include <SDL3/SDL.h>
 
-static int g_keyCalls = 0;
-static void ovldbg(const char *msg)
-{
-    FILE *f = fopen("NOASM.LOG", "a");
-    if (f) { fputs(msg, f); fputs("\r\n", f); fclose(f); }
-}
-
-extern uint8  hercFlag;
 extern uint8  exitCode;
 extern int16  fileHandle;
 

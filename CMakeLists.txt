@@ -14,6 +14,10 @@ project(F15SE2-EX
 # (configuration fails if one is missing).
 option(DOWNLOAD_DEPENDENCIES "Download and build missing third-party dependencies from source" ON)
 
+# Sanitizers (GCC/Clang only). Off by default; enable for debugging.
+option(ASAN "Build with AddressSanitizer" OFF)
+option(UBSAN "Build with UndefinedBehaviorSanitizer" OFF)
+
 #==============================================================================
 # Global settings
 #==============================================================================
@@ -60,7 +64,6 @@ set(SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(F15SE2_SOURCES
 
     # Shared gfx-slot / timer / misc / pic / overlay basics
-    ${SRC_DIR}/shared/gfximpl.c
     ${SRC_DIR}/shared/miscimpl.c
     ${SRC_DIR}/shared/ovlimpl.c
     ${SRC_DIR}/shared/picimpl.c
@@ -78,8 +81,6 @@ set(F15SE2_SOURCES
     ${SRC_DIR}/dosfunc.c
     ${SRC_DIR}/biosfunc.c
     ${SRC_DIR}/output.c
-    ${SRC_DIR}/overlay.c
-    ${SRC_DIR}/f15util.c
     ${SRC_DIR}/gfx_impl.c
 
     # start
@@ -206,6 +207,24 @@ if(
         -Wno-int-to-pointer-cast
         -Wno-narrowing
     )
+
+    # Sanitizers must be passed to both the compiler and the linker.
+    set(SANITIZERS "")
+    if(ASAN)
+        list(APPEND SANITIZERS address)
+    endif()
+    if(UBSAN)
+        list(APPEND SANITIZERS undefined)
+    endif()
+    if(SANITIZERS)
+        list(JOIN SANITIZERS "," SANITIZER_LIST)
+        message(STATUS "Building with sanitizers: ${SANITIZER_LIST}")
+        target_compile_options(f15se2 PRIVATE
+            -fsanitize=${SANITIZER_LIST}
+            -fno-omit-frame-pointer
+        )
+        target_link_options(f15se2 PRIVATE -fsanitize=${SANITIZER_LIST})
+    endif()
 
 elseif(
     MSVC

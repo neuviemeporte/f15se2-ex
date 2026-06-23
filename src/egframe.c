@@ -49,16 +49,6 @@ void updateFrame(void) {
     int i;
     int objIdx;
     TRACE(("updateFrame: enter, g_initPhase=%d", g_initPhase));
-#ifdef DEBUG
-    {
-        static int sig_was_ok = 1;
-        int s4 = *(int far *)((char far *)commData - 4);
-        if (sig_was_ok && (unsigned)s4 != 0xca01) {
-            sig_was_ok = 0;
-            TRACE_KEY(("SIG CORRUPTED at frame %d: commData-4(MCB)=%04x", frameTick, s4));
-        }
-    }
-#endif
 
     g_viewX_ = (int)((g_ViewX + 0x10L) >> 5);
     g_viewY_ = -((int)((g_ViewY + 0x10L) >> 5) - 0x8000);
@@ -95,7 +85,7 @@ void updateFrame(void) {
         g_mapZoomLevel = 1;
         g_radarScopeRange = 1;
         tmp = g_northSouthSign = (gameData->theater == 6) ? 1 :
-            (*((char far *)gameData + 0x38) & 1) ? 1 : -1;
+            (*((char far *)&gameData + 0x38) & 1) ? 1 : -1;
 
         if (((g_planeTable.planes[g_targetSlots[0].viewIndex].flags) & 0x200) != 0) {
             g_ViewX -= (long)(tmp * 0x80);
@@ -129,7 +119,7 @@ void updateFrame(void) {
             UpdateThrottleState();
             *(char *)&g_playerPlaneFlags |= 1;
             *(char *)&g_playerPlaneFlags &= ~8;
-            if ((*(int far *)((char far *)gameData + 0x32) | *(int far *)((char far *)gameData + 0x34)) == 0 && gameData->theater != 6) {
+            if ((*(int far *)((char far *)&gameData + 0x32) | *(int far *)((char far *)&gameData + 0x34)) == 0 && gameData->theater != 6) {
                 for (i = 0; i < g_groundUnitCount - 4; i++) {
                     if ((i & 1) == 0) {
                         g_simObjects[i].flags.b[0] |= 2;
@@ -236,14 +226,6 @@ void updateFrame(void) {
         g_targetSlots[1].viewIndex = g_closestThreatIndex;
         waypoints[3].mapX = g_planeTable.planes[g_closestThreatIndex].mapX;
         waypoints[3].mapY = g_planeTable.planes[g_closestThreatIndex].mapY;
-    }
-
-    /* Magic signature check, only done when the plane is moving? */
-    if ((char)frameTick == 0 && frameTick != 0) {
-        if (*((int32 HUGE*)commData - 1) != COMM_MCB_VALUE_MAGIC) {
-            finalizeMission(1);
-            exitCode = 0;
-        }
     }
 
     if (g_prevThreatIndex != g_closestThreatIndex && (g_planeTable.planes[g_closestThreatIndex].flags & 0x800) == 0) {
@@ -873,6 +855,6 @@ void moveNearFar(void *nearPtr, int count) {
 
 // ==== seg000:0x21a9 ====
 int setCommWorldbufPtr() {
-    farPointer = (uint8 FAR*)&commData->worldBuf;
+    farPointer = (uint8 FAR*)commData->worldBuf;
     return 0;
 }

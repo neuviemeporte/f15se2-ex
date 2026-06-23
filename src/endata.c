@@ -461,11 +461,13 @@ char ejectedFlag;
 int popupX;
 int popupY;
 
+typedef struct SDL_IOStream SDL_IOStream;
+
 /* World data */
 int worldDataReady;
 char *worldStrings[100];
 char worldStringBuf[750];
-FILE *worldBufHandle;
+SDL_IOStream *worldBufHandle;
 
 /* Graphics animation state (from BSS) */
 unsigned int *colorTablePtr;

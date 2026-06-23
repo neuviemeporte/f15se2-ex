@@ -292,8 +292,7 @@ end_dispatch:
     switchIndicatorColor(3, (*(char *)&g_playerPlaneFlags & 1) ? 4
         : (g_knots < 250 || (*(char *)&frameTick & 1)) ? 2 : 10);
 
-    switchIndicatorColor(2, (*(char *)&g_playerPlaneFlags & 8) ? 14
-        : *(char *)&gfxModeUnset != 0 ? 3 : 2);
+    switchIndicatorColor(2, (*(char *)&g_playerPlaneFlags & 8) ? 14 : 2);
 }
 
 // ==== seg000:0xd9db ====

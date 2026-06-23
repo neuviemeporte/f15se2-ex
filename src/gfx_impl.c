@@ -2,7 +2,10 @@
  * gfx_impl.c Pure-C replacement for MGRAPHIC.EXE overlay (Mode 13h, 320x200x256)
  */
 
+#include <SDL3/SDL.h>
+
 #include "gfx_impl.h"
+#include "gfx.h"
 #include "struct.h"
 #include "slot.h"
 #include <dos.h>
@@ -10,8 +13,8 @@
 
 #include "fontdata.h"
 
-/* dos_alloc is provided by lowlvl.asm (start.exe) or dosfunc.c (f15.exe) */
-extern uint16 dos_alloc(uint16 size);
+/* The SDL renderer is owned by f15.c; the graphics abstraction presents through it. */
+extern SDL_Renderer *sdlRenderer;
 
 /* File-scope object used only for its address: FP_SEG of its far pointer
  * yields f15.exe's DGROUP segment, recorded in GfxState.f15DataSeg so the
@@ -58,7 +61,7 @@ int FAR CDECL gfx_allocPage(int n)
      * gfx_setMode13 was already called by start.exe. In our NO_ASM build,
      * each exe has fresh static state. Bootstrap mode 13h on first use. */
     if (gfx_getState()->pageSegs[0] == 0) {
-        gfx_setMode13(0);
+        gfx_setMode13();
     }
     /* Allocate 0x1000 paragraphs = 64KB directly via INT 21h */
     r.h.ah = 0x48;
@@ -109,7 +112,11 @@ void FAR CDECL gfx_setMode13(int16 monoFlag)
     s->curPageSeg = s->pageSegs[1]; /* default to back buffer */
     s->modeFlag = 1;
 
-    return;
+/* Title-screen hi-res attempt: ask SDL to present at 640x350 and report whether it took. */
+bool video_setHiRes(void)
+{
+    return SDL_SetRenderLogicalPresentation(sdlRenderer, HIRES_WIDTH, HIRES_HEIGHT,
+                                          SDL_LOGICAL_PRESENTATION_STRETCH);
 }
 
 /* ---- Slot 0x45: gfx_waitRetrace ---- */
@@ -177,7 +184,7 @@ void FAR CDECL gfx_setPageN(uint16 pageNum)
     initRowOffsets();
     /* Bootstrap mode 13h for first use */
     if (s->pageSegs[0] == 0) {
-        gfx_setMode13(0);
+        gfx_setMode13();
     }
     s->curPageSeg = s->pageSegs[pageNum];
     return;
@@ -1130,99 +1137,6 @@ void FAR CDECL gfx_dacCycle(void)
 void FAR CDECL gfx_setPageBuf(void)          { return; }
 int FAR CDECL gfx_getConst1(void)           { return 1; } /* baked constant 1 (cs:0x1d8 in MGRAPHIC) */
 
-/* ---- Slot function pointer table (84 entries, slots 0x00–0x53) ---- */
-/* MSC 5.1 forbids cast expressions in static initializers (C2097), so this
- * array starts zero-initialised and is filled at runtime by gfx_buildVirtualOverlay. */
-GfxSlotFn gfxSlotTable[0x54];
-
-static void fillSlotTable(void)
-{
-    gfxSlotTable[0x00] = (GfxSlotFn)gfx_allocPage;
-    gfxSlotTable[0x01] = (GfxSlotFn)gfx_fillDirty;
-    gfxSlotTable[0x02] = (GfxSlotFn)gfx_blitTransparent;
-    gfxSlotTable[0x03] = (GfxSlotFn)gfx_blitVariant;
-    gfxSlotTable[0x04] = (GfxSlotFn)gfx_copyBlock;
-    gfxSlotTable[0x05] = (GfxSlotFn)gfx_drawString;
-    gfxSlotTable[0x06] = (GfxSlotFn)gfx_drawStringUnclipped;
-    gfxSlotTable[0x07] = (GfxSlotFn)gfx_clipRight;
-    gfxSlotTable[0x08] = (GfxSlotFn)gfx_clipTop;
-    gfxSlotTable[0x09] = (GfxSlotFn)gfx_clipLeft;
-    gfxSlotTable[0x0a] = (GfxSlotFn)gfx_clipBottom;
-    gfxSlotTable[0x0b] = (GfxSlotFn)gfx_complexRender;
-    gfxSlotTable[0x0c] = (GfxSlotFn)gfx_initOverlay;
-    gfxSlotTable[0x0d] = (GfxSlotFn)gfx_setPage1;
-    gfxSlotTable[0x0e] = (GfxSlotFn)gfx_setPageN;
-    gfxSlotTable[0x0f] = (GfxSlotFn)gfx_setCurPageSeg;
-    gfxSlotTable[0x10] = (GfxSlotFn)gfx_getCurPageSeg;
-    gfxSlotTable[0x11] = (GfxSlotFn)gfx_blitSprite;
-    gfxSlotTable[0x12] = (GfxSlotFn)gfx_blitCore;
-    gfxSlotTable[0x13] = (GfxSlotFn)gfx_spriteVariant1;
-    gfxSlotTable[0x14] = (GfxSlotFn)gfx_spriteVariant2;
-    gfxSlotTable[0x15] = (GfxSlotFn)gfx_nop15;
-    gfxSlotTable[0x16] = (GfxSlotFn)gfx_nop16;
-    gfxSlotTable[0x17] = (GfxSlotFn)gfx_getBufSize;
-    gfxSlotTable[0x18] = (GfxSlotFn)gfx_setBlitOffset2;
-    gfxSlotTable[0x19] = (GfxSlotFn)gfx_setBlitOffset3;
-    gfxSlotTable[0x1a] = (GfxSlotFn)gfx_setBlitOffset;
-    gfxSlotTable[0x1b] = (GfxSlotFn)gfx_setBlitOffsetReg;
-    gfxSlotTable[0x1c] = (GfxSlotFn)gfx_getPresetOffset1;
-    gfxSlotTable[0x1d] = (GfxSlotFn)gfx_getPresetOffset2;
-    gfxSlotTable[0x1e] = (GfxSlotFn)gfx_getBlitOffset;
-    gfxSlotTable[0x1f] = (GfxSlotFn)gfx_drawLine;
-    gfxSlotTable[0x20] = (GfxSlotFn)gfx_setDrawColor;
-    gfxSlotTable[0x21] = (GfxSlotFn)gfx_setColor;
-    gfxSlotTable[0x22] = (GfxSlotFn)gfx_nop22;
-    gfxSlotTable[0x23] = (GfxSlotFn)gfx_nop23;
-    gfxSlotTable[0x24] = (GfxSlotFn)gfx_plotPixel;
-    gfxSlotTable[0x25] = (GfxSlotFn)gfx_dirtyRect2; /* 0x25 == 0x28 in MGRAPHIC */
-    gfxSlotTable[0x26] = (GfxSlotFn)gfx_storePageSeg;
-    gfxSlotTable[0x27] = (GfxSlotFn)gfx_setPageSeg;
-    gfxSlotTable[0x28] = (GfxSlotFn)gfx_dirtyRect2;
-    gfxSlotTable[0x29] = (GfxSlotFn)gfx_switchColor;
-    gfxSlotTable[0x2a] = (GfxSlotFn)gfx_copyRect;
-    gfxSlotTable[0x2b] = (GfxSlotFn)gfx_clearVga;
-    gfxSlotTable[0x2c] = (GfxSlotFn)gfx_dacAnimate;
-    gfxSlotTable[0x2d] = (GfxSlotFn)gfx_getDisplayPage;
-    gfxSlotTable[0x2e] = (GfxSlotFn)gfx_dacCycle;
-    gfxSlotTable[0x2f] = (GfxSlotFn)gfx_setFont;
-    gfxSlotTable[0x30] = (GfxSlotFn)gfx_blitToCurrent;
-    gfxSlotTable[0x31] = (GfxSlotFn)gfx_getAuxBufSize;
-    gfxSlotTable[0x32] = (GfxSlotFn)gfx_getFreeMem;
-    gfxSlotTable[0x33] = (GfxSlotFn)gfx_fillRow;
-    gfxSlotTable[0x34] = (GfxSlotFn)gfx_fillRow;
-    gfxSlotTable[0x35] = (GfxSlotFn)gfx_copyRow;
-    gfxSlotTable[0x36] = (GfxSlotFn)gfx_nop36;
-    gfxSlotTable[0x37] = (GfxSlotFn)gfx_nop37;
-    gfxSlotTable[0x38] = (GfxSlotFn)gfx_getPageSeg;
-    gfxSlotTable[0x39] = (GfxSlotFn)gfx_setPageBuf;
-    gfxSlotTable[0x3a] = (GfxSlotFn)gfx_getRowOffset;
-    gfxSlotTable[0x3b] = (GfxSlotFn)gfx_clearPage;
-    gfxSlotTable[0x3c] = (GfxSlotFn)gfx_setMode13;
-    gfxSlotTable[0x3d] = (GfxSlotFn)gfx_setFadeSteps;
-    gfxSlotTable[0x3e] = (GfxSlotFn)gfx_calcRowAddr;
-    gfxSlotTable[0x3f] = (GfxSlotFn)gfx_getModecode;
-    gfxSlotTable[0x40] = (GfxSlotFn)gfx_setOvlVal1;
-    gfxSlotTable[0x41] = (GfxSlotFn)gfx_setOvlVal2;
-    gfxSlotTable[0x42] = (GfxSlotFn)gfx_getModeFlag2;
-    gfxSlotTable[0x43] = (GfxSlotFn)gfx_getConst1;
-    gfxSlotTable[0x44] = (GfxSlotFn)gfx_setDac;
-    gfxSlotTable[0x45] = (GfxSlotFn)gfx_waitRetrace;
-    gfxSlotTable[0x46] = (GfxSlotFn)gfx_flipPage;
-    gfxSlotTable[0x47] = (GfxSlotFn)gfx_blitSpriteClipped;
-    gfxSlotTable[0x48] = (GfxSlotFn)gfx_blitSpriteClipped2;
-    gfxSlotTable[0x49] = (GfxSlotFn)gfx_blitSpriteOpaque;
-    gfxSlotTable[0x4a] = (GfxSlotFn)gfx_blitSpriteOpaque2;
-    gfxSlotTable[0x4b] = (GfxSlotFn)gfx_storeBufPtr;
-    gfxSlotTable[0x4c] = (GfxSlotFn)gfx_getModeFlag;
-    gfxSlotTable[0x4d] = (GfxSlotFn)gfx_getVal2;
-    gfxSlotTable[0x4e] = (GfxSlotFn)gfx_getVal;
-    gfxSlotTable[0x4f] = (GfxSlotFn)gfx_setDacAnimCount;
-    gfxSlotTable[0x50] = (GfxSlotFn)gfx_commitPage;
-    gfxSlotTable[0x51] = (GfxSlotFn)gfx_nop51;
-    gfxSlotTable[0x52] = (GfxSlotFn)gfx_setMonoFlag;
-    gfxSlotTable[0x53] = (GfxSlotFn)gfx_getCurPage;
-}
-
 /* ---- Build the virtual overlay block ---- */
 /* OvlHeader-compatible block so setupOverlaySlots (lowlvl.asm) can patch
  * start/end slot stubs to far-jump into f15.exe's gfx functions. */
@@ -1278,106 +1192,4 @@ void gfx_buildVirtualOverlay(uint16 ovlSeg)
         void FAR *anchorFp = (void FAR *)&dgroupAnchor;
         s->f15DataSeg = FP_SEG(anchorFp);
     }
-}
-
-/* ===================================================================
- * Stub MISC and SOUND overlays — provided by f15.exe itself so the
- * pure-DOS build does not depend on the original MISC.EXE / NSOUND.EXE.
- *
- *   - Sound is intentionally absent under DOS (roadmap: real audio only
- *     on non-DOS targets), so every audio slot is a no-op.
- *   - Misc is a placeholder: keyboard/joystick report "nothing pending"
- *     so the splash auto-advances. Its real behaviour must be replicated
- *     for a functional game.
- *
- * These reuse the same OvlHeader-compatible layout as the gfx overlay
- * (codeSeg@0x18, firstIdx@0x1C, slotCount@0x22, offsets@0x24), so the
- * child's ASM setupOverlaySlots patches them just like the real overlays.
- * =================================================================== */
-
-/* Generic no-op far slot (return value lands in AX). */
-int FAR CDECL ovl_nop(void)            { return 0; }
-
-/* Misc/input slots (0x5a-0x5f), reimplemented faithfully from MISC.EXE so the
- * pure-DOS build has working keyboard input without loading MISC.EXE.
- *
- * Original MISC.EXE disassembly:
- *   0x5a keybuf: mov ah,1; int 16h; jz empty; sub ax,ax; retf  (0 = key avail)
- *                empty: sub ax,ax; not ax; retf                (0xFFFF = empty)
- *   0x5b getkey: sub ah,ah; int 16h; retf  (raw BIOS AX: AH=scan, AL=ascii;
- *                callers in pollMenuInput mask &0xff when AL!=0)
- *   0x5e clearKeyFlags: zero the low nibble of BDA 0040:0417 (shift state) */
-
-/* Slot 0x5a: 0 if a key is waiting, 0xFFFF if the buffer is empty. INT 16h
- * AH=01h sets ZF when empty, but int86() does not expose ZF — so test the
- * BIOS keyboard buffer head/tail (0040:001A / 0040:001C), which is exactly
- * what AH=01h inspects (equal => empty). */
-int FAR CDECL miscStub_keybuf(void)
-{
-    uint16 FAR *head = (uint16 FAR *)MK_FP(0x40, 0x1a);
-    uint16 FAR *tail = (uint16 FAR *)MK_FP(0x40, 0x1c);
-    return (*head == *tail) ? (int)0xFFFF : 0;
-}
-
-/* Slot 0x5b: return the raw BIOS keystroke (AH=scancode, AL=ascii). Blocks
- * until a key is available, matching the original. */
-int FAR CDECL miscStub_getkey(void)
-{
-    union REGS r;
-    r.h.ah = 0;
-    int86(0x16, &r, &r);
-    return (int)r.x.ax;
-}
-
-int FAR CDECL miscStub_readJoy(void)       { return 0; }
-
-/* Slot 0x5e: clear the active-modifier low nibble of the BDA shift-flags byte. */
-int FAR CDECL miscStub_clearKeyFlags(void)
-{
-    uint8 FAR *flags = (uint8 FAR *)MK_FP(0x40, 0x17);
-    *flags &= 0xf0;
-    return 0;
-}
-
-/* Write an OvlHeader-compatible stub overlay covering `count` slots starting
- * at `firstIdx`, pointing each at the corresponding fn (an f15.exe offset). */
-static void buildStubOverlay(uint16 ovlSeg, uint16 firstIdx, uint16 count,
-                             const GfxSlotFn *fns)
-{
-    uint16 codeSeg;
-    uint16 i;
-    uint16 FAR *base;
-    { typedef int (FAR *FarFn)(void);
-      FarFn fp = (FarFn)ovl_nop;
-      codeSeg = FP_SEG(fp); }
-    /* zero the header region (0x00..0x23) plus the offset table */
-    base = (uint16 FAR *)MK_FP(ovlSeg, 0);
-    for (i = 0; i < (uint16)(0x12 + count); i++)
-        base[i] = 0;
-    *(uint16 FAR *)MK_FP(ovlSeg, 0x18) = codeSeg;
-    *(uint16 FAR *)MK_FP(ovlSeg, 0x1C) = firstIdx;
-    *(uint16 FAR *)MK_FP(ovlSeg, 0x22) = count;
-    for (i = 0; i < count; i++)
-        *(uint16 FAR *)MK_FP(ovlSeg, 0x24 + i * 2) = PTR_OFF(fns[i]);
-}
-
-void gfx_buildMiscOverlay(uint16 ovlSeg)
-{
-    GfxSlotFn fns[6];
-    fns[0] = (GfxSlotFn)miscStub_keybuf;        /* 0x5a */
-    fns[1] = (GfxSlotFn)miscStub_getkey;        /* 0x5b */
-    fns[2] = (GfxSlotFn)ovl_nop;                /* 0x5c */
-    fns[3] = (GfxSlotFn)miscStub_readJoy;       /* 0x5d */
-    fns[4] = (GfxSlotFn)miscStub_clearKeyFlags; /* 0x5e */
-    fns[5] = (GfxSlotFn)ovl_nop;                /* 0x5f */
-    buildStubOverlay(ovlSeg, 0x5a, 6, fns);
-}
-
-void gfx_buildSoundOverlay(uint16 ovlSeg)
-{
-    GfxSlotFn fns[10];   /* slots 0x64-0x6d, all no-op (no sound) */
-    int i;
-    for (i = 0; i < 10; i++)
-        fns[i] = (GfxSlotFn)ovl_nop;
-    buildStubOverlay(ovlSeg, 0x64, 10, fns);
 }
