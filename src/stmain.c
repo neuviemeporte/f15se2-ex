@@ -20,7 +20,7 @@
 
 int start_main(void)
 {
-    uint8 unused[0xe];
+    uint8 unused[14];
     uint8 introStage;
     uint16 FAR *commPtr;
     uint16 difficulty;
@@ -73,7 +73,7 @@ int start_main(void)
         }
         if (timerCounter >= MPS_TIMEOUT) { // key was not pressed, show adv.pic
             gfx_waitRetrace();
-            gfx_setFadeSteps(0xf);
+            gfx_setFadeSteps(15);
             TRACE(("main: showing adv"));
             openShowPic("adv.pic", 0);
             gfx_commitPage();
@@ -180,7 +180,7 @@ checkEga:
     gameData->campaignProgress = 0;
     commData->startDone = 1;
     /* 0x365, check if same diff and thea picked as last time */
-    if (gameData->difficulty == difficulty && gameData->theater == theater && missionPick == 0xffff && askRepeatMission() != 0)
+    if (gameData->difficulty == difficulty && gameData->theater == theater && missionPick == -1 && askRepeatMission() != 0)
         goto doSrand;
     gameData->rand = rand();
 doSrand:
@@ -196,7 +196,7 @@ doSrand:
        normal path below -- in particular the f15.spr sprite-sheet load into
        commData->gfxInitResult, which egame reads as gfxBufPtr for the radar /
        tactical-map / HUD sprites. */
-    exitCode[0] = 0xc;
+    exitCode[0] = 12;
     restoreCbreakHandler();
     *needSplash = 0;
     gfx_setFadeSteps(8);
@@ -208,7 +208,7 @@ doSrand:
         loadPic("f15.spr", commData->gfxInitResult);
     }
     TRACE(("main: DEBUG_AUTOSTART - write world"));
-    exportWorldToComm(aTemp_wld);
+    exportWorldToComm("temp.wld");
     commData->setupDone = 3;
     commData->continueFlag = 0;
     commData->restartFlag = 0;
@@ -233,7 +233,7 @@ doSrand:
     }
     TRACE(("main: checking disk"));
     checkDiskA();
-    exitCode[0] = 0xc;
+    exitCode[0] = 12;
     TRACE(("main: restoring cbreak handler and clearing splash"));
     restoreCbreakHandler();
     *needSplash = 0;
@@ -247,7 +247,7 @@ doSrand:
     }
     // 403
     TRACE(("main: write world"));
-    exportWorldToComm(aTemp_wld);
+    exportWorldToComm("temp.wld");
     commData->setupDone = 3;
     commData->continueFlag = 0;
     commData->restartFlag = 0;

@@ -56,7 +56,7 @@ uint16 dos_alloc(const size_t paragraphs) {
     err = intdos(&rin, &rout);
     assert(err == rout.x.ax);
     if (rout.x.cflag != 0) {
-        ERROR("dos_alloc: error allocating %up (%lu): error 0x%x, max avail %u", paragraphs, PARA_TO_BYTES(paragraphs), (int)err, rout.x.bx);
+        ERROR("dos_alloc: error allocating %up (%lu): error 0x%x, max avail %u", paragraphs, PARA_TO_BYTES(paragraphs), err, rout.x.bx);
         return 0;
     }
     return rout.x.ax;
@@ -71,7 +71,7 @@ int dos_free(const uint16 segment) {
     // DOS 2.1-6.0 does not coalesce adjacent free blocks when a block is freed, only when a block is allocated or resized.
     // The code for this function is identical in DOS 2.1-6.0 except for calls to start/end a critical section in DOS 3.0+""
     if (rout.x.cflag != 0) {
-        ERROR("dos_free: error freeing segment 0x%x: error 0x%x", segment, (int)err);
+        ERROR("dos_free: error freeing segment 0x%x: error 0x%x", segment, err);
         return err;
     }
     return 0;
@@ -223,7 +223,7 @@ struct MCB {
     char desc[8];
 };
 #pragma pack()
-STATIC_ASSERT(sizeof(struct MCB)==0x10);
+STATIC_ASSERT(sizeof(struct MCB)==16);
 
 static uint8 FAR* dos_sysvars(void) {
     rin.h.ah = DOSF_SYSVARS;

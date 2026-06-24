@@ -89,7 +89,7 @@ void updateFrame(void) {
         waypointIndex = 1;
         g_currentWeaponType = 1;
         drawWeaponSelectMarker(0);
-        g_frameTimingAccum = 0x0c;
+        g_frameTimingAccum = 12;
         g_frameRateScaling = 4;
         recalcTimeScale();
         g_mapZoomLevel = 1;
@@ -101,7 +101,7 @@ void updateFrame(void) {
             g_ViewX -= (long)(tmp * 0x80);
             *(char *)&g_playerPlaneFlags |= 8;
         } else {
-            g_ViewY -= (long)(0x708 * g_northSouthSign);
+            g_ViewY -= (long)(1800 * g_northSouthSign);
         }
         initFrameRandom();
         TRACE(("updateFrame: past 118F6"));
@@ -111,7 +111,7 @@ void updateFrame(void) {
         TRACE(("updateFrame: past 19595"));
         switchIndicatorColor(3, 10);
         TRACE(("updateFrame: past 19EB6"));
-        setActivePanel(0x13);
+        setActivePanel(19);
         TRACE(("updateFrame: past 194D0"));
         g_groundTargetLock = g_airTargetLock = -1;
         g_difficultyTier = 2;
@@ -124,7 +124,7 @@ void updateFrame(void) {
         if (g_missionStatus == 0 || g_autopilotEngaged != 0) {
             g_northSouthSign = ((unsigned)(g_viewY_ - waypoints[1].mapY) < 0x8000u) ? 1 : -1;
             g_altitude = 2000;
-            g_velocity = 0x1fa4;
+            g_velocity = 8100;
             g_setThrust = 100;
             UpdateThrottleState();
             *(char *)&g_playerPlaneFlags |= 1;
@@ -133,10 +133,10 @@ void updateFrame(void) {
                 for (i = 0; i < g_groundUnitCount - 4; i++) {
                     if ((i & 1) == 0) {
                         g_simObjects[i].flags.b[0] |= 2;
-                        g_simObjects[i].alt = 0x898;
+                        g_simObjects[i].alt = 2200;
                         g_simObjects[i].speed = 300;
-                        g_simObjects[i].posX = i * 12 + g_viewX_ - 0x24;
-                        g_simObjects[i].posY = g_viewY_ - (i * 0x20 + 0x96) * g_northSouthSign;
+                        g_simObjects[i].posX = i * 12 + g_viewX_ - 36;
+                        g_simObjects[i].posY = g_viewY_ - (i * 0x20 + 150) * g_northSouthSign;
                         g_simObjects[i].worldX = (long)g_simObjects[i].posX * 32;
                         g_simObjects[i].worldY = (long)g_simObjects[i].posY * 32;
                         g_simObjects[i].heading.w = g_ourHead + 0x8000;
@@ -146,10 +146,10 @@ void updateFrame(void) {
         }
         if (gameData->theater != 6) {
             g_simObjects[1].flags.b[0] |= 2;
-            g_simObjects[1].alt = 0x834;
+            g_simObjects[1].alt = 2100;
             g_simObjects[1].speed = 700;
             g_wingmanX = g_viewX_;
-            g_wingmanY = 0x50 * g_northSouthSign + g_viewY_;
+            g_wingmanY = 80 * g_northSouthSign + g_viewY_;
             g_simObjects[1].worldX = (long)g_wingmanX * 32;
             g_simObjects[1].worldY = (long)g_wingmanY * 32;
             g_simObjects[1].heading.w = g_ourHead;
@@ -190,9 +190,9 @@ void updateFrame(void) {
     if (objectToScreen(g_viewX_, g_viewY_, (int16*)&val, (int16*)&screenY) != 0) {
         g_drawPage = -(gfx_getDisplayPage() - 1);
         gfx_copyRect(2, val - 3, screenY - 3, g_drawPage, val - 3, screenY - 3, 6, 6);
-        blitSprite(val - 1, screenY - 1, ((g_ourHead + 0x1000) >> 0xd & 7) * 4 + 0xa4, 4, 4, 4, 0);
+        blitSprite(val - 1, screenY - 1, ((g_ourHead + 0x1000) >> 0xd & 7) * 4 + 164, 4, 4, 4, 0);
         g_drawPage = 1 - g_drawPage;
-        if (((int16)val < 0x20 || (int16)val > 0x58 || (int16)screenY < 0x76 || (int16)screenY > 0xa2) && g_mapZoomLevel > 2) {
+        if (((int16)val < 32 || (int16)val > 88 || (int16)screenY < 118 || (int16)screenY > 162) && g_mapZoomLevel > 2) {
             g_mapZoomLevel--;
             redrawTacMap(g_viewX_, g_viewY_);
         }
@@ -249,9 +249,9 @@ void updateFrame(void) {
     if (g_prevThreatIndex != g_closestThreatIndex && (g_planeTable.planes[g_closestThreatIndex].flags & 0x800) == 0) {
         for (i = 1; i <= 2; i++) {
             g_simObjects[g_groundUnitCount - i].flags.b[0] &= ~2;
-            g_simObjects[g_groundUnitCount - i].spec = g_planeTable.planes[g_closestThreatIndex].flags & 0x400 ? 0x0d : 0;
+            g_simObjects[g_groundUnitCount - i].spec = g_planeTable.planes[g_closestThreatIndex].flags & 0x400 ? 13 : 0;
             if (g_planeTable.planes[g_closestThreatIndex].flags & 0x100) {
-                g_simObjects[g_groundUnitCount - i].spec = 0x12;
+                g_simObjects[g_groundUnitCount - i].spec = 18;
             }
             g_simObjects[g_groundUnitCount - i].objType = g_closestThreatIndex;
         }
@@ -263,16 +263,16 @@ void updateFrame(void) {
             if ((g_planeTable.planes[g_closestThreatIndex].flags & 0x200) != 0) {
                 g_simObjects[objIdx].posX += g_northSouthSign * 5;
                 g_simObjects[objIdx].posY += (i & 1) * g_northSouthSign * 0x10;
-                g_simObjects[objIdx].alt = 0x84;
+                g_simObjects[objIdx].alt = 132;
             } else {
                 g_simObjects[objIdx].posX += 10;
-                g_simObjects[objIdx].posY += (i + g_closestThreatIndex & 3) * 0x10;
+                g_simObjects[objIdx].posY += ((i + g_closestThreatIndex) & 3) * 0x10;
                 g_simObjects[objIdx].alt = 4;
             }
             g_simObjects[objIdx].worldX = (long)g_simObjects[objIdx].posX << 5;
             g_simObjects[objIdx].worldY = (long)g_simObjects[objIdx].posY << 5;
             g_simObjects[objIdx].heading.w = -randomRange(0x4000);
-            g_simObjects[objIdx].spec = g_planeTable.planes[g_closestThreatIndex].flags & 0x400 ? 8 : 0x0b;
+            g_simObjects[objIdx].spec = g_planeTable.planes[g_closestThreatIndex].flags & 0x400 ? 8 : 11;
             if (g_planeTable.planes[g_closestThreatIndex].flags & 0x100) {
                 g_simObjects[objIdx].spec = 9;
             }
@@ -286,7 +286,7 @@ void updateFrame(void) {
                 spawnEnemyAircraft(objIdx, g_closestThreatIndex);
                 g_simObjects[objIdx].flags.w = 0x207;
                 g_simObjects[objIdx].alt = 1000;
-                g_simObjects[objIdx].speed = 0xfa;
+                g_simObjects[objIdx].speed = 250;
                 g_simObjects[objIdx].worldY += g_northSouthSign * 0x3000;
             }
         }
@@ -311,7 +311,7 @@ skip_target_section:
                 if ((unsigned)(g_viewY_ - g_planeTable.planes[g_closestThreatIndex].mapY) * g_northSouthSign >= 0x10 && (unsigned)(g_viewY_ - g_planeTable.planes[g_closestThreatIndex].mapY) * g_northSouthSign <= 0x14) {
                     if (abs(g_ourHead - ((1 - g_northSouthSign) << 0xe)) < 0x2000) {
                         g_autoCrashDive = 1;
-                        makeSound(0x16, 2);
+                        makeSound(22, 2);
                     }
                 }
             }
@@ -331,7 +331,7 @@ skip_target_section:
                 g_gearDownArmed = 1;
                 g_landingDoneFlag = 1;
                 if (g_landingTimer++ == 1) {
-                    tempStrcpy(aSafeLanding);
+                    tempStrcpy("Safe Landing");
                     g_autopilotAltitude = 0;
                     g_autoLandingActive = 0;
                     playVoiceCue(4);
@@ -348,9 +348,9 @@ skip_target_section:
                     if (g_landingTimer > g_frameRateScaling) {
                         initWeaponLoadout();
                         if (frameTick & 8) {
-                            tempStrcpy(aReadyForTakeof);
+                            tempStrcpy("Ready for takeoff");
                         } else {
-                            tempStrcpy(aWeaponsRepleni);
+                            tempStrcpy("Weapons replenished");
                         }
                     }
                 }
@@ -363,13 +363,13 @@ end_landing_check:
                 g_ViewX = (long)g_planeTable.planes[g_closestThreatIndex].mapX << 5;
                 g_ViewY = (long)(0x8000 - g_planeTable.planes[g_closestThreatIndex].mapY) << 5;
             } else {
-                tempStrcpy(aAutomaticLandi);
+                tempStrcpy("Automatic Landing Engaged");
                 g_autoLandingActive = 1;
                 i = g_frameRateScaling * 2;
-                if (i > 0x0e) {
-                    i = 0x0e;
+                if (i > 14) {
+                    i = 14;
                 }
-                g_velocity = 0x1518;
+                g_velocity = 5400;
                 g_altitude -= (g_altitude - g_groundAltitude) / i;
                 if (g_altitude < g_groundAltitude + 5) {
                     g_altitude = g_groundAltitude + 5;
@@ -389,12 +389,12 @@ skip_autopilot:
     if (g_inLandingCorridor == 0) {
         if (g_viewZ == 0) {
             if ((gameData->unk4 != 0 || g_gunHits > 4 || g_fuelRemaining == 0) &&
-                g_ejectState == 0 && g_knots > 0x32) {
+                g_ejectState == 0 && g_knots > 50) {
                 TRACE_KEY(("DEATH: altitude-zero crash, tick=%d var547=%d 3AA5A=%d", frameTick, g_viewZ, g_knots));
                 makeSound(0, 2);
                 setDrawColor(0);
-                fillRectBoth(0, 0, 0x13f, 199);
-                waitFrameSync(0x78);
+                fillRectBoth(0, 0, 319, 199);
+                waitFrameSync(120);
                 finalizeMission(1);
             }
         } else {
@@ -407,7 +407,7 @@ skip_autopilot:
         if (gameData->unk4 != 0 && g_altitude != 0) {
             makeSound(0, 2);
             gfx_waitRetrace();
-            waitFrameSync(0x78);
+            waitFrameSync(120);
             finalizeMission(2);
         } else {
             g_altitude += 500;
@@ -476,14 +476,14 @@ void dispatchKeyScancode(void) {
 
 // ==== seg000:0x14fc ====
 void countermeasures(int eventType) {
-    char *name;
+    const char *name;
     int i;
     int slot;
 
     slot = -1;
     if ((g_eventTimers[eventType])-- <= 0) {
         g_eventTimers[eventType] = 0;
-        tempStrcpy(aStoresExhauste);
+        tempStrcpy("Stores exhausted");
     } else {
         for (i = 1; i < 4; i++) {
             if (mapEvents[i].ttl == 0)
@@ -494,24 +494,24 @@ void countermeasures(int eventType) {
             mapEvents[slot].mapY = g_viewY_;
             mapEvents[slot].type = eventType;
             mapEvents[slot].ttl =
-                -(g_missionStatus * 3 - 0xf) * g_frameRateScaling;
+                -(g_missionStatus * 3 - 15) * g_frameRateScaling;
             switch (eventType) {
             case 1:
-                name = aFlare;
+                name = "Flare";
                 break;
             case 2:
-                name = aChaff;
+                name = "Chaff";
                 break;
             }
             strcpy(strBuf, name);
-            strcat(strBuf, aReleased);
+            strcat(strBuf, " released");
             tempStrcpy(strBuf);
             strcpy(strBuf, name);
-            strcat(strBuf, strColon);
+            strcat(strBuf, ":");
             strcat(strBuf, itoa(g_eventTimers[eventType], g_itoaScratch, 10));
             setTimedMessage(strBuf);
         }
-        makeSound(0x16, 2);
+        makeSound(22, 2);
     }
 }
 
@@ -570,7 +570,7 @@ no_fire:
     g_gunFiredFlag = 0;
 done_fire:
     if (firing) {
-        strcpy(strBuf, aGun);
+        strcpy(strBuf, "GUN:");
         strcat(strBuf, itoa(g_gunAmmo, g_itoaScratch, 10));
         setTimedMessage(strBuf);
     }
@@ -583,7 +583,7 @@ void updateTracerParticles() {
 
     if (g_smokeSourceIdx != -1) {
         for (i = 0; i < 8; i++) {
-            g_particles[i].alt += 0x0a;
+            g_particles[i].alt += 10;
             g_particles[i].posY += g_particles[i].alt >> 9;
             *(((char *)&g_particles[i].spin) + 1) += 6;
         }
@@ -642,10 +642,10 @@ void initWeaponLoadout() {
         missleSpec[i].weaponIdx = commData->weaponType[i];
         missleSpec[i].ammo = commData->weaponCount[i];
     }
-    g_gunAmmo = 0x3e8;
-    g_fuelRemaining = 0x2710;
-    g_eventTimers[2] = 0x12;
-    g_eventTimers[1] = 0x0c;
+    g_gunAmmo = 1000;
+    g_fuelRemaining = 10000;
+    g_eventTimers[2] = 18;
+    g_eventTimers[1] = 12;
     drawWeaponAmmo();
     drawFuelGauge();
     UpdateThrottleState();
@@ -662,8 +662,8 @@ void drawWeaponAmmo() {
     for (i = 0; i < 3; i++) {
         setDrawColor(0);
         x = g_tacmapIndicators[i];
-        fillRectBoth(x - 1, 0xbe, x + 2, 0xc2);
-        drawNumber(missleSpec[i].ammo, x, 0xbe, 0x0c);
+        fillRectBoth(x - 1, 190, x + 2, 194);
+        drawNumber(missleSpec[i].ammo, x, 190, 0x0c);
     }
 }
 
@@ -671,13 +671,13 @@ void drawWeaponAmmo() {
 void drawWeaponSelectMarker(int weaponIdx) {
     if (g_hudVisible == 0) return;
     g_pageFront[2] = 0;
-    drawFullscreenLine(g_weaponMarkerBoxX[g_weaponMarkerSel], 0xc4, g_weaponMarkerBoxX[g_weaponMarkerSel] + 6, 0xc4);
+    drawFullscreenLine(g_weaponMarkerBoxX[g_weaponMarkerSel], 196, g_weaponMarkerBoxX[g_weaponMarkerSel] + 6, 196);
     g_pageFront[2] = 7;
-    drawFullscreenLine(g_weaponMarkerBoxX[g_weaponMarkerSel], 0xc5, g_weaponMarkerBoxX[g_weaponMarkerSel] + 6, 0xc5);
+    drawFullscreenLine(g_weaponMarkerBoxX[g_weaponMarkerSel], 197, g_weaponMarkerBoxX[g_weaponMarkerSel] + 6, 197);
     g_pageFront[2] = 0x0c;
-    drawFullscreenLine(g_weaponMarkerBoxX[weaponIdx], 0xc4, g_weaponMarkerBoxX[weaponIdx] + 6, 0xc4);
+    drawFullscreenLine(g_weaponMarkerBoxX[weaponIdx], 196, g_weaponMarkerBoxX[weaponIdx] + 6, 196);
     g_pageFront[2] = 4;
-    drawFullscreenLine(g_weaponMarkerBoxX[weaponIdx], 0xc5, g_weaponMarkerBoxX[weaponIdx] + 6, 0xc5);
+    drawFullscreenLine(g_weaponMarkerBoxX[weaponIdx], 197, g_weaponMarkerBoxX[weaponIdx] + 6, 197);
     g_weaponMarkerSel = weaponIdx;
 }
 
@@ -742,12 +742,12 @@ void generateRandomRadioMessage(void) {
         g_viewTargetObj = idx + 0x20;
         keyValue = 0x89;
         strcpy(strBuf, aircraftTypes[g_simObjects[idx].spec].name);
-        strcat(strBuf, aOnPatrol);
+        strcat(strBuf, " on patrol");
         tempStrcpy(strBuf);
         break;
     case 2:
         keyValue = 0x87;
-        tempStrcpy(aF15StrikeEagle);
+        tempStrcpy("F15 Strike Eagle");
         break;
     }
 }
@@ -771,7 +771,7 @@ void placeString(int waypointIdx) {
     strcpy(strBuf, g_targetNameTable[(g_planeTable.planes[waypointIdx].nameIndex) & 0x7f]);
     if (strlen(g_targetNameTable[((int16 *)&g_planeTable)[waypointIdx * 8]])) {
         if (strlen(g_targetNameTable[(g_planeTable.planes[waypointIdx].nameIndex) & 0x7f])) {
-            strcat(strBuf, aAt);
+            strcat(strBuf, " at ");
         }
         strcat(strBuf, g_targetNameTable[((int16 *)&g_planeTable)[waypointIdx * 8]]);
     }
@@ -821,7 +821,7 @@ void findWaypointFeatures() {
                 g_shapeTargetCategory[nameIdx] = g_shapeTargetCategory[g_nearestTileObj->id];
                 strcpy(g_targetNameTable[nameIdx], g_targetNameTable[g_nearestTileObj->id]);
                 g_targetNameTable[nameIdx + 1] = g_targetNameTable[nameIdx] + strlen(g_targetNameTable[nameIdx]) + 1;
-                addTileEntry((char *)g_nearestTileObj, shapeDataOffset(nameIdx + 0x100), nameIdx + 0x100);
+                addTileEntry(g_nearestTileObj, shapeDataOffset(nameIdx + 0x100), nameIdx + 0x100);
             }
             g_planeTable.planes[g_targetSlots[slot].planeIndex].nameIndex = nameIdx + 0x100;
             nameIdx++;
@@ -836,7 +836,7 @@ void moveDataFar() {
     setCommWorldbufPtr();
     flagFarToNear = 0;
     moveStuff();
-    moveNearFar(g_replayLog.events, 0x600);
+    moveNearFar(g_replayLog.events, 1536);
 }
 
 // ==== seg000:0x206d ====
@@ -848,15 +848,15 @@ void moveStuff() {
     moveNearFar(&g_planeScanCount, 2);
     moveNearFar(&g_planeTable, g_planeCount * 16);
     moveNearFar(&g_groundUnitCount, 2);
-    moveNearFar(g_simObjects, g_groundUnitCount * 0x24);
-    moveNearFar(g_shapeTargetCategory, 0x64);
-    moveNearFar(g_tileKillTally, 0x64);
-    moveNearFar(g_stringPool, 0x2ee);
+    moveNearFar(g_simObjects, g_groundUnitCount * 36);
+    moveNearFar(g_shapeTargetCategory, 100);
+    moveNearFar(g_tileKillTally, 100);
+    moveNearFar(g_stringPool, 750);
     moveNearFar(g_mapCellFlags, 0x100);
     moveNearFar(&g_unusedSavedWord, 2);
     moveNearFar(&g_padlockAircraft, 2);
-    moveNearFar(waypoints, 0x10);
-    moveNearFar(g_targetSlots, 0x24);
+    moveNearFar(waypoints, 16);
+    moveNearFar(g_targetSlots, 36);
 }
 
 // ==== seg000:0x215c ====

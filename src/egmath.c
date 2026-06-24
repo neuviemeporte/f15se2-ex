@@ -26,12 +26,12 @@ void load15Flt3d3() {
     struct SREGS segs;
     char FAR *dest;
     TRACE(("load15Flt3d3: a15flt_xxx=%s", a15flt_xxx));
-    strcpyFromDot(a15flt_xxx, a_3d3_0);
+    strcpyFromDot(a15flt_xxx, ".3D3");
     TRACE(("load15Flt3d3: after strcpyFromDot=%s", a15flt_xxx));
     fileHandle = fopen(a15flt_xxx, "rb");
     TRACE(("load15Flt3d3: fopen returned %d", (int)fileHandle));
     if (fileHandle == NULL) {
-        printError(aOpenErrorOn_3d3_0);
+        printError("Open Error on *.3D3");
         return;
     }
     fread(&flt15HeaderWord, 2, 1, fileHandle);
@@ -45,7 +45,7 @@ void load15Flt3d3() {
     while(bytesLeft > 0) {
         chunkSize = bytesLeft <= 0x800 ? bytesLeft : 0x800;
         fread(flt15_buf2, 1, chunkSize, fileHandle);
-        movedata(segs.ds, (uint16)flt15_buf2, FP_SEG(dest), FP_OFF(dest), chunkSize);
+        movedata(segs.ds, PTR_OFF(flt15_buf2), FP_SEG(dest), FP_OFF(dest), chunkSize);
         bytesLeft -= 0x800;
         FP_OFF(dest) += 0x800;
     }
@@ -136,7 +136,7 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
 
         if (mode == 1) {
             g_trkRange = range;
-            g_trkSize = (range >> 4) + 0x190;
+            g_trkSize = (range >> 4) + 400;
             g_trkScale = (g_trkSize << 5) / (range + 1);
             range = g_trkSize << 2;
             g_trkBearing = bearing;
@@ -182,16 +182,16 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
         g_extraScaleShift = 2;
     }
     if (mode == 1 || mode == 3) {
-        horizonY = (int)((long)g_trkScale * (long)(g_trkPitch >> 2) >> 5) + 0x9c;
-        if (horizonY < 0x80 || g_trkPitch < (int)0xe800) {
-            horizonY = 0x80;
+        horizonY = (int)((long)g_trkScale * (long)(g_trkPitch >> 2) >> 5) + 156;
+        if (horizonY < 128 || g_trkPitch < (int16)0xe800) {
+            horizonY = 128;
         }
-        if (horizonY > 0xb8 || g_trkPitch > 0x1800) {
-            horizonY = 0xb8;
+        if (horizonY > 184 || g_trkPitch > 0x1800) {
+            horizonY = 184;
         }
         *(g_targetViewParams + 2) = colorLut[3];
-        if (horizonY != 0x80) {
-            fillSpanRect(g_targetViewParams, 0xe8, 0x80, 0x130, horizonY);
+        if (horizonY != 128) {
+            fillSpanRect(g_targetViewParams, 232, 128, 304, horizonY);
         }
         colorIdx = g_world3dData[0x2f];
         category = (int)(signed char)g_shapeTargetCategory[shapeId & 0x7f];
@@ -199,25 +199,25 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
             colorIdx = 8;
         }
         categoryLow = (char)(category & 0xf);
-        if (categoryLow == 0xc || categoryLow == 9 || categoryLow == 0xb) {
+        if (categoryLow == 12 || categoryLow == 9 || categoryLow == 11) {
             colorIdx = 1;
         }
         *(g_targetViewParams + 2) = colorLut[colorIdx];
-        if (horizonY != 0xb8) {
-            fillSpanRect(g_targetViewParams, 0xe8, horizonY, 0x130, 0xb8);
+        if (horizonY != 184) {
+            fillSpanRect(g_targetViewParams, 232, horizonY, 304, 184);
         }
     }
 
     g_offscreenRender = 1;
-    setup3DTransform((char*)g_targetViewParams, -g_trkBearing, g_trkPitch, g_trkRoll, 0, 0, 0, 0);
+    setup3DTransform(g_targetViewParams, -g_trkBearing, g_trkPitch, g_trkRoll, 0, 0, 0, 0);
     projectSceneObject(g_world3dData + dataOff, -objYaw, objPitch, objRoll, relX, -relY, relZ);
     rasterize3DWorld();
     g_offscreenRender = 0;
 
     if (mode == 1) {
-        strcpy(strBuf, aBrg);
+        strcpy(strBuf, "BRG ");
         strcat(strBuf, itoa((unsigned int)g_trkBearing / 0xb6, g_itoaScratch, 10));
-        drawStringActivePage(strBuf, 0xf8, 0xb0, 0xf);
+        drawStringActivePage(strBuf, 248, 176, 0xf);
     }
     g_extraScaleShift = 0;
 }

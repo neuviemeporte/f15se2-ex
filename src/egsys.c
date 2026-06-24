@@ -115,13 +115,13 @@ void setupDac(void)
     segread(&s);
     s.es = s.ds;                     /* ES:DX = palette table (DGROUP) */
     r.x.ax = 0x1012; r.x.bx = 0x10; r.x.cx = 0x50;
-    r.x.dx = (uint16)dacValues1;
+    r.x.dx = PTR_OFF(dacValues1);
     int86x(0x10, &r, &r, &s);
     if (g_horizonGroundColor != 2) {
         for (i = 0; i < 0x30; i++)
             dacValues[0x30 + i] = g_dacGroundPaletteSrc[i];
     }
     r.x.ax = 0x1012; r.x.bx = 0x60; r.x.cx = 0xA0;
-    r.x.dx = (uint16)(g_nightMode != 0 ? otherDacValues : dacValues);
+    r.x.dx = PTR_OFF(g_nightMode != 0 ? otherDacValues : dacValues);
     int86x(0x10, &r, &r, &s);
 }

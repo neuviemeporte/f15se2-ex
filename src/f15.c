@@ -70,7 +70,7 @@ SDL_Renderer *sdlRenderer = NULL;
  * bookkeeping we never touch, but MSC's exit-time check (_nullcheck) sees the
  * change and aborts with "R6001 - null pointer assignment". Snapshot the guard
  * at startup and repair it after every child run so the check passes. */
-enum { NULLGUARD_SIZE = 0x42 };
+enum { NULLGUARD_SIZE = 66 };
 static unsigned char nullGuard[NULLGUARD_SIZE];
 static unsigned char FAR *nullGuardPtr(void) {
     void FAR *fp = (void FAR *)&commSegment; /* any DGROUP global → DS:0 */
@@ -164,7 +164,7 @@ void game_init(void) {
         writeWordFar(commSegment, COMM_MISCOVL_ADDR_OFFSET, miscSeg);
         INFO("Stub sound overlay at 0x%x, misc overlay at 0x%x", sndSeg, miscSeg);
 
-        gfxBufAddress = (uint16)gfx_allocPage((int)GFX_INIT_ARG);
+        gfxBufAddress = (uint16)gfx_allocPage(GFX_INIT_ARG);
         INFO("gfx_allocPage returned 0x%x", gfxBufAddress);
     }
     writeWordFar(commSegment, COMM_GFXINIT_RESULT_OFFSET, gfxBufAddress);

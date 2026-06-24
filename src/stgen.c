@@ -29,7 +29,7 @@ int approxDistance(int, int);
 void parseWorld(const char *);
 int calcBearing(int, int);
 int setMoveDstComm7A(const char *filename, const char* mode);
-void memAppend(void *ptr, int itemsz, int count, FILE* unused);
+void memAppend(const void *ptr, int itemsz, int count, FILE* unused);
 void doNothing(FILE*);
 char *formatGridRef(int16, int16, int16);
 int clampValue(int, int, int);
@@ -73,7 +73,7 @@ void runGenerator()
 
   TRACE(("runGenerator(): entering"));
   attempt = missionDistAccum = 0;
-  minDist = 0xfa;
+  minDist = 250;
 restart_40a8:
   do {
     TRACE(("runGenerator(): outer, %d", attempt));
@@ -93,30 +93,30 @@ restart_40a8:
           TRACE(("runGenerator(): inner branch 2 loop 1"));
           do {
             TRACE(("runGenerator(): inner branch 2 loop 2"));
-            randIdx = randMul(0xe0) * 0x80 + 0x840;
-            randY = randMul(0xe0) * 0x80 + 0x840;
-          } while ((terrainGrid[(randIdx >> 0xb) + ((randY >> 0xb) * 0x10)] & 3) != 0);
-        } while ((targets[0].targetIdx = findOrPlaceItem(randIdx,randY,1)) == 0xffff);
+            randIdx = randMul(224) * 0x80 + 0x840;
+            randY = randMul(224) * 0x80 + 0x840;
+          } while ((terrainGrid[(randIdx >> 0xb) + ((randY >> 0xb) * 16)] & 3) != 0);
+        } while ((uint16)(targets[0].targetIdx = findOrPlaceItem(randIdx,randY,1)) == 0xffffu);
       }
       TRACE(("runGenerator(): past inner check 1"));
       if (missionPick == 7) {
         targets[1].targetIdx = findOrPlaceItem(targetCoordsXPtrs[missionPick][randIdx],
-          targetCoordsYPtrs[missionPick][randIdx] + 0x28, 2);
+          targetCoordsYPtrs[missionPick][randIdx] + 40, 2);
       }
       else if (missionPick == 2) {
         randIdx = randIdx * 2 + randMul(2);
         targets[1].targetIdx = findOrPlaceItem(targetCoordsX2Alt[randIdx], targetCoordsY2Alt[randIdx], 2);
       }
       else if (missionPick == 6) {
-        randIdx = randMul(6) + randIdx + 1 & 7;
+        randIdx = (randMul(6) + randIdx + 1) & 7;
         targets[1].targetIdx = findOrPlaceItem(targetCoordsX6[randIdx], targetCoordsY6[randIdx], 2);
       }
       else {
         do {
           do {
-            randIdx = randMul(0xe0) * 0x80 + 0x840;
-            randY = randMul(0xe0) * 0x80 + 0x840;
-          } while ((terrainGrid[(randIdx >> 0xb) + (randY >> 0xb) * 0x10] & 3) != 0);
+            randIdx = randMul(224) * 0x80 + 0x840;
+            randY = randMul(224) * 0x80 + 0x840;
+          } while ((terrainGrid[(randIdx >> 0xb) + (randY >> 0xb) * 16] & 3) != 0);
           targets[1].targetIdx = findOrPlaceItem(randIdx, randY, 2);
         } while ((targets[1].targetIdx == -1) || ((missionPick == 0 && (worldObjects[targets[1].targetIdx].unitType == 0))));
       }
@@ -144,7 +144,7 @@ restart_40a8:
   TRACE(("runGenerator(): past loop2"));
   if (gameData->theater != THEATER_DS) {
     totalDist = (itemDistance(targets[0].targetIdx, targets[1].targetIdx) >> 6) + (baseDist[0] >> 6) + (baseDist[1] >> 6);
-    if (((attempt + 0x2e4 < totalDist) || (totalDist < minDist)) && ((worldObjects[targets[0].baseIdx].targetFlags & 0x200) == 0)) {
+    if (((attempt + 740 < totalDist) || (totalDist < minDist)) && ((worldObjects[targets[0].baseIdx].targetFlags & 0x200) == 0)) {
       minDist -= 5 - difficultySaved;
       goto restart_40a8;
     }
@@ -162,9 +162,9 @@ restart_40a8:
     targets[idx].missionType = 0;
     for (retryCount = 0; retryCount < 2; retryCount++) {
       matchCount = 0;
-      for (slot = 0; slot < 0x38; slot++) {
+      for (slot = 0; slot < 56; slot++) {
         if (objectTypeTable[worldObjects[targets[idx].targetIdx].objectIdx & 0x7f] == missionTable[slot].tensionMask
-            && strcmp(wldOffsets[targets[idx].targetIdx], aPowCamp) != 0) {
+            && strcmp(wldOffsets[targets[idx].targetIdx], "POW Camp") != 0) {
           if ((retryCount != 0) && (matchCount == randChoice)) {
             targets[idx].missionType = missionTable[slot].theaterMask;
             targets[idx].missionNum = slot;
@@ -329,10 +329,10 @@ counterMore1k:
     }
   }
   TRACE(("runGenerator(): past loop6"));
-  for (randIdx = 0; randIdx < 0x10; randIdx++) {
-    for (randY = 0; randY < 0x10; randY++) {
-      if (((terrainGrid[randY + randIdx * 0x10] & 0x10) != 0) && randMul(5) >= difficultySaved) {
-        terrainGrid[randY + randIdx * 0x10] &= 0xef;
+  for (randIdx = 0; randIdx < 16; randIdx++) {
+    for (randY = 0; randY < 16; randY++) {
+      if (((terrainGrid[randY + randIdx * 16] & 0x10) != 0) && randMul(5) >= difficultySaved) {
+        terrainGrid[randY + randIdx * 16] &= 0xef;
       }
     }
   }
@@ -361,21 +361,21 @@ counterMore1k:
   if ((targets[0].missionType == 4) || (targets[1].missionType == 4)) {
     nightMissionFlag = 1;
   }
-  missionDistAccum -= (missionBits + missionDistAccum) % 0x96;
+  missionDistAccum -= (missionBits + missionDistAccum) % 150;
   TRACE(("runGenerator(): exiting"));
 }
 
 int findOrPlaceItem(int wx, int wy, int slot) {
     int objIdx;
     if ((nearestTerrainResult = findNearestTerrain((int32)wx << WORLD_COORD_SHIFT, (0x8000 - (int32)wy) << WORLD_COORD_SHIFT)) != NULL) {
-        wx = ((int32*)nearestTerrainResult)[1] >> WORLD_COORD_SHIFT;
-        wy = -((((int32*)nearestTerrainResult)[2] >> WORLD_COORD_SHIFT) - 0x8000);
+        wx = nearestTerrainResult->worldX >> WORLD_COORD_SHIFT;
+        wy = -((nearestTerrainResult->worldY >> WORLD_COORD_SHIFT) - 0x8000);
         for (objIdx = FIRST_REAL_ITEM; objIdx < readItemSize; objIdx++) {
             if (wx == worldObjects[objIdx].x_coord && wy == worldObjects[objIdx].y_coord) return objIdx;
         }
         worldObjects[slot].x_coord = wx;
         worldObjects[slot].y_coord = wy;
-        worldObjects[slot].objectIdx = *nearestTerrainResult + 0x100;
+        worldObjects[slot].objectIdx = nearestTerrainResult->objectType + 0x100;
         return slot;
     }
     return -1;
@@ -391,10 +391,10 @@ void positionUnit(int unit, int loc) {
     int planeType;
     planeType = flightUnits[unit].planeType;
     flightUnits[unit].x = worldObjects[loc].x_coord + 9;
-    flightUnits[unit].y = worldObjects[loc].y_coord - 0xc;
+    flightUnits[unit].y = worldObjects[loc].y_coord - 12;
     flightUnits[unit].xPrecise = (long)flightUnits[unit].x << WORLD_COORD_SHIFT;
     flightUnits[unit].yPrecise = (long)flightUnits[unit].y << WORLD_COORD_SHIFT;
-    flightUnits[unit].altitude = worldObjects[loc].targetFlags & 0x200 ? 0x8c : 0xc;
+    flightUnits[unit].altitude = worldObjects[loc].targetFlags & 0x200 ? 140 : 12;
     flightUnits[unit].maxSpeed = planes[planeType].maxSpeed;
     flightUnits[unit].heading = 0xfc00;
     flightUnits[unit].pitch = 0;
@@ -450,17 +450,17 @@ void exportWorldToComm(const char *filename) {
     memAppend(&readItemSize, 2, 1, fileHandle);
     memAppend(&groundUnitCount, 2, 1, fileHandle);
     memAppend(&worldObjectCount, 2, 1, fileHandle);
-    memAppend(worldObjects, 0x10, readItemSize, fileHandle);
+    memAppend(worldObjects, 16, readItemSize, fileHandle);
     memAppend(&flightUnitCount, 2, 1, fileHandle);
-    memAppend(flightUnits, 0x24, flightUnitCount, fileHandle);
-    memAppend(wldReadBuf7, 0x64, 1, fileHandle);
-    memAppend(wldReadBuf8, 0x64, 1, fileHandle);
+    memAppend(flightUnits, 36, flightUnitCount, fileHandle);
+    memAppend(wldReadBuf7, 100, 1, fileHandle);
+    memAppend(wldReadBuf8, 100, 1, fileHandle);
     memAppend(wldReadBuf11, 1, WORLD_BUFSZ, fileHandle);
     memAppend(terrainGrid, 1, 0x100, fileHandle);
     memAppend(&missionDistAccum, 2, 1, fileHandle);
     memAppend(&escortMissionFlag, 2, 1, fileHandle);
     memAppend(&missionMidX, 4, 4, fileHandle);
-    memAppend(targets, 0x12, 2, fileHandle);
+    memAppend(targets, 18, 2, fileHandle);
     doNothing(fileHandle);
 }
 
@@ -511,8 +511,8 @@ int setMoveDstComm7A(const char *filename, const char* mode) {
     return 1;
 }
 
-void memAppend(void *ptr, int itemsz, int count, FILE* unused) {
-    void FAR *farptr;
+void memAppend(const void *ptr, int itemsz, int count, FILE* unused) {
+    const void FAR *farptr;
     farptr = ptr;
     movedata(FP_SEG(farptr), FP_OFF(farptr), FP_SEG(moveDst), FP_OFF(moveDst), itemsz * count);
     moveDst += itemsz * count;
@@ -530,37 +530,37 @@ char* formatGridRef(int16 wx, int16 wy, int16 theater) {
     (void)theater;
     switch (gameData->theater) {
     case 0:
-        mystrcpy(&bufCoordStr, aTd00);
+        mystrcpy(&bufCoordStr, "TD00");
         gridOffX = 6;
         gridOffY = 4;
         break;
     case 1:
-        mystrcpy(&bufCoordStr, aJz00);
+        mystrcpy(&bufCoordStr, "JZ00");
         gridOffX = 0;
         gridOffY = 0;
         break;
     case 2:
-        mystrcpy(&bufCoordStr, aXv00);
+        mystrcpy(&bufCoordStr, "XV00");
         gridOffX = 0;
         gridOffY = 0;
         break;
     case 3:
-        mystrcpy(&bufCoordStr, aEs00);
+        mystrcpy(&bufCoordStr, "ES00");
         gridOffX = 0;
         gridOffY = 0;
         break;
     case 4:
-        mystrcpy(&bufCoordStr, aWx00);
+        mystrcpy(&bufCoordStr, "WX00");
         gridOffX = 0;
         gridOffY = 0;
         break;
     case 5:
-        mystrcpy(&bufCoordStr, aCc00);
+        mystrcpy(&bufCoordStr, "CC00");
         gridOffX = 3;
         gridOffY = 5;
         break;
     case 6:
-        mystrcpy(&bufCoordStr, aHz00);
+        mystrcpy(&bufCoordStr, "HZ00");
         gridOffX = 0;
         gridOffY = 0;
         break;
@@ -568,15 +568,15 @@ char* formatGridRef(int16 wx, int16 wy, int16 theater) {
         bufCoordStr = 0;
         return &bufCoordStr;
     }
-    wx = (((wx >> WORLD_COORD_SHIFT) * 0x14) >> 0xa) + gridOffX;
+    wx = (((wx >> WORLD_COORD_SHIFT) * 20) >> 0xa) + gridOffX;
     while (wx > 9) {
-        wx -= 0xa;
+        wx -= 10;
         bufCoordStr++;
     }
     gridRefCol += (int8)wx;
-    wy = (((wy >> WORLD_COORD_SHIFT) * 0x14) >> 0xa) + gridOffY;
+    wy = (((wy >> WORLD_COORD_SHIFT) * 20) >> 0xa) + gridOffY;
     while (wy > 9) {
-        wy -= 0xa;
+        wy -= 10;
         gridRefRow--;
     }
     gridRefRowDigit[0] += 9 - (int8)wy;
@@ -594,12 +594,12 @@ void buildTargetLabel(int idx) {
     mystrcpy(todayMissStrBuf, wldOffsets[worldObjects[idx].objectIdx & 0x7f]);
     if (mystrlen(wldOffsets[worldObjects[idx].unitRef]) != 0) {
         if (mystrlen(wldOffsets[worldObjects[idx].objectIdx & 0x7f]) != 0) {
-            mystrcat(todayMissStrBuf, aAt);
+            mystrcat(todayMissStrBuf, " at ");
         }
         mystrcat(todayMissStrBuf, wldOffsets[worldObjects[idx].unitRef]);
     }
-    if (mystrlen(todayMissStrBuf) > 0x1e) {
-      missionStrTrunc = 0x2e;
+    if (mystrlen(todayMissStrBuf) > 30) {
+      missionStrTrunc = 46;
       missionStrTruncEnd[0] = 0;
     }
 }
