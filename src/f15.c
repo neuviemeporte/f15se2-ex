@@ -43,12 +43,9 @@ void game_init(void) {
     commData = &commBuffer;
     gameData = &gameBuffer;
 
-    /* formerly a low-memory IACA flag */
     commData->needSplash = 1;
-
-    /* VGA / no-sound configuration the sub-programs read from COMM */
     commData->setupUseJoy = 0;
-    commData->setupDone = 1;
+    commData->setupDetail = 3;
 
     gfx_initState();
     gfx_setMode13();

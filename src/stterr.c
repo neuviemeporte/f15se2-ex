@@ -33,8 +33,13 @@ struct NearestTerrain* findNearestTerrain(int32 worldX, int32 worldY) {
             dy = (int16)fx & 0xfff;
             dx = dirDeltaX[i];
             rowOff = dirDeltaY[i];
-            sy = gridLevelSize[dx] - x1 + 0x800;
-            tmp = gridLevelSize[rowOff] - dy + 0x800;
+            /* Neighbour cell pixel offset. The original indexed a table about its
+               base by the cell delta (dx/rowOff in {-1,0,1}); in the DOS binary the
+               negative indices aliased the tail of dirDeltaY to form the symmetric
+               table {-0x2000,-0x1000,0,+0x1000,+0x2000}. The native equivalent of
+               that for a one-cell delta is simply delta * 0x1000. */
+            sy = dx * 0x1000 - x1 + 0x800;
+            tmp = rowOff * 0x1000 - dy + 0x800;
             y1 += rowOff;
             cell = lookupGridCell(level, gridX += dx, y1);
             if (cell != -1) {

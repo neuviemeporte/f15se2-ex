@@ -39,15 +39,14 @@ void load15Flt3d3() {
     fileRead(flt15_buf1, 2, flt15_size, fileHandle);
     fileRead(&bytesLeft, 2, 1, fileHandle);
     TRACE(("load15Flt3d3: var_A=%d", bytesLeft));
-    segread(&segs);
     dest = g_aircraftModels;
-    TRACE(("load15Flt3d3: DS=%04x var_10=%04x:%04x", segs.ds, FP_SEG(dest), FP_OFF(dest)));
+    /* Original staged each chunk through a near buffer and movedata'd it into the
+     * far model region; natively g_aircraftModels is a real buffer, read into it. */
     while(bytesLeft > 0) {
         chunkSize = bytesLeft <= 0x800 ? bytesLeft : 0x800;
-        fileRead(flt15_buf2, 1, chunkSize, fileHandle);
-        movedata(segs.ds, (uint16)flt15_buf2, FP_SEG(dest), FP_OFF(dest), chunkSize);
+        fileRead(dest, 1, chunkSize, fileHandle);
         bytesLeft -= 0x800;
-        FP_OFF(dest) += 0x800;
+        dest += 0x800;
     }
     TRACE(("load15Flt3d3: loop done"));
     fileClose(fileHandle);
@@ -80,7 +79,8 @@ void drawWorldObject(int shapeId, long worldX, long worldY, int altitude, int ob
         altDiff <<= (char)scaleShift;
     }
     if (scaleShift < 0) {
-        *(char *)&shiftAmt = -scaleShift;
+        /* full int, not just the low byte: native shift uses all 32 bits */
+        shiftAmt = -scaleShift;
         shiftLongRightInPlace(shiftAmt, &relX);
         shiftLongRightInPlace(shiftAmt, &relY);
         altDiff >>= (char)shiftAmt;
@@ -225,7 +225,7 @@ int shapeDataOffset(int shapeId)
     if (shapeId & 0x100) {
         return buf3d3[shapeId & 0x7f];
     }
-    return (int)(&g_aircraftModels[((int *)flt15_buf1)[shapeId]] - g_world3dData);
+    return (int)(&g_aircraftModels[((int16 *)flt15_buf1)[shapeId]] - g_world3dData);
 }
 
 // ==== seg000:0xcf64 clamp ====
@@ -308,6 +308,7 @@ int computeBearing(int deltaX, int deltaY) {
         else
             result = swapped ? BEARING_WEST - angle : angle + BEARING_SOUTH;
     }
+    return result;
 }
 
 // ==== seg000:0xd178 sinMul ====
@@ -343,7 +344,8 @@ void seedRng(void) {
 // ==== seg000:0xd200 randomRange ====
 int randomRange(int maxVal) { /* Original: rnd(Max). Deterministic ((long)Max * rand()) >> 15 range scaling. */
     enum { RAND_SCALE_SHIFT = 15 };
-    return (int)(((long)rand() * (long)maxVal) >> RAND_SCALE_SHIFT);
+    /* DOS rand() is 15-bit (RAND_MAX 0x7fff); mask to match so the >>15 scaling yields [0, maxVal). */
+    return (int)(((long)(rand() & 0x7fff) * (long)maxVal) >> RAND_SCALE_SHIFT);
 }
 
 // ==== seg000:0xd21e ====

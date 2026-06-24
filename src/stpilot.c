@@ -238,6 +238,7 @@ void blinkPilot() {
     yPos = ((selectedPilotIdx & (PILOTS_PER_COLUMN - 1)) * PILOT_ROW_HEIGHT) + PILOT_TOP_MARGIN;
     gfx_switchColor(screenBuf, xPos , yPos, xPos + PILOT_ENTRY_WIDTH, yPos + PILOT_NAME_HEIGHT, blinkColors[blinkColorIdx], blinkColors[blinkColorIdx ^ 1]);
     blinkColorIdx ^= 1;
+    gfx_commitPage();
 }
 
 void gameDataToPilot(struct Pilot *pilot) {
@@ -327,12 +328,14 @@ void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
             break;
         }
         TRACE(("pilotNameInput(): before input loop"));
+        gfx_commitPage();
         while (getJoyKey() == 0) {
             waitMdaCgaStatus(3);
             gfx_switchColor(page, xPos, yPos - 1, xPos + rankWidth, yPos + c,
                 pilotNameInputColors[blinkToggle], pilotNameInputColors[blinkToggle ^ 1]);
             blinkToggle ^= 1;
             page[3] = pilotNameInputColors[blinkToggle];
+            gfx_commitPage();
         }
         TRACE(("pilotNameInput(): after input loop"));
         keyCode = readInputKey();

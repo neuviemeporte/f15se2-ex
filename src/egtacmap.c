@@ -230,7 +230,7 @@ void redrawTacMap(int centerX, int centerY) {
     idx = (56 << (9 - g_mapZoomLevel)) / 3 * 4;
     g_mapCenterY = clampRange(centerY - cosMul(g_ourHead, 0x4000 >> g_mapZoomLevel), idx, 0x7fff - idx);
     loadColorPalette(0);
-    gfx_setFadeSteps(0x13);
+    gfx_setFadeSteps(19);
     renderMapTerrain(g_mapTerrainMode, g_mapCenterX / 2, -(g_mapCenterY / 2 - 0x4000), 9 - g_mapZoomLevel);
     if (gameData->theater < 2) {
         gfx_setFadeSteps(12);
@@ -555,11 +555,14 @@ void drawStringActivePage(const char *text, int screenX, int screenY, int color)
 
 // ==== seg000:0xa13a ====
 void egDrawStringCentered(int16* strStruct, const char *text, int screenX, int screenY, int color) {
+    char buf[256];
     strStruct[6] = 0;
     strStruct[4] = screenX;
     strStruct[5] = screenY;
     strStruct[2] = color;
-    gfx_drawString(strStruct, strupr((char*)text));
+    strncpy(buf, text, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+    gfx_drawString(strStruct, strupr(buf));
 }
 
 

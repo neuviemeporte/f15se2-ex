@@ -41,6 +41,12 @@ typedef struct {
                              * . Lazily created 320x200 8-bit surfaces;
 			     * gfx_flipPage pushes page 0 to the renderer. */
     int    curPage;         /* index of the current draw page. */
+    int    shakeOffset;     /* horizontal screen-shake in pixels, set by gfx_dacCycle
+                             * (the explosion CRTC start-address jitter) and applied
+                             * by the page present. 0 when not shaking. */
+    uint64_t cycleClockNs;  /* wall-clock anchor (SDL_GetTicksNS) for advancing the
+                             * fire colour-cycle at the fixed ~60 Hz tick rate,
+                             * decoupled from the present/frame rate. */
 } GfxState;
 
 /* Initialise the shared GfxState defaults. Called once at startup. */
@@ -51,6 +57,13 @@ void gfx_initState(void);
  * page (index 0) to the renderer. Both lazily create the surface on first use. */
 struct SDL_Surface *gfx_getPageSurface(int page);
 struct SDL_Surface *gfx_getCurPageSurface(void);
+
+/* Sprite buffers: each is a 320x200 8-bit SDL_Surface addressed by a small
+ * integer handle. gfx_allocSpriteBuf creates one; the pic decoder fills it and
+ * gfx_blitSprite reads it. Replaces the DOS-era 64KB "segment" sprite sheets. */
+int gfx_allocSpriteBuf(void);
+void gfx_freeSpriteBuf(int handle);
+struct SDL_Surface *gfx_getSpriteSurface(int handle);
 
 /*
  * Reference structures documenting how the overlay accesses caller data.

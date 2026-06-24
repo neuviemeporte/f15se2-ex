@@ -7,28 +7,24 @@
 
 #include "inttype.h"
 #include "pointers.h"
-#include <dos.h>
-#include <conio.h>
+#include <SDL3/SDL.h>
 
-extern int FAR CDECL gfx_setPageN(uint16 pageNum);
-extern int FAR CDECL gfx_getCurPageSeg(void);
+extern void FAR CDECL gfx_setPageN(uint16 pageNum);
+/* Page backbuffers (gfx_impl.c): the decoder writes palette indices into these
+ * 320x200 8-bit surfaces instead of the old fake DOS page segments. */
+extern SDL_Surface *gfx_getCurPageSurface(void);
+extern SDL_Surface *gfx_getPageSurface(int page);
+extern SDL_Surface *gfx_getSpriteSurface(int handle);
 
-void picdbg(const char *msg)
-{
-    (void)msg;
-}
+/* SDL-backed raw read from a file handle (file_io.c). */
+extern int fileReadRaw(SDL_IOStream *handle, void *dst, int count);
+
+/* Hi-res title surface + present (gfx_impl.c). */
+extern SDL_Surface *gfx_getHiResSurface(void);
+extern void gfx_presentHiRes(void);
 
 /* Pic decode work data */
 extern uint8 picDecodedRowBuf[320];
-/* Large buffers allocated from DOS to save DGROUP space */
-static uint8 far *picWorkDataFar;
-static uint16 far *picDecodeDictionaryFar;
-static uint16 far *picDecodeIncrementFar;
-static uint16 picBufSeg = 0;
-#define picWorkData picWorkDataFar
-#define picDecodeDictionary picDecodeDictionaryFar
-#define picDecodeIncrement picDecodeIncrementFar
-uint16 dictionaryIndex = 0;
 
 /* File I/O state */
 static uint8 picFileReadBuf[512];
@@ -235,25 +231,18 @@ static void decodeRow(uint8 *outBuf, uint16 count)
     }
 }
 
-/* rowCount/rowStride select the layout: mode-13h (200, 320) for full-screen
- * 320x200 pics, or the EGA-title layout (0x2BC, 0x28) used by picBlit (mirrors
- * _picBlit in stcode.asm). decodePicRow always produces a 320-byte row
- * (picRowLength=320); the stride is what differs between the two paths.
+/* Decode a PIC image into an 8-bit SDL_Surface. The decoder always produces
+ * 320 palette indices per row; they are copied into the surface row by row
+ * (clamped to the surface width), for as many rows as the surface is tall.
  *
- * planar != 0 selects EGA mode-0x10 output: each decoded row is 320 8bpp pixels
- * (colour 0-15); they are written to the 4 EGA bit-planes (1 bit/pixel/plane)
- * via the Sequencer Map Mask (port 0x3C4 index 2). The original game does this
- * conversion inside EGRAPHIC.EXE's fillRow; the NO_ASM build has no overlay
- * driver, so we do it here. (Mode-13h pics use planar=0: a plain linear copy.) */
-static void picDecodeToSegment(int handle, uint16 pageSeg, uint16 rowCount,
-                               uint16 rowStride, int planar)
+ * This replaces the old picDecodeToSegment, which wrote into a fake DOS page
+ * segment via MK_FP (and packed EGA bit-planes through the Sequencer ports for
+ * the planar title path). Surfaces are linear 8bpp, so neither the segment nor
+ * the plane packing is needed — the rows are written straight to dst->pixels. */
+/* Read the PIC header word and (re)initialise the LZW/RLE decode state.
+ * Matches ASM picReadDataAndMakeDict + picInitRoutine. */
+static void picDecodeInit(SDL_IOStream *handle)
 {
-    uint16 row;
-    uint16 i;
-    uint8 far *dst;
-    static uint8 tempBuf[160];
-
-    picAllocBuffers();
     picFileHandle = handle;
     read512FromFile();
 
@@ -284,94 +273,131 @@ static void picDecodeToSegment(int handle, uint16 pageSeg, uint16 rowCount,
     lzwOutLen = 0;
     rlePrevByte = 0;
     rleProcessFlag = 0;
+}
+
+/* Decode one 320-pixel row into picDecodedRowBuf, handling nibble/byte mode. */
+static void picDecodeNextRow(void)
+{
+    static uint8 tempBuf[160];
+    uint16 i;
+    if (!picSignedFlag) {
+        /* picByteUnsignedFlag=1 (bit7 clear): NIBBLE mode */
+        decodeRow(tempBuf, 160);
+        for (i = 0; i < 160; i++) {
+            picDecodedRowBuf[i * 2] = tempBuf[i] & 0x0F;
+            picDecodedRowBuf[i * 2 + 1] = (tempBuf[i] >> 4) & 0x0F;
+        }
+    } else {
+        /* picByteUnsignedFlag=0 (bit7 set): BYTE mode */
+        decodeRow(picDecodedRowBuf, 320);
+    }
+}
+
+static void picDecodeToSurface(SDL_IOStream *handle, SDL_Surface *dst)
+{
+    uint16 rowCount;
+    uint16 rowWidth;
+    uint16 row;
+    uint8 *dstBase;
+    int dstPitch;
+
+    if (!dst) return;
+    dstBase  = (uint8 *)dst->pixels;
+    dstPitch = dst->pitch;
+    rowCount = (uint16)dst->h;
+    rowWidth = (dst->w < 320) ? (uint16)dst->w : 320;
+
+    picDecodeInit(handle);
 
     for (row = 0; row < rowCount; row++) {
-        if (!picSignedFlag) {
-            /* picByteUnsignedFlag=1 (bit7 clear): NIBBLE mode */
-            decodeRow(tempBuf, 160);
-            for (i = 0; i < 160; i++) {
-                picDecodedRowBuf[i * 2] = tempBuf[i] & 0x0F;
-                picDecodedRowBuf[i * 2 + 1] = (tempBuf[i] >> 4) & 0x0F;
-            }
-        } else {
-            /* picByteUnsignedFlag=0 (bit7 set): BYTE mode */
-            decodeRow(picDecodedRowBuf, 320);
-        }
-
-        dst = (uint8 far *)MK_FP(pageSeg, (uint16)(row * rowStride));
-        if (planar) {
-            /* 320 8bpp pixels -> 40 packed bytes per plane (8 px/byte, MSB =
-             * leftmost). Map Mask selects one plane per pass so the four writes
-             * to the same 40 addresses land in separate bit-planes. */
-            int plane;
-            for (plane = 0; plane < 4; plane++) {
-                int byteIdx;
-                outp(0x3C4, 2);
-                outp(0x3C5, 1 << plane);
-                for (byteIdx = 0; byteIdx < 40; byteIdx++) {
-                    uint8 packed = 0;
-                    int bit;
-                    for (bit = 0; bit < 8; bit++)
-                        packed = (uint8)((packed << 1) | ((picDecodedRowBuf[byteIdx * 8 + bit] >> plane) & 1));
-                    dst[byteIdx] = packed;
-                }
-            }
-        } else {
-            for (i = 0; i < 320; i++) {
-                dst[i] = picDecodedRowBuf[i];
-            }
-        }
-    }
-    if (planar) {
-        outp(0x3C4, 2);
-        outp(0x3C5, 0x0F);   /* restore Map Mask = all planes */
+        picDecodeNextRow();
+        SDL_memcpy(dstBase + (size_t)row * dstPitch, picDecodedRowBuf, rowWidth);
     }
 }
 
-void showPicFile(int handle, int page)
+/* A scratch surface for decode targets that are not (yet) backed by a real
+ * SDL surface — the sprite-buffer "segment" loads (decodePic/decodePicRaw).
+ * Those consumers still go through the unported fake-segment sprite path, so
+ * the decoded pixels currently have no destination; decode into a throwaway
+ * surface so the call is harmless instead of writing through a bogus pointer.
+ * TODO: give these real surface targets once the sprite-buffer path is ported. */
+static SDL_Surface *picScratchSurface(void)
 {
-    uint16 pageSeg;
+    static SDL_Surface *scratch;
+    if (!scratch)
+        scratch = SDL_CreateSurface(320, 200, SDL_PIXELFORMAT_INDEX8);
+    return scratch;
+}
 
-    if (handle < 0) return;
+void showPicFile(SDL_IOStream *handle, int page)
+{
+    if (!handle) return;
 
+    /* Select the page, then decode straight into its backing surface. The
+     * decoder overwrites every row, so no separate page clear is needed. */
     gfx_setPageN((uint16)page);
-    /* No gfx_clearPage(): that slot (0x3b) is register-called (target seg in ES)
-     * via regshim, so a C trampoline call clears 64000 bytes at a wild ES. The
-     * decoder below writes every byte of all 200 rows, so the clear is redundant. */
-    pageSeg = (uint16)gfx_getCurPageSeg();
-    picDecodeToSegment(handle, pageSeg, 200, 320, 0);
+    picDecodeToSurface(handle, gfx_getCurPageSurface());
 }
 
-void decodePic(int handle, uint16 segment)
+void decodePic(SDL_IOStream *handle, int segment)
 {
-    /* See showPicFile: the full-page decode makes gfx_clearPage() redundant
-     * (and unsafe to call from C). */
-    picDecodeToSegment(handle, segment, 200, 320, 0);
+    /* A real sprite buffer (gfx_allocSpriteBuf) is backed by a surface; decode
+     * into it. Anything else (no buffer registered) falls back to scratch. */
+    SDL_Surface *dst = gfx_getSpriteSurface(segment);
+    picDecodeToSurface(handle, dst ? dst : picScratchSurface());
 }
 
-void decodePicRaw(int handle, uint16 segment)
+void decodePicRaw(SDL_IOStream *handle, int segment)
 {
-    /* Same as decodePic: decodes PIC row-by-row, fully overwriting the page. */
-    picDecodeToSegment(handle, segment, 200, 320, 0);
+    (void)segment;
+    picDecodeToSurface(handle, picScratchSurface());
 }
 
-/* picBlit mirrors _picBlit (stcode.asm): the 2nd arg is a PAGE INDEX (not a
- * segment); showPic640 passes 0 -> pageSegs[0] = 0xA000. The decode uses the
- * EGA-title layout: 0x2BC (700) rows at a 0x28 (40) byte stride, written to the
- * resolved page segment. (decodePic, by contrast, takes a real segment and the
- * mode-13h 200x320 layout.) */
-void picBlit(int handle, int pageIndex)
+/* picBlit is start.exe's EGA hi-res title decoder (Title640.pic). The original
+ * (stcode.asm _picBlit) decodes 700 rows of 320 pixels and writes them through
+ * the EGRAPHIC driver's planar fillRow/copyRow (slots 0x33/0x35):
+ *   - each 320-pixel row is bit-packed into 4 EGA planes of 40 bytes;
+ *   - copyRow rep-movs 40 bytes/plane to A000:rowOffset, rowOffset += 0x28 (40).
+ * The EGA pitch is 80 bytes (640 px), so consecutive 40-byte writes tile the
+ * framebuffer: even rows are the left 320 px of a scanline, odd rows the right
+ * 320 px. Hence screen y = row/2, x = (row&1)*320 + col, for 350 scanlines.
+ * Each decoded byte is the 4-bit EGA pixel value (fillRow uses bits 0-3), so we
+ * mask to 0x0F and write straight into the 640x350 hi-res title surface, then
+ * present it (the original wrote to visible VRAM, needing no explicit present).
+ * The pageIndex arg selected the EGA page in the original; the port has a single
+ * hi-res surface, so it is ignored. */
+void picBlit(SDL_IOStream *handle, int pageIndex)
 {
-    uint16 seg;
-    uint16 i;
-    uint8 far *page;
+    SDL_Surface *dst;
+    uint8 *base;
+    int pitch;
+    int row, col;
+    (void)pageIndex;
+    if (!handle) return;
 
-    if (handle < 0) return;
+    dst = gfx_getHiResSurface();
+    if (!dst) return;
+    base  = (uint8 *)dst->pixels;
+    pitch = dst->pitch;
 
-    gfx_setPageN((uint16)pageIndex);
-    seg = (uint16)gfx_getCurPageSeg();
-    /* mirror the _gfx_clearPage that _picBlit issues before decoding */
-    page = (uint8 far *)MK_FP(seg, 0);
-    for (i = 0; i < 32000u; i++) ((uint16 far *)page)[i] = 0;
-    picDecodeToSegment(handle, seg, 0x2BC, 0x28, 1);
+    /* Start from a black surface so the not-yet-decoded region below the sweep
+     * line shows as the cleared screen the original mode-set produced. */
+    SDL_memset(base, 0, (size_t)pitch * dst->h);
+
+    picDecodeInit(handle);
+    for (row = 0; row < 700; row++) {
+        int y = row >> 1;
+        int xoff = (row & 1) ? 320 : 0;
+        uint8 *rowp;
+        picDecodeNextRow();
+        if (y >= dst->h) continue;
+        rowp = base + (size_t)y * pitch + xoff;
+        for (col = 0; col < 320; col++)
+            rowp[col] = picDecodedRowBuf[col] & 0x0F;
+        /* Present the partially filled surface every few scanlines to reproduce
+	 * the vsync'd reveal. */
+        if ((row & 1) && (y & 7) == 7)
+            gfx_presentHiRes();
+    }
+    gfx_presentHiRes();
 }

@@ -27,7 +27,7 @@ SDL_IOStream *openFileWrapper(const char *filename, int mode);
 void closeFileWrapper(SDL_IOStream *handle);
 void mystrcpy(char *dest, const char *source);
 void loadPic(const char *filename, int segment);
-void openShowPic(char *filename, int page);
+void openShowPic(const char *filename, int page);
 void showPicFile(SDL_IOStream *handle, int pageNum);
 
 /* functions provided by file_io.c / file_*.inc - case-insensitive asset I/O */
@@ -46,5 +46,9 @@ int getTimeOfDay(void);
 /* functions provided by timer.c / timer_*.inc */
 void setTimerIrqHandler(void);
 void restoreTimerIrqHandler(void);
+/* Advance the 60 Hz tick counters from the monotonic clock (call while polling
+ * a timerCounter); timerYield also sleeps a touch so the wait doesn't peg a core. */
+void timerPump(void);
+void timerYield(void);
 
 #endif /* COMMON_H */

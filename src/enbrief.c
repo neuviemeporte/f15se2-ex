@@ -623,7 +623,8 @@ loop_top:
             if ((flightRecords[curRecordIdx].status & STATUS_TYPE_MASK) == EVENT_TIMESTAMP) {
         clearRect(gfxPage, 240, 30, 319, 37);
         mystrcpy(scoreString, "\x8d" "TIME: \x80");
-        mystrcat(scoreString, formatFlightTime(*((int *)&flightRecords[curRecordIdx] - 1), numBuf));
+        /* timestamp = the int16 preceding this record (the +0 view of the buffer) */
+        mystrcat(scoreString, formatFlightTime(flightTimeTable[curRecordIdx * 3], numBuf));
         drawStringAt(gfxPage, scoreString, 240, 30);
         gfx_setColor(0);
         if (prevDrawX == 0 && prevDrawY == 0) {

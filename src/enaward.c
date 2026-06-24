@@ -76,7 +76,7 @@ void showPostMissionAwards(void) {
 medals:
     idx = 4;
     for (; idx >= 0; idx--) {
-        if (missionScore > medalThresholds[idx])
+        if ((long)missionScore > medalThresholds[idx])
             break;
     }
     if (idx < 0)

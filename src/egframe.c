@@ -85,7 +85,7 @@ void updateFrame(void) {
         g_mapZoomLevel = 1;
         g_radarScopeRange = 1;
         tmp = g_northSouthSign = (gameData->theater == 6) ? 1 :
-            (*((char far *)&gameData + 0x38) & 1) ? 1 : -1;
+            (gameData->theater & 1) ? 1 : -1;
 
         if (((g_planeTable.planes[g_targetSlots[0].viewIndex].flags) & 0x200) != 0) {
             g_ViewX -= (long)(tmp * 0x80);
@@ -119,7 +119,7 @@ void updateFrame(void) {
             UpdateThrottleState();
             *(char *)&g_playerPlaneFlags |= 1;
             *(char *)&g_playerPlaneFlags &= ~8;
-            if ((*(int far *)((char far *)&gameData + 0x32) | *(int far *)((char far *)&gameData + 0x34)) == 0 && gameData->theater != 6) {
+            if (gameData->totalScore == 0 && gameData->theater != 6) {
                 for (i = 0; i < g_groundUnitCount - 4; i++) {
                     if ((i & 1) == 0) {
                         g_simObjects[i].flags.b[0] |= 2;
@@ -162,7 +162,6 @@ void updateFrame(void) {
         g_ViewY = (long)(0x8000 - g_viewY_) << 5;
     }
 
-    *MAKEFAR(char, SEG_LOWMEM, OFF_BDA_KEYFLAGS) &= 0xf;
     TRACE(("updateFrame: past init"));
     updateThreatSites();
     updateObjects();
@@ -178,10 +177,9 @@ void updateFrame(void) {
     TRACE(("updateFrame: past 118D5"));
 
     if (objectToScreen(g_viewX_, g_viewY_, (int16*)&val, (int16*)&screenY) != 0) {
-        g_drawPage = -(gfx_getDisplayPage() - 1);
+        g_drawPage = gfx_getDisplayPage();
         gfx_copyRect(2, val - 3, screenY - 3, g_drawPage, val - 3, screenY - 3, 6, 6);
         blitSprite(val - 1, screenY - 1, ((g_ourHead + 0x1000) >> 0xd & 7) * 4 + 164, 4, 4, 4, 0);
-        g_drawPage = 1 - g_drawPage;
         if (((int16)val < 32 || (int16)val > 88 || (int16)screenY < 118 || (int16)screenY > 162) && g_mapZoomLevel > 2) {
             g_mapZoomLevel--;
             redrawTacMap(g_viewX_, g_viewY_);
@@ -670,9 +668,15 @@ void finalizeMission(int outcome) {
         return;
     }
     g_missionEndedFlag[0] = 1;
-    commData->continueFlag = outcome;
-    if (outcome == 0 && g_ejectState == 0) {
-        commData->setupDone = 3;
+    commData->bailoutSurvived = outcome;
+    /* Landing type the debrief reads (1=crashed, 2=ejected, 3=landed). START
+     * defaults it to 3, so crash/eject must be set or the debrief reports a landing. */
+    if (g_ejectState != 0) {
+        commData->landingType = 2;
+    } else if (outcome == 0) {
+        commData->landingType = 3;
+    } else {
+        commData->landingType = 1;
     }
     *(int16 far *)((char far *)commData + 0x74) = g_viewX_;
     *(int16 far *)((char far *)commData + 0x76) = g_viewY_;
@@ -843,12 +847,12 @@ void moveStuff() {
 
 // ==== seg000:0x215c ====
 void moveNearFar(void *nearPtr, int count) {
-    void FAR *farPtr = nearPtr;
+    /* farPointer is a real cursor into commData->worldBuf. */
     if (flagFarToNear != 0) {
-        movedata(FP_SEG(farPointer), FP_OFF(farPointer), FP_SEG(farPtr), FP_OFF(farPtr), count);
+        memcpy(nearPtr, farPointer, count);   /* load: worldBuf -> near globals */
     }
     else {
-        movedata(FP_SEG(farPtr), FP_OFF(farPtr), FP_SEG(farPointer), FP_OFF(farPointer), count);
+        memcpy(farPointer, nearPtr, count);   /* save: near globals -> worldBuf */
     }
     farPointer += count;
 }

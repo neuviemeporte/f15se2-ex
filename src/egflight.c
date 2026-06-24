@@ -1002,12 +1002,13 @@ void renderFrame() {
         drawClipLineGlobal();
         gfx_nop23();
         tmp = g_drawPage;
-        g_drawPage = gfx_getDisplayPage();
+        /* Blit the rear-view sprites onto the page the frame is composited on
+         * (curPage), not the back-buffer index: the rear view renders into page 0. */
+        g_drawPage = gfx_curPage();
         blitSprite(107, 48, 209, 0, 111, 47, 0);
         blitSprite(65, 95, 125, 54, 195, 2, 0);
         g_drawPage = tmp;
     }
-    gfx_flipPage();
     g_hudBottomY = (g_activePanelMode == 0x13 || g_mapMode == 1 || g_hudVisible == 0) ? 200 : 97;
     TRACE(("renderFrame: exit"));
 }
@@ -1015,7 +1016,7 @@ void renderFrame() {
 void UpdateThrottleState(void) {
     if (g_hudVisible != 0) {
         setDrawColor(0);
-        fillRectBoth(0xd4, 0x7f, 0xde, 0xaf);
+        fillRectBoth(212, 127, 222, 175);
         setDrawColor(0x0c);
         fillRectBoth(212, -(g_setThrust / 3 - 175), 222, 175);
         if (100 < g_setThrust) {

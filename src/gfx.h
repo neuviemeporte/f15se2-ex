@@ -22,6 +22,9 @@
 void gfx_videoInit(void);
 void gfx_videoShutdown(void);
 
+/* Toggle borderless-desktop fullscreen (bound to Alt+Enter in the input pump). */
+void gfx_toggleFullscreen(void);
+
 /* Title-screen hi-res. Asks SDL change resolution to 640x350 and returns whether that took. */
 bool video_setHiRes(void);
 

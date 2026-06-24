@@ -45,7 +45,7 @@ struct TileObject* findNearestTileObject(uint32 worldX, uint32 worldY) {
     // slots and breaks the match. See drawNearestTileObject() below for the same
     // algorithm with readable names. Legend:
     //   c = lod (detail level 1..2)      e = neighbour sample index 0..8
-    //   m = scratch, aliased as long for scaleCoordToLod() (m & n hold the long)
+    //   m = scaleCoordToLod() scratch (a 32-bit int now holds the whole value)
     //   i = tileX     k = tileY          r = fracX     d = fracY  (query point)
     //   a = neighbour col delta          b = neighbour row delta
     //   o = baseDx    p = baseDy         (query point -> neighbour cell offset)
@@ -58,11 +58,11 @@ struct TileObject* findNearestTileObject(uint32 worldX, uint32 worldY) {
     nearestTile.dist = 0x7fff;
     for (c = 1; c <= 2; c++) {
         for (e = 0; e < 9; e++) {
-            *(long *)&m = scaleCoordToLod(c, worldX);
-            i = *(unsigned long *)&m >> 0xc;
+            m = (int)scaleCoordToLod(c, worldX);
+            i = (unsigned)m >> 0xc;
             r = m & 0xfff;
-            *(long *)&m = scaleCoordToLod(c, worldY);
-            k = *(unsigned long *)&m >> 0xc;
+            m = (int)scaleCoordToLod(c, worldY);
+            k = (unsigned)m >> 0xc;
             d = m & 0xfff;
             a = g_neighborSampling.gridX[e];
             b = g_neighborSampling.gridY[e];
@@ -200,6 +200,7 @@ void renderMapTerrain(const int16 *transform, int mapX, int mapY, int zoomShift)
     int tmp0, tmp1;
     g_objShade = 0;
     setup3DTransform(transform, 0, 0, 0, 0, 0, 0, 0);
+    /* clip-left / clip-top are 16-bit descriptor words (see setupViewport). */
     gfx_setBlitOffset(gfx_calcRowAddr(transform[9], transform[7]));
     drawMapTiles(mapX, mapY, zoomShift);
     rasterize3DWorld();

@@ -39,19 +39,15 @@ void loadWorldData(void* destOffset, int size) {
 }
 
 void readFromWorldBuf(void *dest, int size, int count, SDL_IOStream *bufHandle) {
-    char far *farDest;
-    register int totalSize;
-    farDest = (char far *)dest;
-    totalSize = size * count;
-    movedata(worldBufSegment, worldBufOffset, FP_SEG(farDest), FP_OFF(farDest), totalSize);
-    worldBufOffset += totalSize;
+    int totalSize = size * count;
+    (void)bufHandle;
+    memcpy(dest, worldBufCursor, totalSize);
+    worldBufCursor += totalSize;
 }
 
 void writeToWorldBuf(void *dest, int size, int count, SDL_IOStream *bufHandle) {
-    char far *farDest;
-    register int totalSize;
-    farDest = (char far *)dest;
-    totalSize = size * count;
-    movedata(FP_SEG(farDest), FP_OFF(farDest), worldBufSegment, worldBufOffset, totalSize);
-    worldBufOffset += totalSize;
+    int totalSize = size * count;
+    (void)bufHandle;
+    memcpy(worldBufCursor, dest, totalSize);
+    worldBufCursor += totalSize;
 }

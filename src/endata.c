@@ -487,9 +487,9 @@ uint16 cursorX;
 uint16 cursorY;
 int hasVgaMode[2];
 int spriteBufSeg;
-int vgaBufSeg;
+void *vgaBufSeg;
 int vgaBufOffset;
-int vgaBufSeg2;
+void *vgaBufSeg2;
 
 /* Theater sprite filename pointer table (8 entries) */
 extern const char *theaterSprFiles[] = {
@@ -716,8 +716,8 @@ uint8 joyAxisY = 0;
 
 /* Pic decoder state (the picReadBufEndPtr..picSlotCounter run is shared impl
  * state owned by stdata.c). */
-int16 worldBufOffset = 0;
-int16 worldBufSegment = 0;
+/* Read-back cursor into commData->worldBuf (mirrors stgen.c's moveDst). */
+uint8 far *worldBufCursor = 0;
 uint8 picProcessFlag = 0;
 
 /* Second LZW decoder state */
@@ -749,7 +749,7 @@ int16 menuItemUnused = 0;
 int16 worldGridSize = 0;
 uint8 worldSamCount[6] = {0};
 int16 worldRouteCount = 0;
-int16 gfxBufSeg = 0;
+void *gfxBufSeg = nullptr;
 uint8 gfxBufPad[512] = {0};
 /* One contiguous 0x600 buffer backing both the flightTimeTable and flightRecords
  * views (declared in endata.h). Loaded as a unit by readWorldData. */

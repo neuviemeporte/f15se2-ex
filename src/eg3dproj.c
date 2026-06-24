@@ -47,6 +47,9 @@ void projectObjects(int heading, int rangeGate, long worldX, long worldY, long w
     worldX = g_proj3d.x;
     worldY = g_proj3d.y;
     worldZ = g_proj3d.z;
+    /* DOS computed this in 16-bit, relying on wraparound to keep dirSector in
+     * [0,7]; mask to 16 bits or the grid index runs
+     * wild past g_dirGridOffsets[192]. */
     dirSector = (uint16)(-heading + 0x1000) >> 13;
     g_curLod = (g_detailLevel != 0) ? 4 : 3;
     goto outer_test;

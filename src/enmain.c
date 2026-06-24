@@ -41,7 +41,7 @@ int end_main(void) {
         vgaBufOffset = 0;
     }
     missionResult = 3;
-    if (commData->setupDone == 2) {
+    if (commData->landingType == 2) {
         computeMissionResult();
     }
     clearKeybuf();

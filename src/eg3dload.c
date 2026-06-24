@@ -36,17 +36,16 @@ void load3DAll() {
 void load3D3(char *fileName) {
     char FAR *objDataEnd;
     char FAR *dstPtr;
-    struct SREGS sregs;
     int slot, subCount, sub;
     int chunk;
-    strcpyFromDot(fileName, a_3d3);
+    strcpyFromDot(fileName, ".3D3");
     if ((fileHandle = openFile(fileName, 0)) == NULL) {
-        printError(aOpenErrorOn_3d3);
+        printError("Open Error on *.3D3");
         return;
     }
     fileRead(&sign3d3, 2, 1, fileHandle);
     if (sign3d3 != SIGNATURE_3D3) {
-        printError(aBadObjFileFormat_);
+        printError("Bad Obj file format.");
         fileClose(fileHandle);
         return;
     }
@@ -54,17 +53,17 @@ void load3D3(char *fileName) {
     fileRead(buf3d3, 2, size3d3, fileHandle);
     fileRead(&size3d3_2, 2, 1, fileHandle);
     if (size3d3_2 > 0xadd4) {
-        printError(aObjectDataTooBig_);
+        printError("Object data too big.");
         fileClose(fileHandle);
         return;
     }
     objDataEnd = g_world3dData + size3d3_2;
     buf3d3[size3d3] = size3d3_2;
-    segread(&sregs);
+    /* Original bounced each chunk through a near buffer + movedata into the far
+     * object region; natively g_world3dData is a real buffer, read into it. */
     for (dstPtr = g_world3dData; size3d3_2 != 0; size3d3_2 -= chunk, dstPtr+=0x800) {
         chunk = (size3d3_2 >= 0x800) ? 0x800 : size3d3_2;
-        fileRead(flt15_buf2, 1, chunk, fileHandle);
-        movedata(sregs.ds, (uint16)flt15_buf2, FP_SEG(dstPtr), FP_OFF(dstPtr), chunk);
+        fileRead(dstPtr, 1, chunk, fileHandle);
     }
     fileRead(&size3d3_3, 1, 1, fileHandle);
     if (size3d3_3 != 0) {
@@ -86,6 +85,7 @@ void load3D3(char *fileName) {
         gfx_flipPage();
         misc_getKey();
     }
+    fileClose(fileHandle); /* close the disk-B presence probe; reopened per-slot below */
     gfx_waitRetrace();
     for (slot = 0; slot < 2; slot++) {
         if ((subCount = g_targetSlots[slot].flags >> 8) != 0) {
@@ -101,9 +101,7 @@ void load3D3(char *fileName) {
                     fileRead(flt15_buf2, 1, 0x800, fileHandle);
                     chunk -= 0x800;
                 }
-                segread(&sregs);
-                fileRead(flt15_buf2, 1, chunk, fileHandle);
-                movedata(sregs.ds, (uint16)flt15_buf2, FP_SEG(objDataEnd), FP_OFF(objDataEnd), chunk);
+                fileRead(objDataEnd, 1, chunk, fileHandle);
             }
             objDataEnd += chunk;
             if (slot == 0) {
@@ -120,14 +118,14 @@ void load3D3(char *fileName) {
 // ==== seg000:0x2c82 ====
 void load3DT(char *fileName) {
     int shape, cat, byteOff, tile, obj;
-    strcpyFromDot(fileName, a_3dt);
+    strcpyFromDot(fileName, ".3dT");
     if ((fileHandle = openFile(fileName, 0)) == NULL) {
-        printError(aOpenErrorOn_3dt);
+        printError("Open Error on *.3DT");
         return;
     }
     fileRead(&sign3dt, 2, 1, fileHandle);
     if (sign3dt != SIGNATURE_3DT) {
-        printError(aBadTileFileFormat_);
+        printError("Bad Tile file format.");
         fileClose(fileHandle);
         return;
     }
@@ -164,21 +162,21 @@ void load3DT(char *fileName) {
 // ==== seg000:0x2e54 ====
 void load3DG() {
     int unused_1, unused_2, unused_3;
-    strcpyFromDot(regnStr, a_3dg);
+    strcpyFromDot(regnStr, ".3dG");
     while ((fileHandle = openFile(regnStr, 0)) == NULL) {
-        drawStringBothPages(aPleaseInsertF15DiskB, 0x68, 0x28, 0x0f);
-        drawStringBothPages(aPressKeyWhenReady, 0x68, 0x32, 0x0f);
+        drawStringBothPages("Please insert F15 Disk B", 104, 40, 0x0f);
+        drawStringBothPages("  Press a key when ready", 104, 50, 0x0f);
         gfx_flipPage();
         misc_getKey();
     }
     gfx_waitRetrace();
     fileRead(&sign3dg, 2, 1, fileHandle);
     if (sign3dg != SIGNATURE_3DG) {
-        printError(aBadGridFileFormat_);
+        printError("Bad Grid file format.");
         fileClose(fileHandle);
         return;
     }
-    fileRead(buf1_3dg, 1, 0x10, fileHandle);
+    fileRead(buf1_3dg, 1, 16, fileHandle);
     fileRead(buf1_3dg, 1, 0x100, fileHandle);
     fileRead(buf2_3dg, 1, 0x200, fileHandle);
     fileRead(buf3_3dg, 1, 0x200, fileHandle);
@@ -190,7 +188,7 @@ void load3DG() {
 // ==== seg000:0x2f8c ====
 void printError(const char *msg) {
     gfx_flipPage();
-    drawStringBothPages(msg, 0, 0x60, 0xf);
+    drawStringBothPages(msg, 0, 96, 0xf);
     misc_getKey();
 }
 

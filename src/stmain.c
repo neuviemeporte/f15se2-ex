@@ -24,8 +24,7 @@ int start_main(void)
     uint8 introStage;
     uint16 difficulty;
     int16 theater;
-    uint16 bufSize;
-    register bool isPcSpeaker;
+    int16 titleFadeDac;
 
     SDL_Log("start: entering");
     SDL_Log("start: installing cbreak handler");
@@ -59,7 +58,7 @@ int start_main(void)
         }
         if (timerCounter >= MPS_TIMEOUT) { // key was not pressed, show adv.pic
             gfx_waitRetrace();
-            gfx_setFadeSteps(0xf);
+            gfx_setFadeSteps(15);
             SDL_Log("start: showing adv");
             openShowPic("adv.pic", 0);
             gfx_commitPage();
@@ -75,41 +74,31 @@ int start_main(void)
         }
 
 checkEga:
-        if (commData->gfxModeNum >= GFX_MODE_EGA && (*MAKEFAR(uint8, SEG_BDA, OFF_BDA_EGASWITCH) & EGA_SWITCH_MASK) == EGA_SWITCH_VALUE) {
-            TRACE(("main: switching to ega for title"));
-            gfx_waitRetrace();
+        /* Ask SDL for the hi-res title resolution; if it takes, show the 640x350
+         * title, otherwise fall back to the 320x200 one. Either way we restore
+         * the 320x200 game resolution afterwards. */
+        if (video_setHiRes()) {
+            SDL_Log("start: hi-res title");
             showPic640("Title640.Pic");
+            titleFadeDac = 2;
         }
-        else
-        {
-            TRACE(("main: doing 16color title"));
+        else {
+            SDL_Log("start: 16-color title");
             gfx_setFadeSteps(1);
-            gfx_waitRetrace();
             openShowPic("title16.pic", 0);
             gfx_commitPage();
-            gfx_setDac(commData->gfxModeNum >= GFX_MODE_VGA ? 4 : 3);
+            gfx_setDac(4);
+            titleFadeDac = 0;
         }
         TRACE(("main: waiting for mda/cga"));
         waitMdaCgaStatus(4);
-        isPcSpeaker = commData->sndOvlName[0] == 'I' || commData->sndOvlName[0] == 'i';
-        TRACE(("main: check pc speaker"));
-        if (isPcSpeaker != 0) restoreTimerIrqHandler();
-        TRACE(("main: doing audio thing"));
+        SDL_Log("start: doing audio thing");
         audio_playIntro();
-        if (isPcSpeaker == 0) restoreTimerIrqHandler();
-        if (commData->gfxModeNum >= GFX_MODE_EGA && (*MAKEFAR(uint8, SEG_BDA, OFF_BDA_EGASWITCH) & EGA_SWITCH_MASK) == EGA_SWITCH_VALUE) {
-            TRACE(("main: restoring old overlay after title"));
-            gfx_setDac(2);
-            getch();
-            gfx_waitRetrace();
-            gfx_setMode13(commData->setupMono);
-        }
-        else
-        {
-            TRACE(("main: after 16 title"));
-            gfx_setDac(0);
-            getch();
-        }
+        restoreTimerIrqHandler();
+        gfx_setDac(titleFadeDac);
+        misc_getKey();
+        gfx_waitRetrace();
+        gfx_setMode13();
     }
 #endif /* !DEBUG_AUTOSTART */
 
@@ -151,8 +140,7 @@ checkEga:
     }
     SDL_Log("start: init pilot/mission");
     joyReady[0] = 1;
-    bufSize = gfx_getBufSize();
-    menuSprites = allocBuffer(bufSize);
+    menuSprites = gfx_allocSpriteBuf();
     pilotSelect(commData->needSplash);
     SDL_Log("start: pilot selected");
     missionSelect();
@@ -190,9 +178,7 @@ doSrand:
         loadPic("f15.spr", commData->gfxInitResult);
     }
     TRACE(("start: DEBUG_AUTOSTART - write world"));
-    exportWorldToComm(aTemp_wld);
-    commData->setupDone = 3;
-    commData->continueFlag = 0;
+    exportWorldToComm("temp.wld");
     commData->restartFlag = 0;
     if (gameData->missionReady > 1) {
         commData->trainingFlag = 1;
@@ -200,10 +186,6 @@ doSrand:
     else {
         commData->trainingFlag = 0;
     }
-    misc_clearKeyFlags();
-    clearRect(bufPtr, 0, 0, SCREEN_MAXX, SCREEN_MAXY);
-    TRACE(("start: DEBUG_AUTOSTART - exiting with code %hd", exitCode[0]));
-    exit(exitCode[0]);
 #else
     if (gameData->difficulty != DIFFICULTY_DEMO) {
         TRACE(("start: printing mission"));
@@ -211,7 +193,7 @@ doSrand:
     }
     TRACE(("start: checking disk"));
     checkDiskA();
-    exitCode[0] = 0xc;
+    exitCode[0] = 12;
     TRACE(("start: restoring cbreak handler and clearing splash"));
     restoreCbreakHandler();
     commData->needSplash = 0;
@@ -225,9 +207,7 @@ doSrand:
     }
     // 403
     TRACE(("start: write world"));
-    exportWorldToComm(aTemp_wld);
-    commData->setupDone = 3;
-    commData->continueFlag = 0;
+    exportWorldToComm("temp.wld");
     commData->restartFlag = 0;
     if (gameData->missionReady > 1) {
         commData->trainingFlag = 1;
@@ -236,9 +216,9 @@ doSrand:
         commData->trainingFlag = 0;
     }
     TRACE(("start: clearing keyflags and screen"));
+#endif /* !DEBUG_AUTOSTART */
     misc_clearKeyFlags();
     clearRect(bufPtr, 0, 0, SCREEN_MAXX, SCREEN_MAXY);
     TRACE(("start: exiting with code %hd", exitCode[0]));
-    exit(exitCode[0]);
-#endif /* !DEBUG_AUTOSTART */
+    return exitCode[0];
 }

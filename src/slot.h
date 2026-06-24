@@ -26,6 +26,9 @@ int  FAR CDECL gfx_setPage1(uint16 page);               /* slot 0x0d: curPage = 
 void FAR CDECL gfx_setPageN(uint16 pageNum);            /* slot 0x0e: curPage = pageSegs[n] */
 void FAR CDECL gfx_setCurPageSeg(uint16 seg);           /* slot 0x0f: SETTER curPageSeg = seg */
 int FAR CDECL gfx_getCurPageSeg();                    /* slot 0x10: GETTER returns curPageSeg in AX */
+/* Native helper (not a slot): writable pixels + stride of a page segment, for the
+ * egame HUD primitives that drew straight into the page. */
+uint8 *gfx_pagePixelsForSeg(uint16 seg, int *pitchOut);
 int FAR CDECL gfx_blitSprite(struct SpriteParams* spritePtr); /* slot 0x11: sprite blit */
 void FAR CDECL gfx_blitCore(int16 *blk);                /* slot 0x12: transparent sprite core (8-word param block) */
 void FAR CDECL gfx_spriteVariant1();                    /* slot 0x13: sprite variant */
@@ -55,6 +58,7 @@ void FAR CDECL gfx_copyRect(int srcPage, uint16 srcX, uint16 srcY, int dstPage, 
 void FAR CDECL gfx_clearVga();                         /* slot 0x2b: clear physical VGA 0xA000 */
 void FAR CDECL gfx_dacAnimate();                        /* slot 0x2c: DAC palette animation */
 int FAR CDECL gfx_getDisplayPage();                    /* slot 0x2d: getDisplayPage */
+int FAR CDECL gfx_curPage(void);                       /* index of the page currently drawn into */
 void FAR CDECL gfx_dacCycle();                         /* slot 0x2e: DAC fire/colour-cycle animation */
 int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx);  /* slot 0x2f: setup font metrics */
 void FAR CDECL gfx_blitToCurrent(int16 pagePtr);        /* slot 0x30: copy to curPage */
@@ -80,6 +84,7 @@ void FAR CDECL gfx_setOvlVal2(int val);                 /* slot 0x41: writes ds:
 int FAR CDECL gfx_getModeFlag2();                      /* slot 0x42: returns modeFlag */
 int FAR CDECL gfx_getConst1();                         /* slot 0x43: returns baked constant 1 (cs:0x1d8) */
 void FAR CDECL gfx_setDac(uint16 palIdx);              /* slot 0x44: set VGA DAC palette */
+void gfx_setDacRange(uint16 startReg, uint16 count, const uint8 *vgaTriples); /* native INT 10h AX=1012h: load DAC register block */
 void FAR CDECL gfx_waitRetrace();                       /* slot 0x45: wait for vblank */
 void FAR CDECL gfx_flipPage();                          /* slot 0x46: vblank + flip to VGA */
 void FAR CDECL gfx_blitSpriteClipped(int16* ptr);       /* slot 0x47: sprite variant */

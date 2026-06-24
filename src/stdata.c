@@ -51,9 +51,15 @@ extern const char aWriteError[] = "Write error$";
 int16 enableHighlight = 1;
 
 /* Direction/level lookup tables */
-extern const int dirDeltaX[] = {-1, 1, 1, -1, 0, 1, 0, -1, 0};
-extern const int dirDeltaY[] = {1, 1, -1, -1, 1, 0, -1, 0, 0, -8192, -4096};
-extern const int gridLevelSize[] = {0, 0x1000, 0x2000, 0x400, 0x100, 0x40, 0x10, 4};
+int dirDeltaX[] = {-1, 1, 1, -1, 0, 1, 0, -1, 0};
+int dirDeltaY[] = {1, 1, -1, -1, 1, 0, -1, 0, 0, -8192, -4096};
+/* Per-level grid dimension (max col/row), read as gridLevelSize[level + 6] for
+   level 0..4 -> indices [6..10] = {0x400, 0x100, 0x40, 0x10, 4}, matching the x4
+   gridBuf hierarchy (level 3 = 16-wide gridBuf2, level 4 = 4-wide gridBuf1).
+   Indices 0..5 are not read by the terrain code. The original DOS binary stored
+   33 entries here, contiguous with dirDeltaY so a now-removed negative-index hack
+   in findNearestTerrain could alias dirDeltaY's tail; that aliasing is gone. */
+int gridLevelSize[] = {0, 0x1000, 0x2000, 0, 0, 0, 0x400, 0x100, 0x40, 0x10, 4};
 
 /* === Group 6 (0x1632-0x1763): Terrain/grid file strings === */
 int16 gridSignature = 0x3232;
@@ -159,10 +165,9 @@ struct PageDesc pageNumPageDesc = {
 int16 *pageNumPtr = (int16*)&pageNumPageDesc;
 
 int16 nightMissionFlag = 0;
-char bufCoordStr = 0;
-uint8 gridRefRow = 0;
-uint8 gridRefCol = 0;
-uint8 gridRefRowDigit[1] = {0};
+/* 4-char grid-ref string + null (see stdata.h). [0]=col letter, [1]=row letter,
+   [2]=col digit, [3]=row digit; formatGridRef() writes the whole string here. */
+char bufCoordStr[8] = {0};
 
 int16 escortMissionFlag;
 uint32 baseXPrecise = 0;

@@ -109,19 +109,11 @@ int writeFileAtRaw(int handle, int count, int bufOffset, int bufSegment, int off
  * is copied over g_dacGroundPalette (= dacValues+0x30) first. */
 void setupDac(void)
 {
-    union REGS r;
-    struct SREGS s;
     int i;
-    segread(&s);
-    s.es = s.ds;                     /* ES:DX = palette table (DGROUP) */
-    r.x.ax = 0x1012; r.x.bx = 0x10; r.x.cx = 0x50;
-    r.x.dx = PTR_OFF(dacValues1);
-    int86x(0x10, &r, &r, &s);
+    gfx_setDacRange(0x10, 0x50, dacValues1);
     if (g_horizonGroundColor != 2) {
         for (i = 0; i < 0x30; i++)
             dacValues[0x30 + i] = g_dacGroundPaletteSrc[i];
     }
-    r.x.ax = 0x1012; r.x.bx = 0x60; r.x.cx = 0xA0;
-    r.x.dx = PTR_OFF(g_nightMode != 0 ? otherDacValues : dacValues);
-    int86x(0x10, &r, &r, &s);
+    gfx_setDacRange(0x60, 0xA0, g_nightMode != 0 ? otherDacValues : dacValues);
 }

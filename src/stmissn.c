@@ -228,13 +228,14 @@ void animateArm(int a, int b)
     {
         gfx_setPageN(0);
         gfx_blitToCurrent(page1Ptr);
+        gfx_commitPage();
         spriteBlitX = armBlitX[spriteIdx];
         spriteBlitY = armBlitY[spriteIdx];
         spriteBlitW = armBlitW[spriteIdx];
         spriteBlitH = armBlitH[spriteIdx];
         gfx_copyRect(*page2NumPtr, spriteBlitX, spriteBlitY, *page1NumPtr, spriteBlitX, spriteBlitY, spriteBlitW, spriteBlitH);
         if (b < 5 && enableHighlight != 0) {
-            gfx_switchColor(page1NumPtr, 113, b * 21 + 0x22, 297, b * 21 + 0x2a, COLOR_BRIEF_DESC_HL, COLOR_BRIEF_DESC_NORMAL);
+            gfx_switchColor(page1NumPtr, 113, b * 21 + 34, 297, b * 21 + 42, COLOR_BRIEF_DESC_HL, COLOR_BRIEF_DESC_NORMAL);
         }
     }
 }

@@ -1,9 +1,16 @@
 /*
- * timer.c - Timer ISR for NO_ASM build.
+ * timer.c - Game tick clock for the native SDL build.
  *
- * Hooks INT 08h (timer tick) to increment timerCounter and chains to
- * the original BIOS handler. Reprograms the PIT to ~60 Hz (matching
- * the original game's calibrated timer speed).
+ * The game keeps time in four byte counters that callers reset to 0 and then
+ * poll until they reach some target ("wait N ticks"), plus an optional per-tick
+ * hook egame uses for frame pacing and palette cycling. The tick rate is 60 Hz.
+ *
+ * Rather than a background thread, the counters advance on the main thread from
+ * a monotonic clock: timerPump() adds however many 60 Hz ticks have elapsed
+ * since it last ran and fires the hook once per tick. This keeps the hook's work
+ * (palette cycle, frame-sync flags) synchronized with rendering instead of
+ * racing it. timerPump() is called from the input pump and from timerYield(),
+ * so every wait loop that polls a counter advances time as it spins.
  */
 
 #include "inttype.h"
@@ -17,54 +24,57 @@ extern uint8 timerCounter3;
 extern uint8 timerCounter4;
 extern uint8 timerHandlerInstalled;
 
-static void (interrupt far *oldTimerIsr)(void);
+#define TIMER_HZ 60
+#define TICK_NS  (SDL_NS_PER_SECOND / TIMER_HZ)
+/* If the loop falls this far behind (e.g. the window was blocked), snap forward
+ * instead of firing a burst of catch-up ticks. */
+#define MAX_CATCHUP_NS (SDL_NS_PER_SECOND / 4)
 
-/* PIT divisor: 0x4DAE = 19886 -> 1193182/19886 = ~60 Hz
- * This matches the original game's default calibration value.
- * The BIOS expects 18.2 Hz, so we chain every Nth tick.
- */
-#define PIT_DIVISOR 0x4DAE
-#define CHAIN_INTERVAL 3  /* chain to BIOS every 3 ticks (~20 Hz, close to 18.2) */
-
-static uint8 chainCount = 0;
-
-/* Optional per-tick game callback. egame registers advanceFrameTick here (the
- * DAC colour-cycle + frame-timing tick that egcode.asm's own timer ISR runs but
- * this shared C ISR otherwise omits). NULL for start/end, which need no extra
+/* Optional per-tick game callback. egame registers egAdvanceFrameTick here (the
+ * frame-sync + DAC colour-cycle tick); NULL for start/end, which need no extra
  * per-tick work. */
 static void (far *gameTickHook)(void) = 0;
+
+static Uint64 nextTickNs;   /* clock time the next pending tick is due */
+static bool   timerRunning = false;
 
 void setTimerTickHook(void (far *fn)(void))
 {
     gameTickHook = fn;
 }
 
-static void interrupt far timerIrqHandler(void)
+/* Advance the tick counters to match elapsed real time, firing the hook once
+ * per 1/60 s tick. Safe to call as often as a spin loop likes. */
+void timerPump(void)
 {
-    timerCounter++;
-    timerCounter2++;
-    timerCounter3++;
-    timerCounter4++;
-    if (gameTickHook != 0)
-        gameTickHook();
-    chainCount++;
-    if (chainCount >= CHAIN_INTERVAL) {
-        chainCount = 0;
-        _chain_intr(oldTimerIsr);
-    } else {
-        /* Send EOI manually since we're not chaining */
-        outp(0x20, 0x20);
+    Uint64 now;
+    if (!timerRunning) return;
+    now = SDL_GetTicksNS();
+    if (now > nextTickNs + MAX_CATCHUP_NS)
+        nextTickNs = now;       /* fell too far behind: resync, don't burst */
+    while (now >= nextTickNs) {
+        nextTickNs += TICK_NS;
+        timerCounter++;
+        timerCounter2++;
+        timerCounter3++;
+        timerCounter4++;
+        if (gameTickHook != 0)
+            gameTickHook();
     }
+}
+
+/* Body for the game's "wait until a counter reaches N" spin loops: advance the
+ * clock and yield the CPU so the wait doesn't peg a core. */
+void timerYield(void)
+{
+    timerPump();
+    SDL_DelayNS(SDL_NS_PER_MS);
 }
 
 void setTimerIrqHandler(void)
 {
-    oldTimerIsr = _dos_getvect(0x08);
-    _dos_setvect(0x08, timerIrqHandler);
-    /* Reprogram PIT channel 0 to ~60 Hz */
-    outp(0x43, 0x36);      /* channel 0, lo/hi, mode 3 (square wave) */
-    outp(0x40, PIT_DIVISOR & 0xFF);  /* low byte */
-    outp(0x40, PIT_DIVISOR >> 8);    /* high byte */
+    nextTickNs = SDL_GetTicksNS() + TICK_NS;
+    timerRunning = true;
     timerHandlerInstalled = 1;
 }
 

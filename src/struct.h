@@ -526,7 +526,10 @@ STATIC_ASSERT(sizeof(struct MapEvent)==12);
  * unions. */
 #pragma pack(1)
 struct VertexProj {
-    struct { int16 num; int16 div; } in[121]; /* input pairs (stride 4) */
+    /* input pairs (stride 4). The whole 32-bit slot is also the camera-space
+     * depth: .div is its high word (the perspective divisor), .num its low word.
+     * eg3drast composes/decomposes it explicitly (getVtxDepth/setVtxDepth). */
+    struct { int16 num; int16 div; } in[121];
     union { int32 v[121]; int16 lo; } x;      /* projected screen X; .lo = HUD X */
     union { int32 v[121]; int16 lo; } y;      /* projected screen Y; .lo = HUD Y */
     uint8 scratch[3784];                      /* near-clip / depth-sort transform scratch */

@@ -101,7 +101,7 @@ extern struct NeighborSampling g_neighborSampling;
 extern const int16 g_lodObjectCount[];
 extern const int16 g_lodGridDim[];
 extern size_t size3d3;
-extern unsigned int buf3d3[];
+extern uint16 buf3d3[];
 extern unsigned int size3d3_2;
 extern int16 sign3dt;
 extern uint16 sizes3dt[];
@@ -223,7 +223,6 @@ extern int g_gees;
 extern int g_detailLevel;
 extern int16 g_autoCrashDive;
 extern int16 g_missionTick;
-extern uint8 far *g_floppyMotorPtr;
 extern SDL_IOStream *fileHandle;
 extern int16 g_gunFiredFlag;
 extern int16 g_damageTakenFlag;
@@ -290,6 +289,9 @@ extern int16 g_scopeArcRange;
 extern uint8 g_modelVertZ[];
 extern int16 keyValue;
 extern int16 g_waypointBearing;
+// 16-bit on purpose: view-angle math relies on 16-bit wraparound (the gimbal
+// flip in renderFrame, where side views feed roll into pitch). Native int=4
+// would make abs()/0x8000 compares misfire and invert the scene.
 extern int16 g_viewPitch;
 extern int16 g_threatLabelTarget;
 extern int16 g_skyColorIndex;
@@ -446,9 +448,11 @@ extern uint8 g_offscreenRender;
 extern int16 g_modelEvenOddBit;
 extern int16 g_mapLodIndex;
 
-/* HUD gauge data. */
-extern uint8 g_tapeDigitStrip[];
-extern uint8 g_compassTapeBuf[];
+/* HUD gauge data. Both point into one contiguous block (g_hudTapeTables) so the
+ * thousands-altitude tape can read across the digit-strip/heading-table boundary,
+ * as it did in the original DOS data segment. */
+extern uint8 *g_tapeDigitStrip;
+extern uint8 *g_compassTapeBuf;
 extern uint8 g_pitchLabelTable[92];
 /* HUD tape/sprite descriptor blocks (gfx slot param blocks). */
 extern int16 g_tapeText0[11];

@@ -27,7 +27,7 @@ void closeFileWrapper(SDL_IOStream *handle) /* Original: CloseFile(fh). */
     fileClose(handle);
 }
 
-void openShowPic(char *filename, int page) /* Original chain: OpenFile + show/decode + CloseFile. Open, draw PIC to page, then close. */
+void openShowPic(const char *filename, int page) /* Original chain: OpenFile + show/decode + CloseFile. Open, draw PIC to page, then close. */
 {
     SDL_IOStream *fileHandle;
     TRACE(("openShowPic: opening file %s, page %d",filename,page));

@@ -79,7 +79,8 @@ inline unsigned short _psp = 0;
 #endif
 
 inline int putch(int c) { (void)c; return 0; }
-inline int kbhit(void) { return 0; }
+/* Backed by the SDL keyboard layer in eginput.c (egame flight loop). */
+int kbhit(void);
 
 inline char* itoa(int value, char* str, int base) {
     if (base == 10) { sprintf(str, "%d", value); }

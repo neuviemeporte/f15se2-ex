@@ -54,14 +54,18 @@ int __far fillSpanRect(const int16 *pageDesc, int left, int top, int right, int 
     uint16 savedSeg = (uint16)gfx_getCurPageSeg();
     uint8 color = (uint8)pageDesc[2];
     uint16 seg;
-    int y;
+    int pitch, y, x;
+    uint8 *px;
     gfx_setPageN((uint16)pageDesc[0]);
     seg = (uint16)gfx_getCurPageSeg();
-    if (right >= left && bottom >= top) {
+    px = gfx_pagePixelsForSeg(seg, &pitch);
+    if (px && right >= left && bottom >= top) {
         for (y = top; y <= bottom; y++) {
-            uint8 FAR *p = (uint8 FAR *)MK_FP(seg, (uint16)(y * 320 + left));
-            int n = right - left + 1;
-            while (n-- > 0) *p++ = color;
+            uint8 *p;
+            if (y < 0 || y >= 200) continue;
+            p = px + (size_t)y * pitch;
+            for (x = (left < 0 ? 0 : left); x <= right && x < 320; x++)
+                p[x] = color;
         }
     }
     gfx_setCurPageSegReg(savedSeg);

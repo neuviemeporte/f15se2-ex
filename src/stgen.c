@@ -93,9 +93,9 @@ restart_40a8:
           TRACE(("runGenerator(): inner branch 2 loop 1"));
           do {
             TRACE(("runGenerator(): inner branch 2 loop 2"));
-            randIdx = randMul(0xe0) * 0x80 + 0x840;
-            randY = randMul(0xe0) * 0x80 + 0x840;
-          } while ((terrainGrid[(randIdx >> 0xb) + ((randY >> 0xb) * 0x10)] & 3) != 0);
+            randIdx = randMul(224) * 0x80 + 0x840;
+            randY = randMul(224) * 0x80 + 0x840;
+          } while ((terrainGrid[(randIdx >> 0xb) + ((randY >> 0xb) * 16)] & 3) != 0);
         } while ((targets[0].targetIdx = findOrPlaceItem(randIdx,randY,1)) == -1);
       }
       TRACE(("runGenerator(): past inner check 1"));
@@ -459,7 +459,18 @@ void exportWorldToComm(const char *filename) {
     memAppend(terrainGrid, 1, 0x100, fileHandle);
     memAppend(&missionDistAccum, 2, 1, fileHandle);
     memAppend(&escortMissionFlag, 2, 1, fileHandle);
-    memAppend(&missionMidX, 4, 4, fileHandle);
+    /* Originally one 16-byte block read (4x4) over the contiguous mission
+     * coordinate words; the port split these into separate globals (and widened
+     * missionTargetX/Y to 32-bit), so append each 16-bit word explicitly to keep
+     * the on-wire layout the reader (waypoints, 16 bytes) expects. */
+    memAppend(&missionMidX, 2, 1, fileHandle);
+    memAppend(&missionMidY, 2, 1, fileHandle);
+    memAppend(&missionTargetX, 2, 1, fileHandle);
+    memAppend(&missionTargetY, 2, 1, fileHandle);
+    memAppend(&missionTarget2X, 2, 1, fileHandle);
+    memAppend(&missionTarget2Y, 2, 1, fileHandle);
+    memAppend(&missionBase2X, 2, 1, fileHandle);
+    memAppend(&missionBase2Y, 2, 1, fileHandle);
     memAppend(targets, 18, 2, fileHandle);
     doNothing(fileHandle);
 }
@@ -511,9 +522,10 @@ void setMoveDstComm7A(const char *filename, const char* mode) {
 }
 
 void memAppend(void *ptr, int itemsz, int count, SDL_IOStream* unused) {
-    void FAR *farptr;
-    farptr = ptr;
-    movedata(FP_SEG(farptr), FP_OFF(farptr), FP_SEG(moveDst), FP_OFF(moveDst), itemsz * count);
+    /* moveDst is a real cursor into commData->worldBuf (set by
+     * setMoveDstComm7A); the original DOS movedata segment copy is dead. */
+    (void)unused;
+    memcpy(moveDst, ptr, (size_t)itemsz * count);
     moveDst += itemsz * count;
 }
 
@@ -529,37 +541,37 @@ char* formatGridRef(int16 wx, int16 wy, int16 theater) {
     (void)theater;
     switch (gameData->theater) {
     case 0:
-        mystrcpy(bufCoordStr, aTd00);
+        mystrcpy(bufCoordStr, "TD00");
         gridOffX = 6;
         gridOffY = 4;
         break;
     case 1:
-        mystrcpy(bufCoordStr, aJz00);
+        mystrcpy(bufCoordStr, "JZ00");
         gridOffX = 0;
         gridOffY = 0;
         break;
     case 2:
-        mystrcpy(bufCoordStr, aXv00);
+        mystrcpy(bufCoordStr, "XV00");
         gridOffX = 0;
         gridOffY = 0;
         break;
     case 3:
-        mystrcpy(bufCoordStr, aEs00);
+        mystrcpy(bufCoordStr, "ES00");
         gridOffX = 0;
         gridOffY = 0;
         break;
     case 4:
-        mystrcpy(bufCoordStr, aWx00);
+        mystrcpy(bufCoordStr, "WX00");
         gridOffX = 0;
         gridOffY = 0;
         break;
     case 5:
-        mystrcpy(bufCoordStr, aCc00);
+        mystrcpy(bufCoordStr, "CC00");
         gridOffX = 3;
         gridOffY = 5;
         break;
     case 6:
-        mystrcpy(bufCoordStr, aHz00);
+        mystrcpy(bufCoordStr, "HZ00");
         gridOffX = 0;
         gridOffY = 0;
         break;
@@ -569,11 +581,11 @@ char* formatGridRef(int16 wx, int16 wy, int16 theater) {
     }
     wx = (((wx >> WORLD_COORD_SHIFT) * 20) >> 0xa) + gridOffX;
     while (wx > 9) {
-        wx -= 0xa;
+        wx -= 10;
         bufCoordStr[0]++;
     }
     bufCoordStr[2] += (int8)wx;
-    wy = (((wy >> WORLD_COORD_SHIFT) * 0x14) >> 0xa) + gridOffY;
+    wy = (((wy >> WORLD_COORD_SHIFT) * 20) >> 0xa) + gridOffY;
     while (wy > 9) {
         wy -= 0xa;
         bufCoordStr[1]--;

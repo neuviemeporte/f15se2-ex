@@ -20,8 +20,8 @@ struct GameComm {
     uint16 miscOvlAddr;
     int16 gfxInitResult;
     int16 startDone;
-    int16 setupDone;      /* in end.exe: landingType (1=crashed, 2=ejected, 3=landed) */
-    int16 continueFlag;   /* in end.exe: bailoutSurvived (0=survived) */
+    int16 landingType;     /* 1=crashed, 2=ejected, 3=landed */
+    int16 bailoutSurvived; /* 0=survived */
     int16 setup2;
     int16 restartFlag;
     int16 unk4;           /* nonzero enables crash exit in egame (set from theater table in start.exe) */
@@ -44,10 +44,6 @@ struct GameComm {
 
 /* The shared communication record. */
 extern struct GameComm *commData;
-
-/* end.exe debrief aliases: same struct fields, different semantics after egame writes results */
-#define landingType      setupDone
-#define bailoutSurvived  continueFlag
 
 /* the communication structure contains a buffer at offset 0x120, whose contents seem to have some different purpose than config values */
 #define COMM_BUFFER_OFFSET 0x120

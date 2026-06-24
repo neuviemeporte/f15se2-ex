@@ -25,9 +25,9 @@ void parseGridTerrain(void) {
 void parseTerrain(char *filename) {
     int16 tileIdx, level, tileOffset, entry;
     uint16 tileNum;
-    replaceExtension(filename, a_3dt);
+    replaceExtension(filename, ".3dT");
     if ((fileHandle = openFile(filename, 0)) == 0) {
-        showMsgWaitKey(aOpenErrorOn_3d);
+        showMsgWaitKey("Open Error on *.3DT, assuming new file !");
     }
     else {
         fileRead(&terrainSignature,2,1,fileHandle);
@@ -69,9 +69,9 @@ void parseTerrain(char *filename) {
 /* ---- merged from stgrid.c ---- */
 void parseGrid() {
     int idx;
-    replaceExtension(regnPlhPtr, a_3dg);
+    replaceExtension(regnPlhPtr, ".3dG");
     if ((fileHandle = openFile(regnPlhPtr, 0)) == 0) {
-        showMsgWaitKey(aOpenErrorOn__0);
+        showMsgWaitKey("Open Error on *.3DG, assuming new file !");
         idx = 0;
         do {
             gridBuf1[idx] = idx;
@@ -89,7 +89,7 @@ void parseGrid() {
         showMsgWaitKey("Bad Grid file format.");
     }
     else {
-        fileRead(gridBuf1, 1, 0x10, fileHandle);
+        fileRead(gridBuf1, 1, 16, fileHandle);
         fileRead(gridBuf2, 1, 0x100, fileHandle);
         fileRead(gridBuf3, 1, 0x200, fileHandle);
         fileRead(gridBuf4, 1, 0x200, fileHandle);
@@ -99,7 +99,7 @@ void parseGrid() {
 }
 
 int showMsgWaitKey(const char *msg) {
-    doNothing2(msg, 0, 0x60, 0x0f);
+    doNothing2(msg, 0, 96, 0x0f);
     return misc_getKey();
 }
 

@@ -4,6 +4,7 @@
 #include "inttype.h"
 #include "pointers.h"
 #include "egtypes.h"
+#include <stddef.h>
 
 typedef struct SDL_IOStream SDL_IOStream;
 
@@ -16,7 +17,7 @@ void restoreCbreakHandler();
 void runGameLoop();
 void gameMainLoop();
 void advanceFrameTick();
-int __cdecl drawCenteredLabelBox(int panel, char *text);
+int __cdecl drawCenteredLabelBox(int panel, const char *text);
 SDL_IOStream *createFile(const char *path, int attr);
 void closeFile(int handle);
 int readFile1(int handle, int count, int bufOffset);
@@ -37,7 +38,7 @@ void rotatePoint3d();
 int far transformModelVerticesFar();
 int far projectModelEdgesFar();
 int far buildRotationMatrixFar(int16* matrix, int angleX, int angleY, int angleZ);
-int far multiplyMatrix3x3Far(const int16* matA, const int16* matB, int16* result);
+int far multiplyMatrix3x3Far(const int16 *matA, const int16 *matB, int16* result);
 int far drawModelDisplayList();
 int far fillSpanRect(const int16* dst, int left, int top, int right, int bottom);
 int far drawClipLineGlobal();
@@ -65,8 +66,15 @@ void restoreTimerIrqHandler();
  * verify ASM build runs egcode.asm's own timer ISR instead, so this is NO_ASM. */
 void setTimerTickHook(void (far *fn)(void));
 void far egAdvanceFrameTick(void);
+/* Advance the 60 Hz tick counters from the monotonic clock (call while polling
+ * a tick counter); timerYield also sleeps a touch so the wait doesn't peg a core. */
+void timerPump(void);
+void timerYield(void);
 int getTimeOfDay();
 SDL_IOStream * __cdecl openFile(const char *path, int mode);
+void fileClose(SDL_IOStream *handle);
+size_t fileRead(void *ptr, size_t size, size_t count, SDL_IOStream *handle);
+size_t fileWrite(const void *ptr, size_t size, size_t count, SDL_IOStream *handle);
 
 void far projectSceneObject(char far *model, int yaw, int pitch, int roll, int posX, int posY, int posZ);
 

@@ -330,10 +330,34 @@ static int testVisibilityMask(unsigned char far **pp)
     return r;
 }
 
+/* Per-vertex projection scratch. The DOS build packed these into fixed byte
+ * offsets inside the shared vtxScratch blob (time-shared with the LZW pic-dict);
+ * natively camX/camY and the shared-vertex transform cache are their own arrays,
+ * and the depth shares vproj.in[] (its high word .div is the perspective
+ * divisor). The accessors still take the asm's byte offset (a vertex index * 4),
+ * so >> 2 recovers the element index. */
+static int32 g_vtxCamX[121];     /* camera-space X numerator per vertex (word_342BC) */
+static int32 g_vtxCamY[121];     /* camera-space Y numerator per vertex (word_344A0) */
+static int32 g_vtxXform[0x400];  /* shared-vertex transform cache (dword_34C2C)       */
+#define DW(off)    g_vtxXform[(off) >> 2]
+#define VCAMX(bx)  g_vtxCamX[(bx) >> 2]
+#define VCAMY(bx)  g_vtxCamY[(bx) >> 2]
+
+/* The per-vertex 32-bit camera depth is stored in the vproj.in[] pair: .div is
+ * its high word (the perspective divisor), .num its low word. Compose/decompose
+ * explicitly rather than aliasing the slot through a union. */
+static int32 getVtxDepth(int vtx) {
+    return JOIN32(vtxScratch.vproj.in[vtx].num, vtxScratch.vproj.in[vtx].div);
+}
+static void setVtxDepth(int vtx, int32 depth) {
+    vtxScratch.vproj.in[vtx].num = (int16)depth;
+    vtxScratch.vproj.in[vtx].div = (int16)(depth >> 16);
+}
+
 /* ===================================================================== */
 /* seg001 0x0078 — projectVertexToScreen: perspective divide of the      */
-/* per-vertex camera-space coords (word_342BC.. / word_344A0..) by the   */
-/* depth (vproj.in[].div) into the screen-space var_279/var_282 arrays.  */
+/* per-vertex camera-space coords (g_vtxCamX/g_vtxCamY) by the depth      */
+/* (vproj.in[].div) into the screen-space var_279/var_282 arrays.        */
 /* Flight-path only (the tac map writes vproj directly and never calls it).*/
 /* ===================================================================== */
 static void projectVertexToScreen(int vtx)   /* BX = vtx*4 in the asm */
@@ -347,12 +371,11 @@ static void projectVertexToScreen(int vtx)   /* BX = vtx*4 in the asm */
         vtxScratch.vproj.y.v[vtx] = (int32)(0x8000L | (0x8000L << 16));
         return;
     }
-    /* word_342BC:word_342BE form the 32-bit camera X for this vertex; the asm
-     * reads it from byte offset +1 (i.e. >>8) before the IDIV. */
-    camX = *(int32 *)((char *)&vtxScratch + 0x3c + vtx * 4);
+    /* The asm divides camX>>8 by the depth before the IDIV. */
+    camX = g_vtxCamX[vtx];
     vtxScratch.vproj.x.v[vtx] = sdivFull(lshr_s(camX, 8), cx) + g_viewCenterX;
     /* camera Y: (camY>>8) scaled by 3/4 (the (v>>2 - v) aspect term) then /depth */
-    camY = *(int32 *)((char *)&vtxScratch + 0x220 + vtx * 4);
+    camY = g_vtxCamY[vtx];
     {
         long n = lshr_s(camY, 8);
         long scaled = lshr_s(n, 2) - n;          /* = -(n*3/4) */
@@ -382,19 +405,19 @@ static void clipEdgeNearPlane(struct EdgeRec *rec, int behind, int front)
          * pitched). Use the uncapped divide; >>1 keeps cx in 0..0x7fff. */
         cx = (int)(udiv32by16_full(num, div) >> 1);
     }
-    /* X = word_342BC..  (offset 0x3c), Y = word_344A0.. (offset 0x220) */
-    fc = *(int32 *)((char *)&vtxScratch + 0x3c + front * 4);
-    bc = *(int32 *)((char *)&vtxScratch + 0x3c + behind * 4);
+    /* Interpolate the clipped vertex's camera X/Y into slot 120. */
+    fc = g_vtxCamX[front];
+    bc = g_vtxCamX[behind];
     delta = fc - bc;
     prod = imul16(HI16(delta) + LOCARRY(delta), cx) << 1;
     t = fc - prod;
-    *(int32 *)((char *)&vtxScratch + 0x21c) = t;          /* word_3449C */
-    fc = *(int32 *)((char *)&vtxScratch + 0x220 + front * 4);
-    bc = *(int32 *)((char *)&vtxScratch + 0x220 + behind * 4);
+    g_vtxCamX[120] = t;
+    fc = g_vtxCamY[front];
+    bc = g_vtxCamY[behind];
     delta = fc - bc;
     prod = imul16(HI16(delta) + LOCARRY(delta), cx) << 1;
     t = fc - prod;
-    *(int32 *)((char *)&vtxScratch + 0x400) = t;          /* word_34680 */
+    g_vtxCamY[120] = t;
     vtxScratch.vproj.in[120].num = 0;                    /* word_34864 */
     vtxScratch.vproj.in[120].div = 1;                    /* word_34866 */
     projectVertexToScreen(120);                          /* BX = 0x1E0 */
@@ -893,7 +916,7 @@ static void drawPrimitiveEdges(struct EdgeRec *rec)
 /* table into a flat sequence at DI, terminated by 0xFF. Depth-first walk   */
 /* of the adjacency table at g_rleRowBase using an explicit stack.          */
 /* ===================================================================== */
-static void decodeRleEdgeRow(const unsigned char far *src, unsigned char *dst, int rowBase)
+static void decodeRleEdgeRow(unsigned char far *src, unsigned char *dst, unsigned char *base)
 {
     /* explicit stack of (state, parentValue) frames replacing the asm's
      * PUSH AX / POP AX recursion. The asm pushes onto the hardware stack with
@@ -906,9 +929,8 @@ static void decodeRleEdgeRow(const unsigned char far *src, unsigned char *dst, i
     unsigned char stParent[256];
     int sp = 0;
     int cx;            /* current value */
-    unsigned char *base = (unsigned char *)(size_t)(uint16)rowBase;
 
-    g_rleRowBase = rowBase;
+    g_rleRowBase = (int16)(uint16)(size_t)base;
     cx = *src++;       /* first value */
     for (;;) {
         int dx;
@@ -1049,7 +1071,7 @@ static void renderPrimitiveList(unsigned char far *p)
             byte_36BAE[0x42 + i] = (mask & 1) ? 0x00 : 0xff;
             mask >>= 1;
         }
-        decodeRleEdgeRow(p, byte_36BAE + 1, (int)(int16)(uint16)(size_t)(byte_36BAE + 0x42));
+        decodeRleEdgeRow(p, byte_36BAE + 1, byte_36BAE + 0x42);
         {
             int edgeWords = g_modelEdgeCount * 2;
             unsigned char far *coord = p + edgeWords + 1;
@@ -1460,13 +1482,6 @@ int far drawPolygonOutline(int fillColor, int pointCount, int *points, int edgeC
 /* than the `long` runtime helpers, since this TU is a far code segment.     */
 /* ====================================================================== */
 
-/* dword_34C2C lives at vtxScratch + 0x9AC (the depth-sort transform scratch);
- * the per-vertex camera arrays word_342BC / word_344A0 / word_34684 are at
- * vtxScratch + 0x3c / 0x220 / 0x404 (the same offsets the back half uses). */
-#define DW(off)    (*(long *)((char *)&vtxScratch + 0x9AC + (off)))
-#define VCAMX(bx)  (*(long *)((char *)&vtxScratch + 0x3c  + (bx)))
-#define VCAMY(bx)  (*(long *)((char *)&vtxScratch + 0x220 + (bx)))
-#define VDEPTH(bx) (*(long *)((char *)&vtxScratch + 0x404 + (bx)))
 
 /* Combined-matrix scratch matrices (word_34288 object orientation, word_3429A
  * object*view) and the object-origin screen-X numerator base (word_3424C/E).  */
@@ -1653,7 +1668,7 @@ static void emitModelVertex(int bx, int vx, int vy, int vz)
     long sz = (imul16(cm[2], vx) + imul16(cm[5], vz) + imul16(cm[8], vy)) << 1;
     VCAMX(bx)  = sx + g_camBaseX;
     VCAMY(bx)  = sy + JOIN32(g_camTransXLo, g_camTransXHi);
-    VDEPTH(bx) = sz + JOIN32(g_camTransYLo, g_camTransYHi);
+    setVtxDepth(bx >> 2, sz + JOIN32(g_camTransYLo, g_camTransYHi));
     projectVertexToScreen(bx >> 2);
 }
 
@@ -1677,7 +1692,7 @@ static void transformVertexList(unsigned char far **pp)
                 if (!vis) continue;
                 VCAMX(bx)  = g_camBaseX + DW(4 + ref);
                 VCAMY(bx)  = JOIN32(g_camTransXLo, g_camTransXHi) + DW(0x25c + ref);
-                VDEPTH(bx) = JOIN32(g_camTransYLo, g_camTransYHi) + DW(0x4b4 + ref);
+                setVtxDepth(bx >> 2, JOIN32(g_camTransYLo, g_camTransYHi) + DW(0x4b4 + ref));
                 projectVertexToScreen(bx >> 2);
             }
         } else {
@@ -1751,7 +1766,7 @@ int far transformModelVerticesFar(void)
 static void sceneObjPoint(unsigned char far *p)
 {
     if (g_camTransYHi < 1) return;
-    VDEPTH(0) = JOIN32(g_camTransYLo, g_camTransYHi);
+    setVtxDepth(0, JOIN32(g_camTransYLo, g_camTransYHi));
     VCAMX(0)  = g_camBaseX;
     VCAMY(0)  = JOIN32(g_camTransXLo, g_camTransXHi);
     p++;                                       /* skip opcode */
@@ -1786,7 +1801,7 @@ static void sceneObjEdgeRun(unsigned char far *p)
                 g_replayLog.vertexX[buf3d3_1[ref] & 0xff],
                 ((int16 *)g_modelVertY)[buf3d3_2[ref] & 0xff],
                 ((int16 *)g_modelVertZ)[buf3d3_3[ref] & 0xff]);
-            sz = VDEPTH(0);
+            sz = getVtxDepth(0);
             gfx_setColor((unsigned char)edgeRunColor(HI16(sz)));
             g_lineX1 = g_lineX2 = (int16)vtxScratch.vproj.x.v[0];
             g_lineY1 = g_lineY2 = (int16)vtxScratch.vproj.y.v[0];
@@ -1797,7 +1812,7 @@ static void sceneObjEdgeRun(unsigned char far *p)
             int ref = (*p++) * 4;
             long depthV = DW(0x4b4 + ref) + JOIN32(g_camTransYLo, g_camTransYHi);
             int dHi = HI16(depthV);
-            VDEPTH(0) = depthV;
+            setVtxDepth(0, depthV);
             if (dHi >= 1) {
                 VCAMX(0) = DW(0x004 + ref) + g_camBaseX;
                 VCAMY(0) = DW(0x25c + ref) + JOIN32(g_camTransXLo, g_camTransXHi);
@@ -1966,8 +1981,8 @@ int far transformAndCullObjectFar(int a, int b, int c)
     return transformAndCullObject(b, c, a);
 }
 
-/* seg001 0x2853 — multiplyMatrix3x3Far: cdecl entry. matA/matB are near
- * pointers to 9-element matrices; result is a near pointer. */
+/* seg001 0x2853 — multiplyMatrix3x3Far: cdecl entry. matA/matB are pointers to
+ * 9-element matrices. */
 int far multiplyMatrix3x3Far(const int16 *matA, const int16 *matB, int16 *result)
 {
     multiplyMatrix3x3(matA, matB, result);

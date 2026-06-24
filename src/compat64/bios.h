@@ -7,6 +7,7 @@
 #define _KEYBRD_READY 1
 #define _KEYBRD_READ 0
 
-inline int _bios_keybrd(int cmd) { (void)cmd; return 0; }
+/* Backed by the SDL keyboard layer in eginput.c (egame flight loop). */
+int _bios_keybrd(int cmd);
 
 #endif // _BIOS_H_COMPAT64

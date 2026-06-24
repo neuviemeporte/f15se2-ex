@@ -18,6 +18,11 @@ option(DOWNLOAD_DEPENDENCIES "Download and build missing third-party dependencie
 option(ASAN "Build with AddressSanitizer" OFF)
 option(UBSAN "Build with UndefinedBehaviorSanitizer" OFF)
 
+# When ON, skip the interactive menus and drop straight into a hardcoded
+# mission (egame). Handy for iterating on the flight code without clicking
+# through the front end each run.
+option(AUTOSTART "Skip menus and start a mission directly (DEBUG_AUTOSTART)" OFF)
+
 #==============================================================================
 # Global settings
 #==============================================================================
@@ -166,6 +171,10 @@ set_target_properties(f15se2 PROPERTIES
 # Compile C as C++ for extra linting.
 set_source_files_properties(${F15SE2_SOURCES} PROPERTIES LANGUAGE CXX)
 
+if(AUTOSTART)
+    target_compile_definitions(f15se2 PRIVATE DEBUG_AUTOSTART)
+endif()
+
 target_include_directories(f15se2 BEFORE PRIVATE
     ${SRC_DIR}/compat64
     ${SRC_DIR}
@@ -203,8 +212,6 @@ if(
         $<$<CXX_COMPILER_ID:AppleClang>:-ferror-limit=1000>
         $<$<CXX_COMPILER_ID:GNU>:-fmax-errors=1000>
 
-        -fpermissive
-        -Wno-int-to-pointer-cast
         -Wno-narrowing
     )
 
@@ -222,6 +229,7 @@ if(
         target_compile_options(f15se2 PRIVATE
             -fsanitize=${SANITIZER_LIST}
             -fno-omit-frame-pointer
+            -g                      # DWARF line info so ASan/UBSan reports symbolize to file:line
         )
         target_link_options(f15se2 PRIVATE -fsanitize=${SANITIZER_LIST})
     endif()

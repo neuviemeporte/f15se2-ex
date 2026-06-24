@@ -30,6 +30,14 @@ void __cdecl gfxInit();
 // ==== seg000:0x10 ====
 int egame_main(void) {
     TRACE(("egame main: entering"));
+    /* Per-mission state reset (persists across missions in the merged build).
+     * g_initPhase=0 re-arms the init block; the indicator colour trackers (+7 of
+     * the four rects at [3..22]) must match the cockpit base colour (3). */
+    g_initPhase = 0;
+    g_missionEndedFlag[0] = g_missionEndedFlag[1] = 0;
+    g_eventLogCount = 0;
+    g_ejectState = 0;
+    g_tacmapIndicators[7] = g_tacmapIndicators[12] = g_tacmapIndicators[17] = g_tacmapIndicators[22] = 3;
     TRACE(("egame main: setup overlays"));
     TRACE(("egame main: install cbreak"));
     installCBreakHandler();
@@ -75,7 +83,7 @@ void drawCockpit() {
     TRACE_KEY(("drawCockpit: theater=%d regnStr=%s 38FDC=%d", gameData->theater, regnStr, g_detailLevel));
     initMissionStrings();
     load15Flt3d3();
-    TRACE(("drawCockpit: after load15Flt3d3, scenPlh0=%04x, scenarioPlh@%04x", (unsigned)scenarioPlh[0], (unsigned)&scenarioPlh[0]));
+    TRACE(("drawCockpit: after load15Flt3d3, scenPlh0=%p, scenarioPlh@%p", (const void *)scenarioPlh[0], (const void *)&scenarioPlh[0]));
     strcpy(regnStr, scenarioPlh[gameData->theater]);
     TRACE_KEY(("drawCockpit: regnStr=%s theater=%d", regnStr, gameData->theater));
     loadRegion3D();
@@ -104,15 +112,14 @@ void drawCockpit() {
 // ==== seg000:0x211 ====
 void runGameSession() {
     TRACE(("runGameSession: enter"));
-    FP_OFF(g_floppyMotorPtr) = OFF_BDA_FLOPPYMOTOR; // floppy motor runtime in bda???
-    FP_SEG(g_floppyMotorPtr) = 0;
-    if (*g_floppyMotorPtr > 1) {
-        *g_floppyMotorPtr = 1;
-    }
+    /* The original capped the BIOS floppy motor-off countdown in the BDA;
+     * there is no floppy hardware in the native port. */
     TRACE(("runGameSession: audio_shutdown"));
     audio_shutdown();
     TRACE(("runGameSession: audio_setup"));
-    audio_setup(*(int16 FAR*)(OFF_IACA_UNK), f15DgtlResult);
+    /* The sample-data selector formerly lived in the low-memory IACA shared
+     * with start; start sets it to 0, and audio_setup is a no-op stub. */
+    audio_setup(0, f15DgtlResult);
     TRACE(("runGameSession: setTimerIrqHandler"));
     setTimerTickHook(egAdvanceFrameTick);
     setTimerIrqHandler();
@@ -129,6 +136,7 @@ void runGameSession() {
     gfx_setDacAnimCount(1);
     waitFrameSync(2);
     restoreTimerIrqHandler();
+    setTimerTickHook(nullptr);
     audio_shutdown();
 }
 

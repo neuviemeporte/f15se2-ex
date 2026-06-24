@@ -103,7 +103,7 @@ void drawTacticalMap(char page)
                 } else {
                     setDrawColor(0x0e);
                 }
-                if (sams[*(int16 *)&g_projectiles[i].state[0]].weaponClass == 3) {
+                if (sams[g_projectiles[i].specIdx].weaponClass == 3) {
                     setDrawColor(0x0d);
                 }
                 if (!(g_projectiles[i].alt & 1)) {
