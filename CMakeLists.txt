@@ -197,6 +197,19 @@ if(
         NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
     )
 )
+
+    # allow invalid define/extern detection with use of LTO - default with MSVC
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      # only available with gcc
+      if(TRUE)
+        target_compile_options(f15se2 PRIVATE -flto)
+        if(FALSE)
+          # break linking on mismatch errors
+          target_link_options(f15se2 PRIVATE -flto -Werror=lto-type-mismatch)
+        endif()
+      endif()
+    endif()
+
     target_compile_options(f15se2 PRIVATE
         -Wall
 
