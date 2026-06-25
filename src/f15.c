@@ -18,7 +18,7 @@
 #include "pointers.h"
 #include "biosfunc.h"
 #include "dosfunc.h"
-#include "output.h"
+#include "log.h"
 #include "memory.h"
 #include "comm.h"
 #include "overlay.h"
@@ -27,6 +27,7 @@
 #include "gfx_impl.h"
 #include "slot.h"
 
+#include <dos.h>
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -92,12 +93,12 @@ uint16 load_driver(const char* filename, const uint16 commPtrOffset) {
     uint16 drvAddress;
     uint16 FAR *commPtr = (uint16 FAR *)MK_FP(commSegment, commPtrOffset);
     if (commSegment == 0)
-        FATAL("COMM segment address invalid");
+        LogCritical(("COMM segment address invalid"));
     if ((drvAddress = overlay_load(filename)) == 0)
-        FATAL("unable to load driver %s!", filename);
+        LogCritical(("unable to load driver %s!", filename));
     /* place address of loaded driver into an offset in the communication buffer */
     *commPtr = drvAddress;
-    INFO("Loaded driver %s at 0x%x, address stored in COMM at %p", filename, drvAddress, commPtr);
+    LogInfo(("Loaded driver %s at 0x%x, address stored in COMM at %p", filename, drvAddress, commPtr));
     return drvAddress;
 }
 
@@ -112,14 +113,14 @@ void game_init(void) {
     /* get amount of free memory */
     freeMemory = dos_getfree();
     if (freeMemory == 0)
-        FATAL("Unable to get amount of free memory!");
-    INFO("free memory: %s", sizeString(freeMemory));
+        LogCritical(("Unable to get amount of free memory!"));
+    LogInfo(("free memory: %s", sizeString(freeMemory)));
 
     /* allocate memory for communication buffer between game executables */
     commSegment = dos_alloc(COMM_SIZE_PARA);
     if (commSegment == 0)
-        FATAL("Unable to allocate memory for COMM");
-    INFO("Allocated COMM buffer at 0x%x, size = %up (%lu)", commSegment, COMM_SIZE_PARA, PARA_TO_BYTES(COMM_SIZE_PARA));
+        LogCritical(("Unable to allocate memory for COMM"));
+    LogInfo(("Allocated COMM buffer at 0x%x, size = %up (%lu)", commSegment, COMM_SIZE_PARA, PARA_TO_BYTES(COMM_SIZE_PARA)));
     /* magic values written into the MCB for the COMM buffer, EGAME.EXE later checks for them */
     writeWordFar(commSegment - 1, COMM_MCB_OFFSET_MAGIC1, COMM_MCB_VALUE_MAGIC1);
     writeWordFar(commSegment - 1, COMM_MCB_OFFSET_MAGIC2, COMM_MCB_VALUE_MAGIC2);
@@ -144,10 +145,10 @@ void game_init(void) {
         uint16 ovlSeg = dos_alloc(80);
         uint16 sndSeg, miscSeg;
         if (ovlSeg == 0)
-            FATAL("Unable to allocate virtual gfx overlay");
+            LogCritical(("Unable to allocate virtual gfx overlay"));
         gfx_buildVirtualOverlay(ovlSeg);
         writeWordFar(commSegment, COMM_GFXOVL_ADDR_OFFSET, ovlSeg);
-        INFO("Virtual gfx overlay at 0x%x", ovlSeg);
+        LogInfo(("Virtual gfx overlay at 0x%x", ovlSeg));
 
         /* Stub SOUND and MISC overlays provided by f15.exe itself — no
          * NSOUND.EXE / MISC.EXE on disk. An ASM child still patches its
@@ -157,22 +158,22 @@ void game_init(void) {
         sndSeg = dos_alloc(4);
         miscSeg = dos_alloc(4);
         if (sndSeg == 0 || miscSeg == 0)
-            FATAL("Unable to allocate stub misc/sound overlays");
+            LogCritical(("Unable to allocate stub misc/sound overlays"));
         gfx_buildSoundOverlay(sndSeg);
         gfx_buildMiscOverlay(miscSeg);
         writeWordFar(commSegment, COMM_SNDOVL_ADDR_OFFSET, sndSeg);
         writeWordFar(commSegment, COMM_MISCOVL_ADDR_OFFSET, miscSeg);
-        INFO("Stub sound overlay at 0x%x, misc overlay at 0x%x", sndSeg, miscSeg);
+        LogInfo(("Stub sound overlay at 0x%x, misc overlay at 0x%x", sndSeg, miscSeg));
 
         gfxBufAddress = (uint16)gfx_allocPage(GFX_INIT_ARG);
-        INFO("gfx_allocPage returned 0x%x", gfxBufAddress);
+        LogInfo(("gfx_allocPage returned 0x%x", gfxBufAddress));
     }
     writeWordFar(commSegment, COMM_GFXINIT_RESULT_OFFSET, gfxBufAddress);
 
     /* initialization done */
-    INFO("COMM contents:");
+    LogInfo(("COMM contents:"));
     hexdump(MK_FP(commSegment - 1, 0), COMM_BUFFER_OFFSET + SIZE_PARAGRAPH, 0, 1);
-    INFO("Initialization complete, free memory = %s", sizeString(dos_getfree()));
+    LogInfo(("Initialization complete, free memory = %s", sizeString(dos_getfree())));
 }
 
 /* In-process entry points for the former START.EXE / EGAME.EXE / END.EXE.
@@ -187,18 +188,18 @@ static int game_dispatch(const char* filename) {
     if (filename == GAME_MENU)       return start_main();
     if (filename == GAME_FLIGHT)     return egame_main();
     if (filename == GAME_DEBRIEFING) return end_main();
-    FATAL("Unknown program: %s", filename);
+    LogCritical(("Unknown program: %s", filename));
     return -1;
 }
 
 bool game_run(const char* filename, const int returnCode, const bool debug) {
     int err;
-    INFO("Running %s in-process", filename);
+    LogInfo(("Running %s in-process", filename));
     log_close();
     err = game_dispatch(filename);
     log_open(true);
     nullGuardRestore(); /* sub-program init may scribble on our CRT null-guard; undo it */
-    INFO("%s exited with code 0x%x", filename, err);
+    LogInfo(("%s exited with code 0x%x", filename, err));
     if (debug)
         return true;
     /* check return code if not in debug mode */
@@ -216,7 +217,7 @@ uint16 load_segment(const uint16 envParagraphs) {
  * to fill the resizable window (SDL_LOGICAL_PRESENTATION_STRETCH). */
 static void sdl_init(void) {
     if (!SDL_Init(SDL_INIT_VIDEO))
-        FATAL("SDL_Init failed: %s", SDL_GetError());
+        LogCritical(("SDL_Init failed: %s", SDL_GetError()));
 
     sdlWindow = SDL_CreateWindow(
         "F-15 SE2 EX v0.0.1",
@@ -224,17 +225,17 @@ static void sdl_init(void) {
         INITIAL_WINDOW_HEIGHT,
         SDL_WINDOW_RESIZABLE);
     if (!sdlWindow)
-        FATAL("Window creation failed: %s", SDL_GetError());
+        LogCritical(("Window creation failed: %s", SDL_GetError()));
 
     sdlRenderer = SDL_CreateRenderer(sdlWindow, NULL);
     if (!sdlRenderer)
-        FATAL("Renderer creation failed: %s", SDL_GetError());
+        LogCritical(("Renderer creation failed: %s", SDL_GetError()));
 
     SDL_SetRenderVSync(sdlRenderer, 1);
 
     if (!SDL_SetRenderLogicalPresentation(sdlRenderer, LOGICAL_WIDTH, LOGICAL_HEIGHT,
                                           SDL_LOGICAL_PRESENTATION_STRETCH))
-        INFO("SetRenderLogicalPresentation failed: %s", SDL_GetError());
+        LogInfo(("SetRenderLogicalPresentation failed: %s", SDL_GetError()));
 }
 
 static void sdl_shutdown(void) {
@@ -248,6 +249,7 @@ int main(int argc, char *argv[]) {
     int argIdx, charIdx;
     bool debugMenu = false, debugFlight = false, debugDebrief = false;
 
+    log_set_app("f15");
     log_open(false);
     nullGuardSave();
     sdl_init();
@@ -256,30 +258,30 @@ int main(int argc, char *argv[]) {
         const char *arg = argv[argIdx];
         const size_t len = strlen(arg);
         if (len < 3 || arg[0] != '/' || tolower(arg[1]) != 'd')
-            FATAL("Unrecognized argument: '%s'", arg);
+            LogCritical(("Unrecognized argument: '%s'", arg));
         for (charIdx = 2; charIdx < len; ++charIdx) {
             switch (arg[charIdx]) {
             case '1': debugMenu = true; break;
             case '2': debugFlight = true; break;
             case '3': debugDebrief = true; break;
             default:
-                FATAL("Unrecognized argument: '%s'", arg);
+                LogCritical(("Unrecognized argument: '%s'", arg));
             }
         }
     }
 
-    INFO("Starting game initialization routine");
+    LogInfo(("Starting game initialization routine"));
     game_init();
     dos_mcbInfo();
 
-    INFO("Starting game main loop");
+    LogInfo(("Starting game main loop"));
     while (true) {
         if (!game_run(GAME_MENU, RET_MENU, debugMenu)) break;
         if (!game_run(GAME_FLIGHT, RET_NONZERO, debugFlight)) break;
         if (!game_run(GAME_DEBRIEFING, RET_DEBRIEFING, debugDebrief)) break;
     }
 
-    INFO("Main loop finished, terminating");
+    LogInfo(("Main loop finished, terminating"));
     sdl_shutdown();
     return 0;
 }

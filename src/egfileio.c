@@ -4,7 +4,7 @@
 #include "egtypes.h"
 #include "offsets.h"
 #include "pointers.h"
-#include "debug.h"
+#include "log.h"
 #include "slot.h"
 #include "const.h"
 

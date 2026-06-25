@@ -2,14 +2,13 @@
 #include "slot.h"
 #include <dos.h>
 #include "pointers.h"
-#include "debug.h"
+#include "log.h"
 #include "endata.h"
 #include "eninput.h"
 #include "shared/common.h"
 
 void waitForKeyOrJoy(void) {
     int key;
-    TRACE(("waitForKeyOrJoy"));
     if (commData->setupUseJoy == 1) {
         do {
             if (misc_checkKeyBuf() == 0) {

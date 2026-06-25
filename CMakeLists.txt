@@ -77,7 +77,7 @@ set(F15SE2_SOURCES
     ${SRC_DIR}/f15.c
     ${SRC_DIR}/dosfunc.c
     ${SRC_DIR}/biosfunc.c
-    ${SRC_DIR}/output.c
+    ${SRC_DIR}/log.c
     ${SRC_DIR}/overlay.c
     ${SRC_DIR}/f15util.c
     ${SRC_DIR}/gfx_impl.c
@@ -174,6 +174,10 @@ target_include_directories(f15se2 BEFORE PRIVATE
 # SDL3::SDL3 is exported by both the system package and the FetchContent build,
 # so this works regardless of how SDL3 was provided.
 target_link_libraries(f15se2 PRIVATE SDL3::SDL3)
+
+# Enable the log.c logging facility (Log/LogInfo/.../LogCritical). Without DEBUG
+# the log macros compile to no-ops (and LogCritical's exit-on-fatal is lost).
+target_compile_definitions(f15se2 PRIVATE DEBUG)
 
 #==============================================================================
 # Compiler warnings

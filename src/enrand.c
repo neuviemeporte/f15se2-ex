@@ -2,12 +2,12 @@
 #include <string.h>
 #include "offsets.h"
 #include "pointers.h"
-#include "debug.h"
+#include "log.h"
 #include "shared/common.h"
 #include "enfile.h"
 #include "enrand.h"
 
 void enSeedRandom(void) {
-    TRACE(("enSeedRandom"));
+    Log(("enSeedRandom"));
     srandInit(getTimeOfDay());
 }

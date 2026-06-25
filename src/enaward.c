@@ -1,7 +1,7 @@
 /* enaward.c — memory/pics/awards, compiled with /Gs */
 #include "slot.h"
 #include "pointers.h"
-#include "debug.h"
+#include "log.h"
 #include "endata.h"
 #include "endcode.h"
 #include "enaward.h"
@@ -14,7 +14,6 @@ void loadPicFromFile(const char *name, uint16 segment);
 void loadPicFromFileAt(const char *name, uint16 segment, int off, int whence);
 
 void freeBuffer(uint16 segment) {
-    TRACE(("freeBuffer"));
     if (dos_free(segment) != 0) {
         cleanup();
         dos_printstring("Buffer dealloc error$");
@@ -25,7 +24,6 @@ void freeBuffer(uint16 segment) {
 
 void loadPicFromFile(const char *name, uint16 segment) {
     int handle;
-    TRACE(("loadPicFromFile"));
     handle = openFileWrapper(name, 0);
     decodePicRaw(handle, segment);
     closeFileWrapper(handle);
@@ -34,7 +32,6 @@ void loadPicFromFile(const char *name, uint16 segment) {
 
 void loadPicFromFileAt(const char *name, uint16 segment, int off, int whence) {
     int handle;
-    TRACE(("loadPicFromFileAt"));
     handle = openFileWrapper(name, 0);
     lseek(handle, off, whence);
     decodePic(handle, segment);
