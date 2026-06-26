@@ -8,13 +8,29 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux GCC
+            os: ubuntu-latest
+            configure: cmake -S . -B build
+            build: cmake --build build -j$(nproc)
+
+          - name: Windows MSVC x64
+            os: windows-latest
+            configure: cmake -S . -B build -G "Visual Studio 18 2026" -A x64
+            build: cmake --build build --config Release --parallel
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -23,7 +39,7 @@ jobs:
             libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev
 
       - name: Configure CMake
-        run: cmake -S . -B build
+        run: ${{ matrix.configure }}
 
       - name: Build
-        run: cmake --build build -j$(nproc)
+        run: ${{ matrix.build }}
