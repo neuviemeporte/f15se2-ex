@@ -41,7 +41,9 @@ void updateFrame(void);
  * stepRate == g_frameRateScaling (giving the mission clock 1 Hz), so we step at
  * exactly g_frameRateScaling steps/s. The governor's auto-rescale and the sleep
  * are retired (egframe.c/egkeys.c); g_frameRateScaling is pinned at 15 (max
- * precision) and slow-motion still lowers it. */
+ * precision). ALT+A "ACCEL" (egkeys.c) used to halve g_frameRateScaling; with
+ * the decouple it instead multiplies the wall-clock step rate by g_slowMotionMode
+ * (see simStepNsNow), so ACCEL is a clean 2x time compression at full precision. */
 
 #define NS_PER_SEC 1000000000ULL
 #define SIM_OBJ_MAX 20
@@ -139,8 +141,10 @@ static void camApplyInterp(const CamSnapshot *p, const CamSnapshot *n, int64 num
 
 static uint64 simStepNsNow(void) {
     int scaling = g_frameRateScaling;
+    int accel = g_slowMotionMode; /* 2 = ACCEL (ALT+A): step 2x faster in wall-clock */
     if (scaling < 1) scaling = 1;
-    return NS_PER_SEC / (uint64)scaling;
+    if (accel < 1) accel = 1;
+    return NS_PER_SEC / ((uint64)scaling * (uint64)accel);
 }
 
 /* ---- Object interpolation (stage 2) ----

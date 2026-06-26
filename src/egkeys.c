@@ -108,10 +108,13 @@ void keyDispatch(uint16 scanCode) {
         tempStrcpy(strBuf);
         break;
     case 0x1e00:
+        /* ALT+A: toggle ACCEL (the "ACCEL" HUD tag, egtacmap.c). Originally this
+         * halved g_frameRateScaling so each render-locked frame covered ~2x the
+         * game-time. Render/sim decoupled (egsys.c): g_frameRateScaling is now
+         * fixed physics precision, so ACCEL instead doubles the wall-clock sim
+         * step rate via g_slowMotionMode in simStepNsNow(). */
         if (g_slowMotionMode == 1) {
             g_slowMotionMode = 2;
-            g_frameRateScaling = g_frameRateScaling / 2;
-            recalcTimeScale();
         } else {
             exitSlowMotion();
         }
@@ -368,8 +371,6 @@ void setupLodDistances(void) {
 void exitSlowMotion() {
     if (g_slowMotionMode == 2) {
         g_slowMotionMode = 1;
-        g_frameRateScaling <<= 1;
-        recalcTimeScale();
     }
 }
 

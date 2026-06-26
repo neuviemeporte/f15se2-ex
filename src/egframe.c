@@ -75,7 +75,8 @@ void updateFrame(void) {
         /* Render/sim decoupled: pin max sim precision instead of letting the
          * governor ramp 4->15. The sim steps fixed-rate (gameMainLoop) and the
          * mission clock stays 1 Hz at any scaling, so 15 is just the best
-         * physics resolution. Slow-motion still lowers it via egkeys.c. */
+         * physics resolution. ALT+A "ACCEL" now speeds the sim via the wall-clock
+         * step rate (egsys.c), not by lowering this. */
         g_frameRateScaling = 15;
         recalcTimeScale();
         g_mapZoomLevel = 1;
