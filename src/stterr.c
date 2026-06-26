@@ -88,7 +88,7 @@ uint32 scaleCoordByLevel(int level, uint32 coord) {
         return coord >> 2;
     case 1:
         return coord;
-    case 0:
+    default: // case 0
         return coord << 1;
     }
 }
@@ -105,7 +105,7 @@ int lookupGridCell(int16 level, int16 col, int16 row) {
         return gridBuf3[(col & 3) + (((row & 3) << 2) + (lookupGridCell(3, col >> 2, row >> 2) << 4))];
     case 1:
         return gridBuf4[(col & 3) + (((row & 3) << 2) + (lookupGridCell(2, col >> 2, row >> 2) << 4))];
-    case 0:
+    default: // case 0
         return gridBuf5[(col & 3) + (((row & 3) << 2) + (lookupGridCell(1, col >> 2, row >> 2) << 4))];
     }
 }

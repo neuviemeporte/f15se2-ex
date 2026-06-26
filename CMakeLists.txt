@@ -201,13 +201,9 @@ if(
     # find same definiton/extern mismatches as the MSVC linker using gcc/LTO
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
       # only available with gcc
-      if(FALSE)
-        target_compile_options(f15se2 PRIVATE -flto)
-        if(FALSE)
-          # break linking on mismatch errors
-          target_link_options(f15se2 PRIVATE -flto -Werror=lto-type-mismatch)
-        endif()
-      endif()
+      target_compile_options(f15se2 PRIVATE -flto)
+      # break linking on mismatch errors
+      target_link_options(f15se2 PRIVATE -flto -Werror=lto-type-mismatch)
     endif()
 
     target_compile_options(f15se2 PRIVATE

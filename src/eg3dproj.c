@@ -149,7 +149,7 @@ uint32 scaleCoordToLod(int level, uint32 coord) {
         return (coord + 2) >> 2;
     case 1:
         return coord;
-    case 0:
+    default: // case 0
         return coord << 1;
     }
 }

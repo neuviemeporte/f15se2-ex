@@ -21,7 +21,7 @@ int process3dg(int lod, int col, int row) {
         return buf2_3dg[(col & 3) + ((row & 3) << 2) + (process3dg(3, col >> 2, row >> 2) << 4)];
     case 1:
         return buf3_3dg[(col & 3) + ((row & 3) << 2) + (process3dg(2, col >> 2, row >> 2) << 4)];
-    case 0:
+    default: // case 0
         return buf4_3dg[(col & 3) + ((row & 3) << 2) + (process3dg(1, col >> 2, row >> 2) << 4)];
     }
 }
