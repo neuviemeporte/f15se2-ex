@@ -76,7 +76,11 @@ void updateFrame(void) {
         g_currentWeaponType = 1;
         drawWeaponSelectMarker(0);
         g_frameTimingAccum = 12;
-        g_frameRateScaling = 4;
+        /* Render/sim decoupled: pin max sim precision instead of letting the
+         * governor ramp 4->15. The sim steps fixed-rate (gameMainLoop) and the
+         * mission clock stays 1 Hz at any scaling, so 15 is just the best
+         * physics resolution. Slow-motion still lowers it via egkeys.c. */
+        g_frameRateScaling = 15;
         recalcTimeScale();
         g_mapZoomLevel = 1;
         g_radarScopeRange = 1;
@@ -393,17 +397,12 @@ skip_autopilot:
     }
 
     if (++g_frameRateAccum >= g_frameRateScaling * 4) {
+        /* Render/sim decoupled: the adaptive frame governor (which rescaled
+         * g_frameRateScaling and added sleep ticks to throttle the loop) is
+         * retired — the sim now steps fixed-rate in gameMainLoop. Keep the
+         * jiffies debug readout and the periodic enemy-alert scan. */
         g_jiffiesPerFrame = g_frameTimingAccum / g_frameRateScaling;
-        g_frameTimingAccum -= (g_frameSyncWait * 2 - 1) * g_frameRateScaling * 2;
-        if (g_frameTimingAccum < 4) {
-            g_frameTimingAccum = 4;
-        }
-        val = clampRange(((g_frameRateScaling * 0x3c0) / (g_frameTimingAccum * g_slowMotionMode)), 1, 0xff);
         g_frameRateAccum = g_frameTimingAccum = 0;
-        if (abs(g_frameRateScaling * 4 - val) > 3) {
-            g_frameRateScaling = (int16)(val + 2) >> 2;
-            recalcTimeScale();
-        }
         g_enemyAlertFlag = 0;
         for (i = 3; i < g_targetEntityCount; i++) {
             if (g_planeTable.planes[i].alertLevel > 0xc0 &&

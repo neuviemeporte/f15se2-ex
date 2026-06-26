@@ -70,6 +70,7 @@ void far egAdvanceFrameTick(void);
  * a tick counter); timerYield also sleeps a touch so the wait doesn't peg a core. */
 void timerPump(void);
 void timerYield(void);
+uint64 timerNowNs(void);
 int getTimeOfDay();
 SDL_IOStream *__cdecl openFile(const char *path, int mode);
 void fileClose(SDL_IOStream *handle);

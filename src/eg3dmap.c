@@ -366,12 +366,12 @@ void setup3DTransform(const int16 *model, int angleX, int angleY, int angleZ, in
         if (g_offscreenRender == 0) {
             transformModelVerticesFar();
         }
-        while (g_frameSyncPending != 0)
-            timerYield();
         drawProjectionSphere(model[2]);
     }
     g_sortedObjCount = 0;
-    g_spinAngle -= 0x3000 / g_frameRateScaling;
+    /* Scaled by sim steps this frame so the spin advances at the sim rate, not
+     * the (now higher) render rate; 0 on pure interpolation frames. */
+    g_spinAngle -= g_simStepsThisFrame * (0x3000 / g_frameRateScaling);
 }
 
 // ==== seg000:0x39aa ====

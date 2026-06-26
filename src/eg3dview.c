@@ -35,7 +35,6 @@ void render3DView(int camX, int camY, int camZ, long worldX, long worldY, long w
      * page; without this the side/rear world renders to the wrong buffer and
      * never reaches the screen. gfx_getDisplayPage only re-syncs curPageSeg. */
     gfx_setPageN((uint16)*g_viewParams);
-    waitFrameSync(g_frameSyncWait);
     g_viewParams[2] = (unsigned char)((char *)colorLut)[g_skyColorIndex & 0xFF];
     setup3DTransform(g_viewParams, camX, camY, camZ, 0, 0, (int)worldZ, 1);
     projectObjects(camX, camY, worldX, worldY, worldZ);

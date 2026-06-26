@@ -443,6 +443,7 @@ extern int16 g_vtxSignMaskLo;
 extern int16 g_vtxSignMaskHi;
 extern int16 g_sortedObjCount;
 extern int16 g_spinAngle;
+extern int g_simStepsThisFrame;
 extern int16 g_posVisibleFlag;
 extern uint8 g_offscreenRender;
 extern int16 g_modelEvenOddBit;

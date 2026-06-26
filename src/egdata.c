@@ -746,6 +746,10 @@ int16 g_modelWideVtxFlag = 0;
 int16 g_vtxSignMaskLo = 0;
 int16 g_vtxSignMaskHi = 0;
 int16 g_spinAngle = 0;
+/* Sim steps executed in the render frame being composited (render/sim decouple):
+ * the per-frame spin animation (g_spinAngle) is scaled by it so it advances at
+ * the sim rate, not the higher render rate. */
+int g_simStepsThisFrame = 0;
 
 /* g_objDirX/g_objDirY/g_objDirZ: rotated 3D point coordinate components
    (X/Y/Z) produced by rotatePoint3d (egseg1) and consumed by the subsequent

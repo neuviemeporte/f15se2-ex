@@ -61,6 +61,13 @@ void timerPump(void) {
     }
 }
 
+/* Monotonic clock in nanoseconds, for the render loop's fixed-timestep sim
+ * pacing and interpolation alpha (same clock timerPump advances the 60 Hz ticks
+ * from, so sim cadence and tick counters stay coherent). */
+uint64 timerNowNs(void) {
+    return SDL_GetTicksNS();
+}
+
 /* Body for the game's "wait until a counter reaches N" spin loops: advance the
  * clock and yield the CPU so the wait doesn't peg a core. */
 void timerYield(void) {
