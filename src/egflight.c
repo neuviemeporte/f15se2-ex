@@ -18,6 +18,7 @@
 #include "const.h"
 #include "comm.h"
 #include "eginput.h"
+#include "input.h"
 
 #include <dos.h>
 #include <stdio.h>
@@ -176,7 +177,7 @@ switch_break:
         joyAxes[0] = 0;
         joyAxes[1] = 0;
     } else {
-        if (commData->setupUseJoy != 0) {
+        if (input_preferGamepad()) {
             readCalibratedJoystick();
         } else {
 

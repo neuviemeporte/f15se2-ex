@@ -28,6 +28,7 @@
  * routes the game through the joystick paths above.
  */
 #include "joystick.h"
+#include "input.h"
 #include "inttype.h"
 #include "comm.h"
 #include "log.h"
@@ -183,6 +184,7 @@ static int buttonDown(int n) {
  * no mapped button meanings, so those bindings apply only to a real gamepad;
  * the raw fallback keeps just the stick and the two fire buttons. */
 bool joy_isGamepad(void) { return g_pad != NULL; }
+bool joy_connected(void) { return g_devId != 0; }
 bool joy_button(SDL_GamepadButton b) { return g_pad && SDL_GetGamepadButton(g_pad, b); }
 Sint16 joy_axisRaw(SDL_GamepadAxis a) { return g_pad ? SDL_GetGamepadAxis(g_pad, a) : 0; }
 
@@ -195,13 +197,24 @@ int far readCalibratedJoystick(void) {
     return joyAxes[0] | (joyAxes[1] << 8);
 }
 
-/* Menu loops call this to refresh the stick before sampling joyAxes. */
+/* Menu loops call this to refresh the stick before sampling joyAxes. In menu
+ * mode the pad is read through the event pump's menu navigation (input.c), so
+ * keep joyAxes centred here to leave the menus' own stick-nav branches inert and
+ * avoid double-moving the cursor. */
 void far pollJoystick(void) {
+    if (input_getMode() == INPUT_MODE_MENU) {
+        joyAxes[0] = joyAxes[1] = 0x80;
+        return;
+    }
     updateAxes();
 }
 
-/* MISC overlay slot 0x5d/0x5e: fire button n, nonzero while held. */
+/* MISC overlay slot 0x5d/0x5e: fire button n, nonzero while held. Flight uses
+ * this for the fire triggers; in menu mode the triggers are handled (edge, one
+ * press = one action) by the event pump's menu navigation, so report nothing
+ * here to keep the menus' own level-triggered accept paths inert. */
 int FAR CDECL misc_readJoystick(int16 axis) {
+    if (input_getMode() == INPUT_MODE_MENU) return 0;
     return buttonDown(axis);
 }
 

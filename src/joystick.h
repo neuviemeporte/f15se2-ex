@@ -21,6 +21,9 @@ void joy_handleEvent(const SDL_Event *ev);
  * named-button flight bindings in eginput.c have known button meanings. */
 bool joy_isGamepad(void);
 
+/* True when any device (gamepad or raw joystick) is currently bound. */
+bool joy_connected(void);
+
 /* Current state of a gamepad button (false unless a gamepad is active). */
 bool joy_button(SDL_GamepadButton b);
 

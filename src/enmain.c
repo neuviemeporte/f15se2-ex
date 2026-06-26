@@ -28,10 +28,12 @@ int end_main(void) {
     clearKeybuf();
     installCBreakHandler();
     enInitGraphics();
+    /* Centre the debrief's nav axes regardless of setupUseJoy: nothing feeds
+     * joyAxisX/Y natively (the pad is read through the event pump), so leaving
+     * them at the init 0 would sit below the deadzone and spam LEFTARROW. */
+    joyAxisX = joyAxisY = JOY_CENTER;
     if (commData->setupUseJoy == 1) {
         copyJoystickData(commData->joyData);
-    } else {
-        joyAxisX = joyAxisY = JOY_CENTER;
     }
     loadWorldStrings();
     auxBufSize = gfx_getAuxBufSize();

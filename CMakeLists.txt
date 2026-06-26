@@ -69,6 +69,7 @@ set(SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(F15SE2_SOURCES
 
     # Shared gfx-slot / timer / misc / pic / overlay basics
+    ${SRC_DIR}/input.c
     ${SRC_DIR}/shared/miscimpl.c
     ${SRC_DIR}/shared/ovlimpl.c
     ${SRC_DIR}/shared/picimpl.c
