@@ -39,6 +39,10 @@ int far transformModelVerticesFar();
 int far projectModelEdgesFar();
 int far buildRotationMatrixFar(int16 *matrix, int angleX, int angleY, int angleZ);
 int far multiplyMatrix3x3Far(const int16 *matA, const int16 *matB, int16 *result);
+int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
+                            int posX, int posY, int posZ,
+                            int16 *combined, long *camBase, long *camX, long *camY,
+                            int *shade, int *dirX, int *dirY, int *dirZ);
 int far drawModelDisplayList();
 int far fillSpanRect(const int16 *dst, int left, int top, int right, int bottom);
 int far drawClipLineGlobal();

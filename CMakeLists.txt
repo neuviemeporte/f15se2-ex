@@ -145,6 +145,10 @@ set(EGAME_SOURCES
     ${SRC_DIR}/eghudm.c
     ${SRC_DIR}/eghudr.c
     ${SRC_DIR}/eg3drast.c
+    ${SRC_DIR}/r3d.c
+    ${SRC_DIR}/r3d_sw.c
+    ${SRC_DIR}/r3d_gl.c
+    ${SRC_DIR}/r3dmesh.c
     ${SRC_DIR}/egsys.c
     ${SRC_DIR}/egtick.c
     ${SRC_DIR}/eginput.c
@@ -208,6 +212,11 @@ target_include_directories(f15se2 BEFORE PRIVATE
 # SDL3::SDL3 is exported by both the system package and the FetchContent build,
 # so this works regardless of how SDL3 was provided.
 target_link_libraries(f15se2 PRIVATE SDL3::SDL3)
+
+# OpenGL for the GL 3D backend (r3d_gl.c). The immediate-mode 1.x path needs only
+# the base GL library; SDL3 supplies the GL headers and context management.
+find_package(OpenGL REQUIRED)
+target_link_libraries(f15se2 PRIVATE OpenGL::GL)
 
 #==============================================================================
 # Compiler warnings

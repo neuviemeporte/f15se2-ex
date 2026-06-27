@@ -15,4 +15,4 @@
 #include "egtypes.h"
 #include "egdata.h"
 
-char far g_world3dData[AIRCRAFT_MODELS_OFFSET + 0x520C];
+char far g_world3dData[WORLD3D_DATA_SIZE];

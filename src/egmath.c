@@ -14,6 +14,7 @@
 #include "log.h"
 #include "slot.h"
 #include "const.h"
+#include "r3d.h"
 
 #include <dos.h>
 #include <memory.h>
@@ -81,7 +82,11 @@ void drawWorldObject(int shapeId, long worldX, long worldY, int altitude, int ob
         if ((long)(int16)labs(relY) < (long)0x7FFF) {
             setViewPosition(0, 0, -altDiff);
             g_curLod = 1;
-            projectSceneObject(g_world3dData + dataOff, -objYaw, objPitch, objRoll, (int16)relX, -(int16)relY, altitude != 0);
+            {
+                R3DSubmit obj = {g_world3dData + dataOff, -objYaw, objPitch, objRoll,
+                                 (int16)relX, -(int16)relY, altitude != 0};
+                r3d_submit(&obj);
+            }
         }
     }
 }
@@ -197,9 +202,13 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
     }
 
     g_offscreenRender = 1;
-    setup3DTransform(g_targetViewParams, -g_trkBearing, g_trkPitch, g_trkRoll, 0, 0, 0, 0);
-    projectSceneObject(g_world3dData + dataOff, -objYaw, objPitch, objRoll, relX, -relY, relZ);
-    rasterize3DWorld();
+    {
+        R3DScene scene = {g_targetViewParams, -g_trkBearing, g_trkPitch, g_trkRoll, 0, 0, 0, 0};
+        R3DSubmit obj = {g_world3dData + dataOff, -objYaw, objPitch, objRoll, relX, -relY, relZ};
+        r3d_beginScene(&scene);
+        r3d_submit(&obj);
+        r3d_endScene();
+    }
     g_offscreenRender = 0;
 
     if (mode == 1) {

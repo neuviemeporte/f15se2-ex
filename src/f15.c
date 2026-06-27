@@ -21,6 +21,7 @@
 #include "gfx.h"
 #include "gfx_impl.h"
 #include "joystick.h"
+#include "r3d.h"
 
 #include <stdio.h>
 #include <stddef.h>
@@ -49,6 +50,7 @@ void game_init(void) {
 
     gfx_initState();
     gfx_setMode13();
+    r3d_init();
 
     gfxBufAddress = (uint16)gfx_allocPage((int)GFX_INIT_ARG);
     commData->gfxInitResult = gfxBufAddress;

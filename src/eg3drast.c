@@ -2226,6 +2226,78 @@ void far projectSceneObject(char far *model, int yaw, int pitch, int roll,
     }
 }
 
+/* GL-backend transform bridge. A GPU backend transforms the *decoded* mesh
+ * (r3dmesh) itself, but it must use the exact integer-derived object orientation
+ * and camera-space origin the software path computes — so this reproduces
+ * projectSceneObject's matrix + origin setup without walking the display list or
+ * touching the depth-sort queue. Returns 1 if the object is frustum-culled (skip
+ * it), 0 if visible. On success fills combined[9] (Q15 orient*view), the 32-bit
+ * camera-space origin (camBase = screen-X axis, camX = screen-Y axis, camY =
+ * depth) and the distance shade. The caller projects each vertex with these. */
+int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
+                            int posX, int posY, int posZ,
+                            int16 *combined, long *camBase, long *camX, long *camY,
+                            int *shade, int *dirX, int *dirY, int *dirZ) {
+    int i;
+    g_objRenderMode = *(unsigned char far *)model;
+    g_objTransform[1] = yaw;
+    g_objTransform[2] = pitch;
+    g_objTransform[3] = roll;
+    g_objRelY = posY - g_viewPosY;
+    g_objTransform[0] = posZ - g_viewPosZ;
+    g_objRelX = posX - g_viewPosX;
+
+    if (transformAndCullObject(g_objRelY, g_objTransform[0], g_objRelX)) return 1;
+
+    /* Distance shade — identical to processSceneObject. */
+    if (g_dacSupported == 0) {
+        *shade = 0;
+    } else {
+        int h = (g_camTransYHi >> 8) & 0xff;
+        int v = (h & 0x80) ? 0 : (h >> 1);
+        if (v > 7) v = 7;
+        *shade = (v << 4) + 0x80;
+    }
+
+    /* Combined orientation*view matrix — identical to processSceneObject. */
+    {
+        int orv = g_objTransform[1] | g_objTransform[2] | g_objTransform[3];
+        int al = (orv | (orv >> 8)) & 0xff;
+        g_objHasRotation = (uint8)al;
+        if (al == 0) {
+            for (i = 0; i < 9; i++) g_objCombinedMatrix[i] = g_viewRotMatrix[i];
+        } else {
+            buildInverseRotationMatrix(g_objOrientMatrix,
+                                       g_objTransform[1], g_objTransform[2], g_objTransform[3]);
+            multiplyMatrix3x3(g_objOrientMatrix, g_viewRotMatrix, g_objCombinedMatrix);
+        }
+    }
+    for (i = 0; i < 9; i++) combined[i] = g_objCombinedMatrix[i];
+    *camBase = g_camBaseX;
+    *camX = JOIN32(g_camTransXLo, g_camTransXHi);
+    *camY = JOIN32(g_camTransYLo, g_camTransYHi);
+
+    /* Object facing direction in camera space — the back-face cull axis, computed
+     * exactly as rotatePoint3d does (so a GPU backend can reproduce the original's
+     * per-face cull). dot(faceNormal, objDir) < threshold => the face is hidden. */
+    {
+        int rX = -g_objRelX, rY = -g_objRelY, rZ = -g_objTransform[0];
+        if (g_objHasRotation == 0) {
+            *dirX = rX;
+            *dirY = rZ;
+            *dirZ = rY;
+        } else {
+            int16 *m = g_objOrientMatrix;
+            transposeOrientationMatrix();
+            *dirX = dirRound(imul16(rY, m[6]) + imul16(rZ, m[3]) + imul16(rX, m[0]));
+            *dirY = dirRound(imul16(rY, m[7]) + imul16(rZ, m[4]) + imul16(rX, m[1]));
+            *dirZ = dirRound(imul16(rY, m[8]) + imul16(rZ, m[5]) + imul16(rX, m[2]));
+            transposeOrientationMatrix();
+        }
+    }
+    return 0;
+}
+
 /* seg001 0x0CB4 thunk — rotatePoint3dFar: rotate the object origin on the
  * g_modelStreamPtr stream (used by the tac-map nearest-tile path). */
 int far rotatePoint3dFar(void) {

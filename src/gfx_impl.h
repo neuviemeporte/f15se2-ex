@@ -66,6 +66,19 @@ struct SDL_Surface *gfx_getCurPageSurface(void);
  * DOS-era 64KB "segment" sprite sheets. */
 struct SDL_Surface *gfx_getSpriteSurface(int handle);
 
+/* The live 256-entry VGA DAC palette (reflects gfx_setDac/gfx_setDacRange). The
+ * GL backend reads RGB from it to colour decoded faces and to expand the 2D page
+ * for the overlay composite. */
+struct SDL_Palette;
+struct SDL_Palette *gfx_getPalette(void);
+void gfx_paletteRGB(int idx, uint8 *r, uint8 *g, uint8 *b);
+
+/* Palette index reserved as the GL "show-through" key: the GL backend fills the
+ * 3D viewport region of the page with it, and the overlay composite makes those
+ * pixels transparent so the GL 3D shows under the 2D layer. 0xFF is unused art
+ * (the top palette block is built as black). */
+#define GFX_GL_SHOWTHROUGH_KEY 0xFF
+
 /*
  * Reference structures documenting how the overlay accesses caller data.
  * These CANNOT be used in the asm data segments (which must maintain exact

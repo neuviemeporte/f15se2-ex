@@ -13,6 +13,7 @@
 #include "slot.h"
 #include "const.h"
 #include "comm.h"
+#include "r3dmesh.h"
 
 #include <dos.h>
 #include <stdio.h>
@@ -71,6 +72,15 @@ void drawCockpit() {
     load15Flt3d3();
     strcpy(regnStr, scenarioPlh[gameData->theater]);
     loadRegion3D();
+    {
+        /* Verify the Step-2 mesh decoder against the just-loaded world models,
+         * once per process (see docs/render-3d-backend.md). */
+        static int meshSelfTestDone = 0;
+        if (!meshSelfTestDone) {
+            meshSelfTestDone = 1;
+            r3dmesh_selfTest();
+        }
+    }
     f15DgtlResult = loadF15DgtlBin();
     g_horizonGroundColor = g_world3dData[47];
     if ((g_dacSupported = gfx_getModeFlag()) != 0) {

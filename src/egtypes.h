@@ -11,6 +11,9 @@
 #define __far far
 
 #define AIRCRAFT_MODELS_OFFSET 0xADD4
+/* Total size of the g_world3dData region (main + photo models + appended
+ * aircraft models); see the definition in egfarbuf.c. */
+#define WORLD3D_DATA_SIZE (AIRCRAFT_MODELS_OFFSET + 0x520C)
 #define IRQ_VIDEO 0x10
 #define UNIT_STATE_COUNT 0x64
 

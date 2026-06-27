@@ -12,6 +12,7 @@
 #include "log.h"
 #include "gfx_impl.h"
 #include "const.h"
+#include "r3d.h"
 
 #include <dos.h>
 #include <memory.h>
@@ -36,10 +37,13 @@ void render3DView(int camX, int camY, int camZ, long worldX, long worldY, long w
      * never reaches the screen. gfx_getDisplayPage only re-syncs curPageSeg. */
     gfx_setPageN((uint16)*g_viewParams);
     g_viewParams[2] = (unsigned char)((char *)colorLut)[g_skyColorIndex & 0xFF];
-    setup3DTransform(g_viewParams, camX, camY, camZ, 0, 0, (int)worldZ, 1);
+    {
+        R3DScene scene = {g_viewParams, camX, camY, camZ, 0, 0, (int)worldZ, 1};
+        r3d_beginScene(&scene);
+    }
     projectObjects(camX, camY, worldX, worldY, worldZ);
     updateTargetLock();
-    rasterize3DWorld();
+    r3d_endScene();
     drawHudWorldOverlay();
     g_renderPageToggle ^= 1;
 }

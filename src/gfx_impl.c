@@ -6,6 +6,7 @@
 
 #include "gfx_impl.h"
 #include "gfx.h"
+#include "r3d_gl.h"
 #include "struct.h"
 #include "log.h"
 #include <dos.h>
@@ -28,6 +29,7 @@
 #define FIRE_CYCLE_NS (SDL_NS_PER_SECOND / FIRE_CYCLE_HZ)
 static SDL_Window *sdlWindow = NULL;
 static SDL_Renderer *sdlRenderer = NULL;
+static bool s_useGL = false; /* OpenGL backend owns the context + present */
 
 /* Forward declarations for the page-surface model, used by gfx_videoShutdown
  * before their definitions further down. */
@@ -40,17 +42,32 @@ void gfx_videoInit(void) {
     if (!SDL_Init(SDL_INIT_VIDEO))
         LogCritical(("SDL_Init failed: %s", SDL_GetError()));
 
+    /* The OpenGL 3D backend (r3d_gl.c) presents through a GL context rather than
+     * an SDL_Renderer (the two can't share a window). When it's selected, request
+     * a GL-capable window and bring the context up here; the present path then
+     * routes through the GL composite instead of the renderer. */
+    s_useGL = r3dgl_wantGL();
+    if (s_useGL) r3dgl_setGLAttributes();
+
     sdlWindow = SDL_CreateWindow(
         "F-15 SE2 EX v0.9.0",
         INITIAL_WINDOW_WIDTH,
         INITIAL_WINDOW_HEIGHT,
-        SDL_WINDOW_RESIZABLE);
+        SDL_WINDOW_RESIZABLE | (s_useGL ? SDL_WINDOW_OPENGL : 0));
     if (!sdlWindow)
         LogCritical(("Window creation failed: %s", SDL_GetError()));
 
     /* Enable SDL_EVENT_TEXT_INPUT so the keyboard slots (ovlimpl.c) receive
      * shifted/localised ASCII for pilot-name entry. */
     SDL_StartTextInput(sdlWindow);
+
+    if (s_useGL) {
+        if (!r3dgl_initContext(sdlWindow)) {
+            LogCritical(("GL init failed; falling back to software renderer"));
+            s_useGL = false;
+        }
+    }
+    if (s_useGL) return;
 
     sdlRenderer = SDL_CreateRenderer(sdlWindow, NULL);
     if (!sdlRenderer)
@@ -215,6 +232,22 @@ static SDL_Palette *gfx_buildPalette(void) {
     return pal;
 }
 
+SDL_Palette *gfx_getPalette(void) {
+    if (!gfxPalette) gfxPalette = gfx_buildPalette();
+    return gfxPalette;
+}
+
+void gfx_paletteRGB(int idx, uint8 *r, uint8 *g, uint8 *b) {
+    SDL_Palette *pal = gfx_getPalette();
+    if (!pal || idx < 0 || idx >= pal->ncolors) {
+        *r = *g = *b = 0;
+        return;
+    }
+    *r = pal->colors[idx].r;
+    *g = pal->colors[idx].g;
+    *b = pal->colors[idx].b;
+}
+
 /* Lazily create the 320x200 8-bit surface backing a page index. */
 static SDL_Surface *ensurePage(int page) {
     GfxState FAR *s = gfx_getState();
@@ -311,6 +344,10 @@ static void gfx_presentPage(int page) {
         return;
     }
     surf = ensurePage(page);
+    if (s_useGL) {
+        r3dgl_present(surf, gfx_getState()->shakeOffset);
+        return;
+    }
     if (!surf || !sdlRenderer) return;
     tex = SDL_CreateTextureFromSurface(sdlRenderer, surf);
     if (!tex) return;
@@ -352,6 +389,10 @@ SDL_Surface *gfx_getHiResSurface(void) {
 void gfx_presentHiRes(void) {
     SDL_Surface *surf = gfx_getHiResSurface();
     SDL_Texture *tex;
+    if (s_useGL) {
+        r3dgl_present(surf, 0);
+        return;
+    }
     if (!surf || !sdlRenderer) return;
     tex = SDL_CreateTextureFromSurface(sdlRenderer, surf);
     if (!tex) return;
@@ -405,8 +446,9 @@ void FAR CDECL gfx_setMode13(void) {
 
     initRowOffsets();
 
-    SDL_SetRenderLogicalPresentation(sdlRenderer, LOGICAL_WIDTH, LOGICAL_HEIGHT,
-                                     SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    if (sdlRenderer)
+        SDL_SetRenderLogicalPresentation(sdlRenderer, LOGICAL_WIDTH, LOGICAL_HEIGHT,
+                                         SDL_LOGICAL_PRESENTATION_LETTERBOX);
     gfxHiResActive = false;
 
     s = gfx_getState();
@@ -418,8 +460,15 @@ void FAR CDECL gfx_setMode13(void) {
 
 /* Title-screen hi-res attempt: ask SDL to present at 640x350 and report whether it took. */
 bool video_setHiRes(void) {
-    bool ok = SDL_SetRenderLogicalPresentation(sdlRenderer, HIRES_WIDTH, HIRES_HEIGHT,
-                                               SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    bool ok;
+    /* In GL mode the overlay composite scales any page surface to the window, so
+     * just flag hi-res; there's no renderer logical presentation to switch. */
+    if (s_useGL) {
+        gfxHiResActive = true;
+        return true;
+    }
+    ok = SDL_SetRenderLogicalPresentation(sdlRenderer, HIRES_WIDTH, HIRES_HEIGHT,
+                                          SDL_LOGICAL_PRESENTATION_LETTERBOX);
     if (ok) gfxHiResActive = true;
     return ok;
 }

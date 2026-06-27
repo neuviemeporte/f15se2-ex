@@ -12,6 +12,7 @@
 #include "gfx_impl.h"
 #include "const.h"
 #include "comm.h"
+#include "r3d.h"
 
 #include <dos.h>
 #include <stdio.h>
@@ -66,10 +67,11 @@ static void renderGridTile(int lod, int tileX, int tileY, int gridX, int gridY, 
         } else {
             g_modelStreamPtr = g_world3dData + buf3d3[g_curTileEntry->shape];
         }
-        projectSceneObject(g_modelStreamPtr, 0, 0, 0,
-                           g_curTileEntry->x,
-                           g_curTileEntry->y,
-                           g_curTileEntry->z);
+        {
+            R3DSubmit obj = {g_modelStreamPtr, 0, 0, 0,
+                             g_curTileEntry->x, g_curTileEntry->y, g_curTileEntry->z};
+            r3d_submit(&obj);
+        }
         g_curTileEntry++;
         g_objColorBase++;
     }
@@ -168,10 +170,11 @@ void projectObjects(int heading, int rangeGate, long worldX, long worldY, long w
                         } else {
                             g_modelStreamPtr = g_world3dData + buf3d3[g_curTileEntry->shape];
                         }
-                        projectSceneObject(g_modelStreamPtr, 0, 0, 0,
-                                           g_curTileEntry->x,
-                                           g_curTileEntry->y,
-                                           g_curTileEntry->z);
+                        {
+                            R3DSubmit obj = {g_modelStreamPtr, 0, 0, 0,
+                                             g_curTileEntry->x, g_curTileEntry->y, g_curTileEntry->z};
+                            r3d_submit(&obj);
+                        }
                         g_curTileEntry++;
                         g_objColorBase++;
                     }
@@ -180,10 +183,11 @@ void projectObjects(int heading, int rangeGate, long worldX, long worldY, long w
                         g_curTileEntry = matrix3dt_2[g_curLod][cell];
                         g_modelStreamPtr = g_world3dData + buf3d3[g_curTileEntry->shape];
                         g_objColorBase = 0x400;
-                        projectSceneObject(g_modelStreamPtr, 0, 0, 0,
-                                           g_curTileEntry->x,
-                                           g_curTileEntry->y,
-                                           g_curTileEntry->z);
+                        {
+                            R3DSubmit obj = {g_modelStreamPtr, 0, 0, 0,
+                                             g_curTileEntry->x, g_curTileEntry->y, g_curTileEntry->z};
+                            r3d_submit(&obj);
+                        }
                     }
                 }
             next_iter:;
