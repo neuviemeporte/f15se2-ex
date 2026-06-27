@@ -41,7 +41,7 @@ void gfx_videoInit(void) {
         LogCritical(("SDL_Init failed: %s", SDL_GetError()));
 
     sdlWindow = SDL_CreateWindow(
-        "F-15 SE2 EX v0.0.1",
+        "F-15 SE2 EX v0.9.0",
         INITIAL_WINDOW_WIDTH,
         INITIAL_WINDOW_HEIGHT,
         SDL_WINDOW_RESIZABLE);
