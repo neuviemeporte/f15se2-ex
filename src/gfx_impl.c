@@ -116,8 +116,38 @@ static int dgroupAnchor;
  * in the same address space, so it is just a file-scope global shared directly. */
 static GfxState gfxState;
 
+/* Native substitute for a DOS caller-DS near pointer. The original overlay saw
+ * `srcBuf` as a 16-bit offset in the caller's data segment; in the flat native
+ * process that offset is not a usable host address, so tests/bridge code can map
+ * one near range to the host buffer that owns it. */
+static uint16 gfxNearReadBase;
+static const uint8 *gfxNearReadHost;
+static size_t gfxNearReadSize;
+
 static GfxState FAR *gfx_getState(void) {
     return &gfxState;
+}
+
+void gfx_setNearReadBuffer(uint16 nearPtr, const void *hostPtr, size_t size) {
+    gfxNearReadBase = nearPtr;
+    gfxNearReadHost = (const uint8 *)hostPtr;
+    gfxNearReadSize = size;
+}
+
+void gfx_clearNearReadBuffer(void) {
+    gfxNearReadBase = 0;
+    gfxNearReadHost = NULL;
+    gfxNearReadSize = 0;
+}
+
+static const uint8 *gfx_resolveNearReadPtr(uint16 nearPtr, size_t bytes) {
+    uint16 offset;
+    if (gfxNearReadHost) {
+        offset = (uint16)(nearPtr - gfxNearReadBase);
+        if ((size_t)offset <= gfxNearReadSize && bytes <= gfxNearReadSize - (size_t)offset)
+            return gfxNearReadHost + offset;
+    }
+    return (const uint8 *)(uintptr_t)nearPtr; /* legacy low-memory fallback */
 }
 
 /* ---- Page backbuffers (SDL surface model) ----------------------------------
@@ -572,6 +602,30 @@ int FAR CDECL gfx_getPageSeg(uint16 page) {
         s->curPage = (int)page;
     }
     return (int)s->curPageSeg;
+}
+
+/* Slot 0x33: DI = rowOffset, BP = srcBuf (caller DS), BX = rowNum.
+ * Copy one 320-byte decoded row into the current page (MCGA: direct write). */
+void FAR CDECL gfx_fillRow(uint16 rowOffset, uint16 srcBuf, uint16 rowNum) {
+    GfxState FAR *s = gfx_getState();
+    const uint8 *src = gfx_resolveNearReadPtr(srcBuf, LOGICAL_WIDTH); /* near ptr, caller's DS */
+    SDL_Surface *surf = gfx_surfaceForSeg(s->curPageSeg);
+    int row, col;
+    (void)rowNum;
+    if (!surf) return;
+    row = (int)(rowOffset / LOGICAL_WIDTH); /* rowOffset is a linear y*320 index */
+    if (row < 0 || row >= surf->h) return;
+    {
+        uint8 *dst = (uint8 *)surf->pixels + (size_t)row * surf->pitch;
+        for (col = 0; col < LOGICAL_WIDTH && col < surf->w; col++)
+            dst[col] = src[col];
+    }
+}
+
+/* Slot 0x35: DI = rowOffset. In MCGA the row is already in the page (fillRow
+ * wrote directly), so this is a no-op. */
+void FAR CDECL gfx_copyRow(uint16 rowOffset) {
+    (void)rowOffset;
 }
 
 /* ---- Slot 0x3f: gfx_getModecode ---- */

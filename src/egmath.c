@@ -22,7 +22,8 @@
 // ==== seg000:0xc8de ====
 
 void load15Flt3d3() {
-    int bytesLeft, chunkSize;
+    int16 bytesLeft;
+    int chunkSize;
     struct SREGS segs;
     char FAR *dest;
     strcpyFromDot(a15flt_xxx, ".3D3");
@@ -258,8 +259,8 @@ int egClampValue(int value, int minVal, int maxVal) { /* Original: rng2(x,a,b). 
 int rangeApprox(int deltaX, int deltaY) { /* Original: xydist(x,y). Fast 2D distance approximation capped at 0x7fff. */
     enum { XYDIST_MAX = 0x7FFF };
     long dist;
-    deltaX = abs(deltaX);
-    deltaY = abs(deltaY);
+    deltaX = abs16Compat(deltaX);
+    deltaY = abs16Compat(deltaY);
     /* Fast 2D distance approximation: max(abs) + half of min(abs). */
     if (deltaX > deltaY)
         dist = (long)(deltaY >> 1) + (long)deltaX;
@@ -283,13 +284,13 @@ int computeBearing(int deltaX, int deltaY) {
         if (deltaX > 0) return BEARING_EAST;
         return BEARING_WEST;
     }
-    if (abs(deltaX) > abs(deltaY)) {
-        numer = (long)abs(deltaY) << 0xe;
-        denom = abs(deltaX);
+    if (abs16Compat(deltaX) > abs16Compat(deltaY)) {
+        numer = (long)abs16Compat(deltaY) << 0xe;
+        denom = abs16Compat(deltaX);
         swapped = 1;
     } else {
-        numer = (long)abs(deltaX) << 0xe;
-        denom = abs(deltaY);
+        numer = (long)abs16Compat(deltaX) << 0xe;
+        denom = abs16Compat(deltaY);
         swapped = 0;
     }
     ratio = numer / (long)denom;

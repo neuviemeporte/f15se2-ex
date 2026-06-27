@@ -361,8 +361,8 @@ void positionUnit(int unit, int loc) {
 // debugcom: custom_manhattan_distance
 int approxDistance(int dx, int dy) {
     long dist;
-    dx = abs(dx);
-    dy = abs(dy);
+    dx = abs16Compat(dx);
+    dy = abs16Compat(dy);
     dist = (dx > dy) ? (long)(dy >> 1) + (long)dx : (long)(dx >> 1) + (long)dy;
     if (dist > 0x7fff) {
         dist = 0x7fff;
@@ -439,13 +439,13 @@ int calcBearing(int dx, int dy) {
     if (dy == 0) {
         return (dx > 0) ? BEARING_EAST : BEARING_WEST;
     }
-    if (abs(dx) > abs(dy)) {
-        ratio = (int32)abs(dy) << 0xe;
-        divisor = abs(dx);
+    if (abs16Compat(dx) > abs16Compat(dy)) {
+        ratio = (int32)abs16Compat(dy) << 0xe;
+        divisor = abs16Compat(dx);
         swapped = 1;
     } else {
-        ratio = (int32)abs(dx) << 0xe;
-        divisor = abs(dy);
+        ratio = (int32)abs16Compat(dx) << 0xe;
+        divisor = abs16Compat(dy);
         swapped = 0;
     }
     quotient = ratio / (int32)divisor;
