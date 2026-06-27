@@ -786,6 +786,11 @@ void drawClippedLine(int x1, int y1, int x2, int y2) {
 void drawClippedLineEx(int x1, int y1, int x2, int y2, int cx1, int cy1, int cx2, int cy2, int flag) {
     int w, h;
     (void)flag;
+    /* The debrief draws everything to page 0 (sprites/clears name it explicitly),
+     * but gfx_drawLine follows the implicit current page, which is left on EGAME's
+     * back buffer (page 1) — so flight-path lines landed on an unpresented page.
+     * Select page 0 so the line primitive matches the rest of the debrief. */
+    gfx_setPageN(0);
     w = cy1 - cx1;
     h = cy2 - cx2;
     gfx_setBlitOffset(gfx_calcRowAddr(cx1, cx2));
