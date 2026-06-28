@@ -24,6 +24,7 @@
 
 #include "r3d.h"
 #include "r3d_gl.h"
+#include "r2d.h"
 #include "r3dmesh.h"
 #include "gfx_impl.h"
 #include "eg3dmap.h"
@@ -294,20 +295,6 @@ static void glDrawSphere(float oLeft, float oRight, float oBottom, float oTop) {
     glShadeModel(GL_FLAT);
 }
 
-/* Fit the 320x200 logical image into the window preserving its aspect: a single
- * uniform scale plus a centring offset (pillarbox/letterbox bars on the unused
- * axis). Both the GL 3D viewport and the 2D present quad map through this, so the
- * 3D stays aligned with the HUD and nothing stretches on non-1.6 displays (e.g.
- * 21:9). Matches the software path's SDL_LOGICAL_PRESENTATION_LETTERBOX. */
-static void computeLetterbox(int win_w, int win_h, float *scale, int *ox, int *oy) {
-    float sw = (float)win_w / LOGICAL_WIDTH;
-    float sh = (float)win_h / LOGICAL_HEIGHT;
-    float s = sw < sh ? sw : sh;
-    *scale = s;
-    *ox = (int)((win_w - LOGICAL_WIDTH * s) * 0.5f);
-    *oy = (int)((win_h - LOGICAL_HEIGHT * s) * 0.5f);
-}
-
 static void gl_beginScene(const R3DScene *s) {
     int win_w, win_h, vpTop, vpBot, vpLeft, vpRight, Wv, Hv, lbx, lby;
     float scale, fGate, sphOrtho[4];
@@ -354,7 +341,15 @@ static void gl_beginScene(const R3DScene *s) {
     buildProjection(Wv, Hv, g_viewCenterX, g_viewCenterY, fGate);
 
     SDL_GetWindowSizeInPixels(s_win, &win_w, &win_h);
-    computeLetterbox(win_w, win_h, &scale, &lbx, &lby);
+    /* The 320x200 UI box maps to the window through the shared r2d letterbox so
+     * the 3D viewport stays aligned with the pillarboxed HUD. */
+    {
+        R2DMapping m;
+        r2d_computeMapping(LOGICAL_WIDTH, LOGICAL_HEIGHT, win_w, win_h, &m);
+        scale = m.scale;
+        lbx = m.offX;
+        lby = m.offY;
+    }
     s_pixelScale = scale;
 
     /* Clear the whole window (including the letterbox bars) to black; the 3D
@@ -833,15 +828,18 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
     }
 
     SDL_GetWindowSizeInPixels(s_win, &win_w, &win_h);
-    /* Letterbox the page into the window preserving its own aspect — matches the
-     * 3D viewport's letterbox so the overlay stays aligned and unstretched. */
+    /* Letterbox the page into the window through the shared r2d mapping (deriving
+     * the virtual size from the page itself, so the 320x200 overlay and the
+     * 640x350 hi-res title both map correctly) — matches the 3D viewport's
+     * letterbox so the overlay stays aligned and unstretched. */
     {
-        float sw = (float)win_w / w, sh = (float)win_h / h;
-        scale = sw < sh ? sw : sh;
+        R2DMapping m;
+        r2d_computeMapping(w, h, win_w, win_h, &m);
+        scale = m.scale;
         qw = (int)(w * scale);
         qh = (int)(h * scale);
-        lbx = (win_w - qw) / 2;
-        lby = (win_h - qh) / 2;
+        lbx = m.offX;
+        lby = m.offY;
     }
     glViewport(0, 0, win_w, win_h);
     glDisable(GL_SCISSOR_TEST);

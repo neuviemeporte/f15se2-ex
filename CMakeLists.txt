@@ -157,6 +157,7 @@ set(EGAME_SOURCES
     ${SRC_DIR}/r3d_sw.c
     ${SRC_DIR}/r3d_gl.c
     ${SRC_DIR}/r3dmesh.c
+    ${SRC_DIR}/r2d.c
     ${SRC_DIR}/egsys.c
     ${SRC_DIR}/egtick.c
     ${SRC_DIR}/eginput.c
