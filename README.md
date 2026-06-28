@@ -53,30 +53,41 @@ The entire game is playable, rendering and input handling is ported to SDL, soun
 2. Input loop has been upgraded to an SDL event pump which should make it deal with simultaneous inputs much bettern and improve general responsiveness.
 3. The game originally supported 4 levels of detail (`0-3`, switchable with `Alt-D`), with the highest one still suffering from limited draw distance. An additional level of detail (`4`) has been implemented with unlimited draw distance, and enabled by default.
 4. Rendering has been moved out of the bespoke software engine that was capped at `320x200` resolution (still available with `F15_RENDER=software` envvar) and into OpenGL, enabling higher resolutions and improved clarity. At a later time, perhaps it will also be possible to upgrade the original software renderer to support higher resolutions.
+5. Air targets are now also selectable with the `T` key, just like ground targets.
 
 ## Planned features and improvements
 
+These are things that were never part of, or were broken in the original that are planned to get fixed in this project.
+
 1. Implement a full 3D cockpit with 3DOF/6DOF head movement with the hat switch and/or TrackIR.
-2. Make the missiles more difficult to evade, as it's currently trivial (just beam them, i.e. put them on approx 90deg angle to the plane). Implement quasi-realistic self propelled/ballistic stages, have missile run out of energy and maneuverability when propellant has been burned off.
-3. Make the gun more predictable, right now it's spraying all over the place. Show nice tracers, make them affected by gravity etc.
-4. Implement missile trails for better situational awareness.
-5. In-game menu for configuration (keyboard/joystick binds, video resolution, turn engine sounds on and off, ...)
-6. Better damage model for player aircraft, currently being hit by a missile only results in a small drop of maximum RPM. Simulate full/partial loss of stability, broken systems, weapons, hydraulics etc., up to instant destruction.
-7. Better clouds and smoke effects, right now these are solid polygons in mid air.
-8. More varied terrain and water, these are completely flat with an occasional pyramids that are supposed to represent mountains. It can continue to be flat shaded/polygon based to not change the look of the game too much, but we definitely need more vertices.
-9. Scenario/model editor.
-10. Widescreen support.
-11. Multiplayer.
-12. Port the game back to 32bit DOS.
-13. VR support. 😈
+2. Fix 3D object occlusion, difficult now due to the engine handling the draw order and aspects of rendering in an unorthodox way, many models containing coplanar surfaces which will z-fight if occlusion is just enabled as is.
+3. Make the square bounding boxes marking objects like planes and missiles move less erratically when the object is close to the player.
+4. Make the missiles more difficult to evade, as it's currently trivial (just beam them, i.e. put them on approx 90deg angle to the plane). Implement quasi-realistic self propelled/ballistic stages, have missile run out of energy and maneuverability when propellant has been burned off.
+5. Make the gun more predictable, right now it's spraying all over the place so it's difficult to tell where it's going. Show nice tracers, make them affected by gravity etc.
+6. Implement missile trails for better situational awareness/cool visuals.
+7. In-game menu for configuration (keyboard/joystick binds, video resolution, turn engine sounds on and off, ...)
+8. More realistic plane handling, right now it's too responsive, turns too quickly.
+9. Better damage model for player aircraft, currently being hit by a missile only results in a small drop of maximum RPM. Simulate full/partial loss of stability, broken systems, weapons, hydraulics etc., up to instant destruction.
+10. Better clouds and smoke effects, right now these are solid polygons in mid air.
+11. More varied terrain and water, these are completely flat with an occasional pyramids that are supposed to represent mountains. It can continue to be flat shaded/polygon based to not change the look of the game too much, but we definitely need more vertices.
+12. Let player skip the ejection sequence and go straight to debriefing.
+
+12. Scenario/model editor.
+13. Widescreen support.
+14. Multiplayer.
+15. Port the game back to 32bit DOS.
+16. VR support. 😈
 
 ## Known bugs
 
+Problems with the game that were introduces by the port, and to the best of our knowledge are not present in the original.
+
 1. Sometimes after starting a mission, planes and missiles are invisible.
-2. With the highest LOD4 selected, mountains sometimes disappear when nearby and plane changes pitch.
-3. Fired missiles (Maverick only?) sometimes disappear near the target without a message ("Ineffective hit") or any other feedback.
-4. It's sometimes impossible to lock some targets even when nearby, cycling targets just jumps over them.
-6. Square bounding boxes marking objects like planes and missiles move very erratically when the object is close to the player.
+2. Fired missiles (Maverick only?) sometimes disappear near the target without a message ("Ineffective hit") or any other feedback.
+3. It's sometimes impossible to lock some targets even when nearby, cycling targets just jumps over them.
+4. The "BRG" bearing value in the target screen is sometimes a huge positive value (overflow?).
+5. In the debriefing screen, plane names are only the long string e.g. "Flogger shot down".
+6. When starting a new mission after a previous one has been completed, the sound for the previous flight's landing ("Nice landing") is played, looks as if the sound queue is not drained before terminating the previous mission?
 
 ## Building
 
