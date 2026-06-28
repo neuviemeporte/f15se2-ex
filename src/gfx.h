@@ -21,6 +21,11 @@ void gfx_videoShutdown(void);
 /* Toggle borderless-desktop fullscreen (bound to Alt+Enter in the input pump). */
 void gfx_toggleFullscreen(void);
 
+/* Re-present the current visible frame. The input pump calls this on window
+ * events (resize / fullscreen toggle / expose) so the image is redrawn even on
+ * a static screen that is blocked in a key-wait and produces no game frame. */
+void gfx_repaint(void);
+
 /* Title-screen hi-res. Asks SDL change resolution to 640x350 and returns whether that took. */
 bool video_setHiRes(void);
 

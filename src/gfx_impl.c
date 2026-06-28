@@ -483,6 +483,12 @@ void FAR CDECL gfx_flipPage(void) {
     gfx_presentPage(0);
 }
 
+/* Re-present the current visible frame (page 0, or the hi-res title surface).
+ * gfx_presentPage already redirects to the hi-res path when the title is up. */
+void gfx_repaint(void) {
+    gfx_presentPage(0);
+}
+
 /* ---- Slot 0x4b: gfx_storeBufPtr ---- */
 void FAR CDECL gfx_storeBufPtr(uint16 seg, int pageIdx) {
     GfxState FAR *s = gfx_getState();

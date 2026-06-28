@@ -41,7 +41,14 @@ bool input_keyWaiting(void); /* true when a key word is queued */
 uint16 input_readKey(void);  /* blocking pop: pump + wait, then return */
 
 /* --- window state, set by the pump, for callers that want to react --------- */
-bool input_quitRequested(void); /* SDL_EVENT_QUIT seen (also feeds Alt+Q) */
+bool input_quitRequested(void); /* SDL_EVENT_QUIT (window close) has been seen */
 bool input_hasFocus(void);      /* window currently has keyboard focus */
+
+/* Register the application-quit handler. A window close is an app-level intent,
+ * not a game keystroke: when the pump sees SDL_EVENT_QUIT it invokes this
+ * directly (graceful teardown + exit) in whatever phase is running, so the game
+ * always quits on a window close rather than the close being mistaken for a
+ * "press any key to advance" keystroke. If unset, only the quit flag is raised. */
+void input_setQuitHandler(void (*handler)(void));
 
 #endif /* F15_SE2_INPUT */

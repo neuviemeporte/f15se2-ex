@@ -34,6 +34,7 @@ extern uint8 joyAxes[];
 static InputMode g_mode = INPUT_MODE_MENU;
 static bool g_quitRequested = false;
 static bool g_hasFocus = true;
+static void (*g_quitHandler)(void) = NULL;
 
 /* Which device was used most recently. Defaults to the device so a connected
  * stick keeps working as before; a key press flips it to the keyboard and stick
@@ -44,6 +45,7 @@ void input_setMode(InputMode mode) { g_mode = mode; }
 InputMode input_getMode(void) { return g_mode; }
 bool input_quitRequested(void) { return g_quitRequested; }
 bool input_hasFocus(void) { return g_hasFocus; }
+void input_setQuitHandler(void (*handler)(void)) { g_quitHandler = handler; }
 bool input_preferGamepad(void) { return g_lastWasGamepad && joy_connected(); }
 
 /* --- shared key ring -------------------------------------------------------
@@ -696,18 +698,33 @@ void input_pumpEvents(void) {
     timerPump();
     while (SDL_PollEvent(&ev)) {
         joy_handleEvent(&ev); /* device hotplug, every phase */
+        /* Window / system events are handled here for every phase, before any
+         * mode-specific game-input translation below: a window close, the
+         * fullscreen toggle, focus, and the redraw-on-resize never reach the
+         * game as keystrokes. Only after this does the pump feed context input
+         * (flight controls / menu navigation / skip-screen). */
         switch (ev.type) {
         case SDL_EVENT_QUIT:
-            /* Note it for callers that watch the flag, and feed the game's own
-             * Alt+Q quit path rather than hard-exiting. */
+            /* A window close is an app-level quit intent, not a keystroke (the
+             * "press any key to advance" screens would otherwise eat it as
+             * advance). Quit the whole application gracefully from whatever
+             * phase is running. */
             g_quitRequested = true;
-            ringPush(KEYCODE_ALTQ);
+            if (g_quitHandler) g_quitHandler(); /* teardown + exit; no return */
             break;
         case SDL_EVENT_WINDOW_FOCUS_GAINED:
             g_hasFocus = true;
             break;
         case SDL_EVENT_WINDOW_FOCUS_LOST:
             g_hasFocus = false;
+            break;
+        case SDL_EVENT_WINDOW_RESIZED:
+        case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+        case SDL_EVENT_WINDOW_EXPOSED:
+            /* Redraw the current frame so window changes (incl. the Alt+Enter
+             * fullscreen toggle) are visible even on a static screen blocked in
+             * a key-wait, which produces no game frame of its own. */
+            gfx_repaint();
             break;
         case SDL_EVENT_KEY_DOWN:
             /* A real key hands flight control back to the keyboard (it stays

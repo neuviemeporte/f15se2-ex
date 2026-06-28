@@ -22,6 +22,7 @@
 #include "gfx_impl.h"
 #include "joystick.h"
 #include "r3d.h"
+#include "input.h"
 
 #include <stdio.h>
 #include <stddef.h>
@@ -63,6 +64,16 @@ int start_main(void);
 int egame_main(void);
 int end_main(void);
 
+/* Graceful application shutdown, registered with the input pump as the
+ * window-close (SDL_EVENT_QUIT) handler so closing the window quits from any
+ * phase. Mirrors the normal teardown at the end of main(). */
+static void app_quit(void) {
+    joy_shutdown();
+    r3d_shutdown();
+    gfx_videoShutdown();
+    exit(0);
+}
+
 int main(int argc, char *argv[]) {
     /* process cmdline args */
     int argIdx, charIdx;
@@ -95,6 +106,7 @@ int main(int argc, char *argv[]) {
 
     game_init();
     joy_init();
+    input_setQuitHandler(app_quit);
 
     while (true) {
         int err;

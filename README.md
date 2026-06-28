@@ -76,7 +76,6 @@ The entire game is playable, rendering and input handling is ported to SDL, soun
 2. With the highest LOD4 selected, mountains sometimes disappear when nearby and plane changes pitch.
 3. Fired missiles (Maverick only?) sometimes disappear near the target without a message ("Ineffective hit") or any other feedback.
 4. It's sometimes impossible to lock some targets even when nearby, cycling targets just jumps over them.
-5. Some problems with input, `Alt-Q` to quit and `Alt-Enter` for fullscreen does not always register, especially during the intro. Clicking on the window close button does nothing.
 6. Square bounding boxes marking objects like planes and missiles move very erratically when the object is close to the player.
 
 ## Building
