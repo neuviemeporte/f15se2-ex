@@ -34,10 +34,10 @@ void keyDispatch(uint16 scanCode) {
         goto end_dispatch;
 
     switch (scanCode) {
-    case 0x1500:
+    case SCAN_ALT_Y:
         disableTextBlink();
         break;
-    case 0x1372:
+    case SCAN_R:
         g_radarScopeRange++;
         if (g_radarScopeRange > 2)
             g_radarScopeRange = 0;
@@ -55,19 +55,19 @@ void keyDispatch(uint16 scanCode) {
         strcat(strBuf, " range radar");
         tempStrcpy(strBuf);
         break;
-    case 0x2c7a:
+    case SCAN_Z:
         zoomIn();
         break;
-    case 0x2d78:
+    case SCAN_X:
         zoomOut();
         break;
-    case 0x2166:
+    case SCAN_F:
         countermeasures(1);
         break;
-    case 0x2e63:
+    case SCAN_C:
         countermeasures(2);
         break;
-    case 0x266c:
+    case SCAN_L:
         if (g_viewZ != g_groundAltitude) {
             *(char *)&g_playerPlaneFlags ^= 1;
             g_gearDownArmed = 0;
@@ -77,7 +77,7 @@ void keyDispatch(uint16 scanCode) {
             exitSlowMotion();
         }
         break;
-    case 0x2000:
+    case SCAN_ALT_D:
         g_detailLevel--;
         if (g_detailLevel < 0) {
             /* Level 4 is the modern "extended" detail: full LOD detail plus the
@@ -89,7 +89,7 @@ void keyDispatch(uint16 scanCode) {
         tempStrcpy(strBuf);
         setupLodDistances();
         break;
-    case 0x2500:
+    case SCAN_ALT_K:
         g_kbdSensitivity++;
         if (g_kbdSensitivity > 2)
             g_kbdSensitivity = 0;
@@ -97,17 +97,17 @@ void keyDispatch(uint16 scanCode) {
         strcat(strBuf, itoa(g_kbdSensitivity + 1, g_itoaScratch, 10));
         tempStrcpy(strBuf);
         break;
-    case 0x3200:
+    case SCAN_ALT_M:
         strcpy(strBuf, "Memory Available:");
         strcat(strBuf, itoa(allocSize, memStr, 10));
         tempStrcpy(strBuf);
         break;
-    case 0x2100:
+    case SCAN_ALT_F:
         strcpy(strBuf, "Jiffies/Frame ");
         strcat(strBuf, itoa(g_jiffiesPerFrame, g_itoaScratch, 10));
         tempStrcpy(strBuf);
         break;
-    case 0x1e00:
+    case SCAN_ALT_A:
         /* ALT+A: toggle ACCEL (the "ACCEL" HUD tag, egtacmap.c). Originally this
          * halved g_frameRateScaling so each render-locked frame covered ~2x the
          * game-time. Render/sim decoupled (egsys.c): g_frameRateScaling is now
@@ -119,7 +119,7 @@ void keyDispatch(uint16 scanCode) {
             exitSlowMotion();
         }
         break;
-    case 0x2f00:
+    case SCAN_ALT_V:
         /* Original pre-increments in place (`inc [mem]`); the well-defined
          * equivalent stores the same final value, (old+1)&3. */
         g_axisInputAccum[2] = (g_axisInputAccum[2] + 1) & 3;
@@ -128,39 +128,39 @@ void keyDispatch(uint16 scanCode) {
         tempStrcpy(strBuf);
         updateEngineSound();
         break;
-    case 0x3100:
+    case SCAN_ALT_N:
         *(char *)&g_nightMode ^= 1;
         if (g_dacSupported != 0)
             setupDac();
         break;
-    case 0x1400:
+    case SCAN_ALT_T:
         g_playerPlaneFlags ^= 0x1000;
         if (g_playerPlaneFlags & 0x1000) {
             *(char far *)&commData->trainingFlag |= 1;
         }
         break;
-    case 0x1f73:
+    case SCAN_S:
         missileSpecIndex = 0;
         if (g_currentWeaponType != 1)
             g_lockedTargetKilled = 0;
         g_currentWeaponType = 1;
         selectMissile();
         break;
-    case 0x326d:
+    case SCAN_M:
         missileSpecIndex = 1;
         g_currentWeaponType = 1;
         if (g_currentWeaponType != 1)
             g_lockedTargetKilled = 0;
         selectMissile();
         break;
-    case 0x2267:
+    case SCAN_G:
         missileSpecIndex = 2;
         if (g_currentWeaponType != 2)
             g_lockedTargetKilled = 0;
         g_currentWeaponType = 2;
         selectMissile();
         break;
-    case 0x2064:
+    case SCAN_D:
         g_directorMode++;
         if (g_directorMode > 2)
             g_directorMode = 0;
@@ -172,7 +172,7 @@ void keyDispatch(uint16 scanCode) {
         }
         tempStrcpy(strBuf);
         break;
-    case 0x1177:
+    case SCAN_W:
         waypointIndex++;
         if (waypointIndex > 3)
             waypointIndex = 1;
@@ -189,7 +189,7 @@ void keyDispatch(uint16 scanCode) {
             break;
         }
         break;
-    case 0x1970:
+    case SCAN_P:
         if (g_autopilotAltitude != 0) {
             g_autopilotAltitude = 0;
             tempStrcpy("Autopilot off");
@@ -198,7 +198,7 @@ void keyDispatch(uint16 scanCode) {
             tempStrcpy("Autopilot on");
         }
         break;
-    case 0x1474:
+    case SCAN_T:
         /* T designates the next target: air targets when an A2A missile is
            selected, ground/map targets otherwise. */
         if (g_currentWeaponType == 1)
@@ -206,46 +206,46 @@ void keyDispatch(uint16 scanCode) {
         else
             *(char *)&g_groundTargetLock |= 0x80;
         break;
-    case 0xe08:
+    case SCAN_BACKSPACE:
         g_axisInputAccum[0] = 1;
         break;
-    case 0x1c0d:
+    case SCAN_ENTER:
         g_axisInputAccum[1] = 1;
         break;
-    case 0x3920:
+    case SCAN_SPACEBAR:
         keyValue = 0;
         break;
-    case 0x3b00:
+    case SCAN_F1:
         keyValue = 0x44;
         break;
-    case 0x3c00:
+    case SCAN_F2:
         keyValue = 0x42;
         break;
-    case 0x3d00:
+    case SCAN_F3:
         keyValue = 0x43;
         break;
-    case 0x3e00:
+    case SCAN_F4:
         keyValue = 0x41;
         break;
-    case 0x3f00:
+    case SCAN_F5:
         keyValue = 0x87;
         break;
-    case 0x4000:
+    case SCAN_F6:
         keyValue = 0x84;
         break;
-    case 0x4100:
+    case SCAN_F7:
         keyValue = 0x85;
         break;
-    case 0x4200:
+    case SCAN_F8:
         keyValue = 0x89;
         break;
-    case 0x4300:
+    case SCAN_F9:
         keyValue = 0x88;
         break;
-    case 0x4400:
+    case SCAN_F10:
         keyValue = 0x8b;
         break;
-    case 0x11b:
+    case SCAN_ESCAPE:
         if (g_ejectState == 0) {
             makeSound(2, 2);
             makeSound(34, 2);

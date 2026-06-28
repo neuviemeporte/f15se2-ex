@@ -2217,7 +2217,7 @@ int16 g_aamLockActive;
 int16 g_unusedSavedWord;
 int g_rollInput;
 int16 flagFarToNear;
-int16 keyScancode;
+uint16 keyScancode;
 int16 g_unusedEventHist2;
 int16 g_projDepth;
 int16 g_scopeClipLeft;

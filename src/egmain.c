@@ -23,8 +23,6 @@
 /* Private helpers for this translation unit. */
 void __cdecl drawCockpit();
 void runGameSession();
-void doNothing3();
-void doNothing4();
 void __cdecl gfxInit();
 
 // ==== seg000:0x10 ====
@@ -122,14 +120,6 @@ void runGameSession() {
     restoreTimerIrqHandler();
     setTimerTickHook(nullptr);
     audio_shutdown();
-}
-
-// ==== seg000:0x0294 routine_6 ====
-void doNothing3() {
-}
-
-// ==== seg000:0x0297 routine_5 ====
-void doNothing4() {
 }
 
 // ==== seg000:0x29a ====
