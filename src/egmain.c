@@ -35,6 +35,7 @@ int egame_main(void) {
     g_missionEndedFlag[0] = g_missionEndedFlag[1] = 0;
     g_eventLogCount = 0;
     g_ejectState = 0;
+    g_ejectPending = 0;
     keyValue = 0;
     g_directorMode = 0;
     g_directorEventDeadline = -1;

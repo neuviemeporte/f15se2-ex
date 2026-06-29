@@ -283,6 +283,7 @@ extern int16 g_savedSamTtl;
 extern struct TileObject nearestTile;
 extern int32 g_ViewY;
 extern struct ReplayLog g_replayLog;
+extern int16 g_ejectPending;
 extern int16 g_ejectState;
 extern uint8 g_modelVertY[];
 extern int16 g_scopeArcRange;

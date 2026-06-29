@@ -246,6 +246,12 @@ void keyDispatch(uint16 scanCode) {
         keyValue = 0x8b;
         break;
     case SCAN_ESCAPE:
+        // First escape hit enables ejection, 2nd performs it - prevent accidental ejects
+        if (!g_ejectPending) {
+            tempStrcpy("Eject -- Eject");
+            g_ejectPending = 1;
+            break;
+        }
         if (g_ejectState == 0) {
             makeSound(2, 2);
             makeSound(34, 2);

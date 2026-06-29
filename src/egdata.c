@@ -2167,6 +2167,7 @@ char aBrg[] = "BRG ";
    table (vertexX[] at +0x600). One 0x640-byte buffer; egseg1.asm reaches
    vertexX at the fixed offset _g_replayLog+0x600, so it must stay contiguous. */
 struct ReplayLog g_replayLog;
+int16 g_ejectPending;
 int16 g_ejectState;
 uint8 g_modelVertY[0x40];
 int16 g_scopeArcRange;

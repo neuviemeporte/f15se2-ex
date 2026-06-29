@@ -144,6 +144,9 @@ void renderHudFrame(int unused) {
     if (g_hudMsgTimer != 0 && ((keyValue == 0 && g_halfScaleRender == 0) || (g_directorMode != 0))) {
         drawStringActivePage(tempString, -(((int16)strlen(tempString) >> 1) - 40) * 4, 24, 0xf);
         g_hudMsgTimer--;
+        if (g_hudMsgTimer == 0) { // cancel pending eject on message disappear
+            g_ejectPending = 0;
+        }
         if (g_autopilotEngaged == 1) {
             drawStringActivePage("Press any key to play", 120, 1, g_nightMode != 0 ? 0xe : 0);
         }
