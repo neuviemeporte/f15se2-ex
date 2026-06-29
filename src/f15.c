@@ -77,55 +77,29 @@ static void app_quit(void) {
 int main(int argc, char *argv[]) {
     /* process cmdline args */
     int argIdx, charIdx;
-    bool debugMenu = false, debugFlight = false, debugDebrief = false;
 
     log_set_app("f15");
     gfx_videoInit();
-
-    for (argIdx = 1; argIdx < argc; ++argIdx) {
-        const char *arg = argv[argIdx];
-        const size_t len = strlen(arg);
-        if (len < 3 || arg[0] != '/' || tolower(arg[1]) != 'd')
-            LogCritical(("Unrecognized argument: '%s'", arg));
-        for (charIdx = 2; (size_t)charIdx < len; ++charIdx) {
-            switch (arg[charIdx]) {
-            case '1':
-                debugMenu = true;
-                break;
-            case '2':
-                debugFlight = true;
-                break;
-            case '3':
-                debugDebrief = true;
-                break;
-            default:
-                LogCritical(("Unrecognized argument: '%s'", arg));
-            }
-        }
-    }
-
     game_init();
     joy_init();
     input_setQuitHandler(app_quit);
 
     while (true) {
         int err;
-
-        log_set_app("f15");
         log_set_app("start");
         err = start_main();
         log_set_app("f15");
-        if (!debugMenu && err != RET_MENU) break;
+        if (err != RET_MENU) break;
 
         log_set_app("egame");
         err = egame_main();
         log_set_app("f15");
-        if (!debugFlight && err == 0) break;
+        if (err == 0) break;
 
         log_set_app("end");
         err = end_main();
         log_set_app("f15");
-        if (!debugDebrief && err != RET_DEBRIEFING) break;
+        if (err != RET_DEBRIEFING) break;
     }
 
     joy_shutdown();
