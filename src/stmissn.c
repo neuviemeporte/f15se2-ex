@@ -80,7 +80,7 @@ void showPic640(const char *filename) {
     intRegs[1] = INT_VID_MODESET;
     intRegs[0] = MODE_640_350;
     intDispatch(IRQ_VIDEO, intRegs, intRegs);
-    gfx_setDac(4);
+    gfx_setDac(0);
     fileHandle = openFileWrapper(filename, 0);
     picBlit(fileHandle, 0);
     closeFileWrapper(fileHandle);
