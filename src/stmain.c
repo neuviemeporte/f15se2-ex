@@ -37,6 +37,33 @@ int start_main(void) {
         gameData->campaignProgress = 1;
         gameData->difficulty = 0xffff;
         gameData->theater = 0xffff;
+        gfx_setFadeSteps(5);
+        openShowPic("labs.pic", 0);
+        gfx_commitPage();
+        setTimerIrqHandler();
+        for (timerCounter = 0; timerCounter < MPS_TIMEOUT;) {
+            if (misc_checkKeyBuf() == 0) {
+                misc_getKey();
+                break;
+            }
+        }
+        if (timerCounter >= MPS_TIMEOUT) {
+            gfx_waitRetrace();
+            gfx_setFadeSteps(15);
+            openShowPic("adv.pic", 0);
+            gfx_commitPage();
+            gfx_flipPage();
+            for (introStage = 0; introStage < 2; introStage++) {
+                for (timerCounter = 0; timerCounter < ADV_TIMEOUT;) {
+                    if (misc_checkKeyBuf() == 0) {
+                        misc_getKey();
+                        goto checkEga;
+                    }
+                }
+            }
+        }
+
+    checkEga:
         /* Ask SDL for the hi-res title resolution; if it takes, show the 640x350
          * title, otherwise fall back to the 320x200 one. Either way we restore
          * the 320x200 game resolution afterwards. */

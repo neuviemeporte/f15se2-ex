@@ -80,8 +80,6 @@ void keyDispatch(uint16 scanCode) {
     case SCAN_ALT_D:
         g_detailLevel--;
         if (g_detailLevel < 0) {
-            /* Level 4 is the modern "extended" detail: full LOD detail plus the
-               long-range terrain/object draw distance (eg3dproj dense walk). */
             g_detailLevel = gfx_getModecode() == 3 ? 4 : 2;
         }
         strcpy(strBuf, "Detail Level ");
@@ -115,6 +113,8 @@ void keyDispatch(uint16 scanCode) {
          * step rate via g_slowMotionMode in simStepNsNow(). */
         if (g_slowMotionMode == 1) {
             g_slowMotionMode = 2;
+            g_frameRateScaling >>= 1;
+            recalcTimeScale();
         } else {
             exitSlowMotion();
         }
@@ -135,8 +135,13 @@ void keyDispatch(uint16 scanCode) {
         break;
     case SCAN_ALT_T:
         g_playerPlaneFlags ^= 0x1000;
-        if (g_playerPlaneFlags & 0x1000) {
-            *(char far *)&commData->trainingFlag |= 1;
+        {
+            uint8_t *commRaw = (uint8_t *)((uint8_t *)commData + 0x30);
+            if (g_playerPlaneFlags & 0x1000) {
+                *commRaw |= 1;
+            } else {
+                *commRaw &= (uint8_t)~1;
+            }
         }
         break;
     case SCAN_S:
@@ -382,6 +387,8 @@ void setupLodDistances(void) {
 void exitSlowMotion() {
     if (g_slowMotionMode == 2) {
         g_slowMotionMode = 1;
+        g_frameRateScaling <<= 1;
+        recalcTimeScale();
     }
 }
 

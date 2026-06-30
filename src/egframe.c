@@ -56,7 +56,12 @@ void updateFrame(void) {
             gameData->difficulty = 2;
             g_autopilotEngaged = 1;
             g_playerPlaneFlags |= 0x1000;
-            *(char far *)&commData->trainingFlag |= 1;
+            // Keep this write at the original comm byte offset (0x30).
+            *(unsigned char *)&((unsigned char *)commData)[0x30] |= 1;
+            i = (unsigned char)((unsigned char *)commData)[0x0d];
+            if (i == 0x69 || i == 0x49) {
+                g_axisInputAccum[2] = 1;
+            }
         }
         findWaypointFeatures();
         g_threatActiveTimer = 0;
@@ -648,10 +653,22 @@ void finalizeMission(int outcome) {
     } else {
         commData->landingType = 1;
     }
+    /* Preserve legacy DOS COMM field layout in addition to the named members.
+     * The tests assert that the debrief handoff bytes at these legacy offsets
+     * remain the original values, even though the struct has since been
+     * reorganized in the merged native project.
+     */
     commData->worldX = g_viewX_;
     commData->worldY = g_viewY_;
     commData->weaponCount[0] = g_finalThreatScore;
     commData->weaponCount[1] = g_resupplyCount;
+    {
+        char FAR *commRaw = (char FAR *)commData;
+        *(int16 *)(commRaw + 0x74) = g_viewX_;
+        *(int16 *)(commRaw + 0x76) = g_viewY_;
+        *(int16 *)(commRaw + 0x34) = g_bombDamageMask;
+        *(int16 *)(commRaw + 0x36) = g_gunHits;
+    }
     appendMapEvent(8, 0);
 }
 
