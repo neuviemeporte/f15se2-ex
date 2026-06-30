@@ -897,7 +897,10 @@ add_test(NAME start_main_autostart_behavior_tests COMMAND start_main_autostart_b
 add_test(NAME start_main_behavior_tests COMMAND start_main_behavior_tests)
 add_test(NAME gfx_impl_behavior_tests COMMAND gfx_impl_behavior_tests)
 add_test(NAME biosfunc_behavior_tests COMMAND biosfunc_behavior_tests)
-set(ORIGINAL_BINARY_FUNCTION_HARNESS "${CMAKE_CURRENT_SOURCE_DIR}/../f15se2-re/mzretools/original_binary_function_harness.py")
+set(ORIGINAL_BINARY_FUNCTION_HARNESS "${CMAKE_CURRENT_SOURCE_DIR}/mzretools/original_binary_function_harness.py")
+if(NOT EXISTS "${ORIGINAL_BINARY_FUNCTION_HARNESS}")
+    set(ORIGINAL_BINARY_FUNCTION_HARNESS "${CMAKE_CURRENT_SOURCE_DIR}/../f15se2-re/mzretools/original_binary_function_harness.py")
+endif()
 if (EXISTS "${ORIGINAL_BINARY_FUNCTION_HARNESS}")
     add_test(NAME original_binary_function_harness
         COMMAND ${CMAKE_COMMAND} -E env F15SE2_RE=${CMAKE_CURRENT_SOURCE_DIR}
