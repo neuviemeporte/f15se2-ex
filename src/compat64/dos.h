@@ -9,7 +9,11 @@
 #define FAR
 #define near
 #define pascal
+// Older 16-bit code relies on the `register` keyword being present.  In C++17,
+// this is reserved as a keyword again and cannot be macroized.
+#if !defined(__cplusplus)
 #define register
+#endif
 
 // FP_SEG/FP_OFF: In 64-bit builds, far pointers don't exist.
 // Use reinterpret_cast to provide lvalue access to the high/low 16-bit words of a 32-bit-sized pointer slot.

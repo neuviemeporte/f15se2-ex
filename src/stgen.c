@@ -6,6 +6,7 @@
 #include "stgen.h"
 #include "stparse.h"
 #include "strand.h"
+#include "stmath.h"
 #include "stterr.h"
 #include "pointers.h"
 #include "comm.h"
@@ -25,14 +26,11 @@ void runGenerator();
 int findOrPlaceItem(int, int, int);
 int itemDistance(int, int);
 void positionUnit(int, int);
-int approxDistance(int, int);
 void parseWorld(const char *);
-int calcBearing(int, int);
 void setMoveDstComm7A(const char *filename, const char *mode);
 void memAppend(void *ptr, int itemsz, int count, SDL_IOStream *unused);
 void doNothing(SDL_IOStream *);
 char *formatGridRef(int16, int16, int16);
-int clampValue(int, int, int);
 
 void missionGenerate() {
     difficultySaved = gameData->difficulty;
@@ -358,18 +356,6 @@ void positionUnit(int unit, int loc) {
     flightUnits[unit].fuel = ((long)planes[planeType].range << 0xd) / flightUnits[unit].maxSpeed;
 }
 
-// debugcom: custom_manhattan_distance
-int approxDistance(int dx, int dy) {
-    long dist;
-    dx = abs(dx);
-    dy = abs(dy);
-    dist = (dx > dy) ? (long)(dy >> 1) + (long)dx : (long)(dx >> 1) + (long)dy;
-    if (dist > 0x7fff) {
-        dist = 0x7fff;
-    }
-    return dist;
-}
-
 void parseWorld(const char *filename) {
     int nameIdx, scanPos;
     if ((fileHandle = openFile(filename, 0)) == NULL) return;
@@ -427,43 +413,6 @@ void exportWorldToComm(const char *filename) {
     memAppend(&missionBase2Y, 2, 1, fileHandle);
     memAppend(targets, 18, 2, fileHandle);
     doNothing(fileHandle);
-}
-
-int calcBearing(int dx, int dy) {
-    int16 angle, result;
-    int32 ratio;
-    int16 divisor, swapped, quotient;
-    if (dx == 0) {
-        return (dy > 0) ? 0 : BEARING_SOUTH;
-    }
-    if (dy == 0) {
-        return (dx > 0) ? BEARING_EAST : BEARING_WEST;
-    }
-    if (abs(dx) > abs(dy)) {
-        ratio = (int32)abs(dy) << 0xe;
-        divisor = abs(dx);
-        swapped = 1;
-    } else {
-        ratio = (int32)abs(dx) << 0xe;
-        divisor = abs(dy);
-        swapped = 0;
-    }
-    quotient = ratio / (int32)divisor;
-    angle = ((0x2800 - (((int32)abs((0x1333 - quotient)) * (int32)0xb00) >> 0xe)) * (int32)quotient) >> 0xe;
-    if (dx > 0) {
-        if (dy > 0) {
-            result = swapped != 0 ? BEARING_EAST - angle : angle;
-        } else {
-            result = (swapped != 0) ? angle + BEARING_EAST : BEARING_SOUTH - angle;
-        }
-    } else {
-        if (dy > 0) {
-            result = (swapped != 0) ? angle + BEARING_WEST : -angle;
-        } else {
-            result = (swapped != 0) ? BEARING_WEST - angle : angle + BEARING_SOUTH;
-        }
-    }
-    return result;
 }
 
 void setMoveDstComm7A(const char *filename, const char *mode) {
@@ -541,13 +490,6 @@ char *formatGridRef(int16 wx, int16 wy, int16 theater) {
     }
     bufCoordStr[3] += 9 - (int8)wy;
     return bufCoordStr;
-}
-
-int clampValue(int val, int lo, int hi) {
-    if (val > hi) return hi;
-    if (val >= lo) return val;
-    if (val > -16384) return lo;
-    return hi;
 }
 
 void buildTargetLabel(int idx) {

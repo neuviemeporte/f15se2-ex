@@ -2,6 +2,7 @@
 // offsets based on F-15 SE2 v451.03 start.exe (unpacked) MD5: cf6e997ed4582cf82db6ec37d2b1a6fd
 #include "struct.h"
 #include "stdata.h"
+#include "stmath.h"
 #include "stterr.h"
 #include "pointers.h"
 #include "comm.h"
@@ -14,7 +15,6 @@
 #include <stdio.h>
 
 /* Private helpers for this translation unit. */
-uint32 scaleCoordByLevel(int, uint32);
 int lookupGridCell(int16, int16, int16);
 
 struct NearestTerrain *findNearestTerrain(int32 worldX, int32 worldY) {
@@ -76,21 +76,6 @@ struct NearestTerrain *findNearestTerrain(int32 worldX, int32 worldY) {
         return &nearestTerrain;
     } else
         return NULL;
-}
-
-uint32 scaleCoordByLevel(int level, uint32 coord) {
-    switch (level) {
-    case 4:
-        return coord >> 6;
-    case 3:
-        return coord >> 4;
-    case 2:
-        return coord >> 2;
-    case 1:
-        return coord;
-    default: // case 0
-        return coord << 1;
-    }
 }
 
 int lookupGridCell(int16 level, int16 col, int16 row) {

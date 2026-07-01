@@ -61,6 +61,43 @@ void gfx_drawSpriteOpaque(int handle, int srcX, int srcY, int dstPage,
 /* dseg:0xab8 */
 int gfx_allocSpriteBuf(void);                                                 /* alloc a sprite-sheet surface, returns a handle */
 void gfx_freeSpriteBuf(int handle);                                           /* release a sprite-sheet surface handle */
+int FAR CDECL gfx_allocPage(int pageNum);                                     /* legacy page allocation token */
+void FAR CDECL gfx_storeBufPtr(uint16 seg, int pageIdx);                      /* legacy page token store */
+void FAR CDECL gfx_setPageN(uint16 pageNum);                                  /* select legacy current page */
+int FAR CDECL gfx_getPageSeg(uint16 page);                                    /* select page and return legacy token */
+int FAR CDECL gfx_getCurPageSeg(void);                                        /* current legacy page token */
+void FAR CDECL gfx_getCurPage(int page);                                      /* inert original slot */
+int FAR CDECL gfx_curPage(void);                                              /* native test helper: selected page index */
+void FAR CDECL gfx_setCurPageSeg(uint16 seg);                                 /* select current legacy page token */
+void FAR CDECL gfx_setCurPageSegReg(uint16 seg);                              /* register-shim-compatible wrapper */
+int FAR CDECL gfx_setPage1(uint16 page);                                      /* select page and return token */
+uint8 *gfx_pagePixelsForSeg(uint16 seg, int *pitchOut);                       /* writable pixels for a legacy page token */
+int FAR CDECL gfx_getDisplayPage(void);                                       /* legacy display/back page index */
+void FAR CDECL gfx_initOverlay(void);                                         /* legacy overlay init */
+int FAR CDECL gfx_getBufSize(void);                                           /* original 64000-byte page buffer size */
+int FAR CDECL gfx_getAuxBufSize(void);                                        /* original auxiliary buffer size */
+int FAR CDECL gfx_getFreeMem(void);                                           /* DOS free memory slot, stubbed natively */
+int FAR CDECL gfx_getVal(void);                                               /* legacy overlay value getter */
+int FAR CDECL gfx_getVal2(void);                                              /* legacy overlay value getter */
+void FAR CDECL gfx_setBlitOffset3(void);                                      /* clear blit offset */
+void FAR CDECL gfx_setBlitOffsetReg(void);                                    /* inert register shim */
+void FAR CDECL gfx_blitToCurrent(int16 srcSeg);                               /* copy source segment page to current page */
+void FAR CDECL gfx_clearVga(void);                                            /* clear visible VGA page */
+void FAR CDECL gfx_blitSpriteClipped2(void);                                  /* inert legacy slot */
+void FAR CDECL gfx_blitSpriteOpaque2(void);                                   /* inert legacy slot */
+void FAR CDECL gfx_blitCore(int16 *params);                                   /* transparent page blit core */
+void FAR CDECL gfx_fillRow2(uint16 rowOffset, uint16 rowNum);                 /* inert row commit */
+void FAR CDECL gfx_nop15(void);
+void FAR CDECL gfx_nop16(void);
+void FAR CDECL gfx_nop36(void);
+void FAR CDECL gfx_nop37(void);
+void FAR CDECL gfx_nop51(void);
+void FAR CDECL gfx_clipRight(void);
+void FAR CDECL gfx_clipTop(void);
+void FAR CDECL gfx_clipLeft(void);
+void FAR CDECL gfx_clipBottom(void);
+void FAR CDECL gfx_spriteVariant1(void);
+void FAR CDECL gfx_spriteVariant2(void);
 void FAR CDECL gfx_fillDirty(int16 *params, const char *string);              /* slot 0x01: clipped glyph variant (vertical window) */
 void FAR CDECL gfx_blitTransparent(int16 *params, const char *string);        /* slot 0x02: clipped glyph variant (horizontal window) */
 void FAR CDECL gfx_blitVariant(int16 *params, const char *string);            /* slot 0x03: clipped glyph variant (horizontal window) */
@@ -90,6 +127,9 @@ void FAR CDECL gfx_dacAnimate();                                                
 void FAR CDECL gfx_dacCycle();                                                                                                    /* slot 0x2e: DAC fire/colour-cycle animation */
 int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx);                                                                             /* slot 0x2f: setup font metrics */
 int FAR CDECL gfx_getRowOffset(int y);                                                                                            /* slot 0x3a: returns y*320 */
+void FAR CDECL gfx_fillRow(uint16 rowOffset, uint16 srcBuf, uint16 rowNum);                                                          /* slot 0x33: copy decoded row bytes into current page */
+void FAR CDECL gfx_copyRow(uint16 rowOffset);                                                                                     /* slot 0x35: commit decoded row to visible page */
+void FAR CDECL gfx_clearPage(uint16 seg);                                                                                         /* slot 0x3b: select seg as curPage and clear it */
 /* dseg:0xbe4 */
 void FAR CDECL gfx_setMode13(void);          /* slot 0x3c: switch to 320x200 (lo-res) */
 void FAR CDECL gfx_setFadeSteps(int steps);  /* slot 0x3d: setFadeSteps */
@@ -98,6 +138,10 @@ int FAR CDECL gfx_calcRowAddr(int y, int x); /* slot 0x3e: calcRowAddr */
 int FAR CDECL gfx_getModecode();                                              /* slot 0x3f: returns 3 (MCGA) */
 void FAR CDECL gfx_setOvlVal1(int val);                                       /* slot 0x40: writes ds:0xcc */
 void FAR CDECL gfx_setOvlVal2(int val);                                       /* slot 0x41: writes ds:0xce */
+int FAR CDECL gfx_getModeFlag2();                                             /* slot 0x42: returns modeFlag */
+int FAR CDECL gfx_getConst1();                                                /* slot 0x43: returns baked constant 1 (cs:0x1d8) */
+void gfx_setNearReadBuffer(uint16 nearPtr, const void *hostPtr, size_t size);
+void gfx_clearNearReadBuffer(void);
 void FAR CDECL gfx_setDac(uint16 palIdx);                                     /* slot 0x44: set VGA DAC palette */
 void gfx_setDacRange(uint16 startReg, uint16 count, const uint8 *vgaTriples); /* native INT 10h AX=1012h: load DAC register block */
 void FAR CDECL gfx_waitRetrace();                                             /* slot 0x45: wait for vblank */

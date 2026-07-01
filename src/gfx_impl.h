@@ -26,6 +26,9 @@ typedef struct {
     uint8 fillColor;                      /* replaces g_fillColor   */
     uint8 dacCounter;                     /* replaces g_dacCounter  */
     uint8 rowOffsetsReady;                /* replaces g_rowOffsetsReady */
+    uint16 pageSegs[16];                  /* legacy page segment tokens: 0xa000, 0xc001... */
+    uint16 curPageSeg;                    /* currently selected legacy page segment token */
+    int curPage;                          /* currently selected page index */
     uint16 dacPhase;                      /* MGRAPHIC data-seg 0x1ccc — the DAC fire-cycle phase
                                            * counter advanced by gfx_dacCycle (slot 0x2e) each
                                            * frame (LCG x*5+1); seeded 0x4d2 in gfx_initState. */

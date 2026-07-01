@@ -1,0 +1,340 @@
+#include "egcode.h"
+#include "egdata.h"
+#include "eginput.h"
+
+#include <SDL3/SDL.h>
+
+#include <algorithm>
+#include <chrono>
+#include <cstdlib>
+#include <iostream>
+#include <thread>
+
+extern int kbhit(void);
+
+namespace {
+
+// Behavior-sensitive constants are named here or explained at the use site.
+// Remaining numeric literals are fixture data, indices, loop/math mechanics,
+// or zero/null/sentinel resets.
+enum InputOriginalConstant : int {
+    kStickCenter = 0x80,
+    kStickLow = 0x26,
+    kStickHigh = 0xDA,
+    kBiosR = 0x1372,
+    kBiosShiftR = 0x1352,
+    kBiosCtrlR = 0x1312,
+    kBiosAltQ = 0x1000,
+    kBiosA = 0x1E61,
+    kBiosB = 0x3062,
+    kBiosC = 0x2E63,
+    kBiosD = 0x2064,
+    kBiosE = 0x1265,
+    kBiosF = 0x2166,
+    kBiosG = 0x2267,
+    kBiosH = 0x2368,
+    kBiosI = 0x1769,
+    kBiosJ = 0x246A,
+    kBiosK = 0x256B,
+    kBiosL = 0x266C,
+    kBiosM = 0x326D,
+    kBiosN = 0x316E,
+    kBiosO = 0x186F,
+    kBiosP = 0x1970,
+    kBiosQ = 0x1071,
+    kBiosS = 0x1F73,
+    kBiosT = 0x1474,
+    kBiosU = 0x1675,
+    kBiosV = 0x2F76,
+    kBiosW = 0x1177,
+    kBiosX = 0x2D78,
+    kBiosY = 0x1579,
+    kBiosZ = 0x2C7A,
+    kBios1 = 0x0231,
+    kBios2 = 0x0332,
+    kBios3 = 0x0433,
+    kBios4 = 0x0534,
+    kBios5 = 0x0635,
+    kBios6 = 0x0736,
+    kBios7 = 0x0837,
+    kBios8 = 0x0938,
+    kBios9 = 0x0A39,
+    kBios0 = 0x0B30,
+    kBiosShift1 = 0x0221,
+    kBiosMinus = 0x0C2D,
+    kBiosEquals = 0x0D3D,
+    kBiosLeftBracket = 0x1A5B,
+    kBiosRightBracket = 0x1B5D,
+    kBiosSemicolon = 0x273B,
+    kBiosApostrophe = 0x2827,
+    kBiosGrave = 0x2960,
+    kBiosBackslash = 0x2B5C,
+    kBiosComma = 0x332C,
+    kBiosPeriod = 0x342E,
+    kBiosSlash = 0x352F,
+    kBiosSpace = 0x3920,
+    kBiosEnter = 0x1C0D,
+    kBiosBackspace = 0x0E08,
+    kBiosTab = 0x0F09,
+    kBiosF1 = 0x3B00,
+    kBiosF2 = 0x3C00,
+    kBiosF3 = 0x3D00,
+    kBiosF4 = 0x3E00,
+    kBiosF5 = 0x3F00,
+    kBiosF6 = 0x4000,
+    kBiosF7 = 0x4100,
+    kBiosF8 = 0x4200,
+    kBiosF9 = 0x4300,
+    kBiosF10 = 0x4400,
+    kBiosEscape = 0x011B,
+    kRingStoredCapacity = 31,
+    kRingOverflowAttempts = 40,
+    kExpectedOneCall = 1,
+    kBlockingPushDelayMs = 5,
+    kTestFailureExitCode = 1,
+};
+
+int g_fullscreenToggleCalls = 0;
+int g_timerPumpCalls = 0;
+bool g_keyboardState[SDL_SCANCODE_COUNT] = {};
+
+void require(bool condition, const char *message) {
+    if (!condition) {
+        std::cerr << "failed: " << message << '\n';
+        std::exit(kTestFailureExitCode);
+    }
+}
+
+void drainSdlEvents() {
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+    }
+}
+
+void resetInputState() {
+    drainSdlEvents();
+    setInt9Handler();
+    g_fullscreenToggleCalls = 0;
+    g_timerPumpCalls = 0;
+    std::fill(std::begin(g_keyboardState), std::end(g_keyboardState), false);
+}
+
+void pushKey(SDL_Scancode scancode, SDL_Keymod modifiers = SDL_KMOD_NONE) {
+    SDL_Event event = {};
+    event.type = SDL_EVENT_KEY_DOWN;
+    event.key.type = SDL_EVENT_KEY_DOWN;
+    event.key.scancode = scancode;
+    event.key.mod = modifiers;
+    SDL_PushEvent(&event);
+}
+
+void pushQuit() {
+    SDL_Event event = {};
+    event.type = SDL_EVENT_QUIT;
+    SDL_PushEvent(&event);
+}
+
+void pushMouseMotion() {
+    SDL_Event event = {};
+    event.type = SDL_EVENT_MOUSE_MOTION;
+    SDL_PushEvent(&event);
+}
+
+void expectKey(SDL_Scancode scancode, SDL_Keymod modifiers, int expectedWord,
+               const char *message) {
+    resetInputState();
+    pushKey(scancode, modifiers);
+    require(kbhit() != 0 && egReadKey() == expectedWord, message);
+}
+
+void expectKeypadStick(SDL_Scancode scancode, int expectedX, int expectedY,
+                       const char *message) {
+    resetInputState();
+    g_keyboardState[scancode] = true;
+    require(kbhit() == 0 &&
+                g_joyRawX == expectedX &&
+                g_joyRawY == expectedY,
+            message);
+}
+
+} // namespace
+
+void timerPump(void) {
+    ++g_timerPumpCalls;
+}
+
+void gfx_toggleFullscreen(void) {
+    ++g_fullscreenToggleCalls;
+}
+
+void gfx_repaint(void) {}
+void joy_handleEvent(const SDL_Event *) {}
+bool joy_isGamepad(void) { return false; }
+bool joy_connected(void) { return false; }
+bool joy_button(SDL_GamepadButton) { return false; }
+Sint16 joy_axisRaw(SDL_GamepadAxis) { return 0; }
+
+extern "C" const bool *SDL_GetKeyboardState(int *numkeys) {
+    if (numkeys) *numkeys = SDL_SCANCODE_COUNT;
+    return g_keyboardState;
+}
+
+int main() {
+    require(SDL_Init(SDL_INIT_EVENTS), "SDL event subsystem initializes for input behavior tests");
+
+    resetInputState();
+    require(g_joyRawX == kStickCenter && g_joyRawY == kStickCenter,
+            "setInt9Handler recenters the original raw keyboard-stick axes");
+
+    pushKey(SDL_SCANCODE_R);
+    require(kbhit() != 0, "kbhit reports a queued BIOS-style letter key");
+    require(egReadKey() == kBiosR,
+            "egReadKey returns the original BIOS word for lowercase r");
+
+    resetInputState();
+    pushKey(SDL_SCANCODE_R, SDL_KMOD_SHIFT);
+    require(kbhit() != 0 && egReadKey() == kBiosShiftR,
+            "egReadKey returns the original shifted BIOS word for R");
+
+    resetInputState();
+    pushKey(SDL_SCANCODE_R, SDL_KMOD_CTRL);
+    require(kbhit() != 0 && egReadKey() == kBiosCtrlR,
+            "egReadKey maps Ctrl+letter to the original control-code low byte");
+
+    resetInputState();
+    pushKey(SDL_SCANCODE_Q, SDL_KMOD_ALT);
+    require(kbhit() != 0 && egReadKey() == kBiosAltQ,
+            "egReadKey maps Alt+Q to the original scan-only BIOS word");
+
+    resetInputState();
+    pushKey(SDL_SCANCODE_F1);
+    require(kbhit() != 0 && egReadKey() == kBiosF1,
+            "egReadKey maps function keys to original scan-only BIOS words");
+
+    const struct {
+        SDL_Scancode scancode;
+        int expectedWord;
+    } letterCases[] = {
+        {SDL_SCANCODE_A, kBiosA}, {SDL_SCANCODE_B, kBiosB}, {SDL_SCANCODE_C, kBiosC},
+        {SDL_SCANCODE_D, kBiosD}, {SDL_SCANCODE_E, kBiosE}, {SDL_SCANCODE_F, kBiosF},
+        {SDL_SCANCODE_G, kBiosG}, {SDL_SCANCODE_H, kBiosH}, {SDL_SCANCODE_I, kBiosI},
+        {SDL_SCANCODE_J, kBiosJ}, {SDL_SCANCODE_K, kBiosK}, {SDL_SCANCODE_L, kBiosL},
+        {SDL_SCANCODE_M, kBiosM}, {SDL_SCANCODE_N, kBiosN}, {SDL_SCANCODE_O, kBiosO},
+        {SDL_SCANCODE_P, kBiosP}, {SDL_SCANCODE_Q, kBiosQ}, {SDL_SCANCODE_S, kBiosS},
+        {SDL_SCANCODE_T, kBiosT}, {SDL_SCANCODE_U, kBiosU}, {SDL_SCANCODE_V, kBiosV},
+        {SDL_SCANCODE_W, kBiosW}, {SDL_SCANCODE_X, kBiosX}, {SDL_SCANCODE_Y, kBiosY},
+        {SDL_SCANCODE_Z, kBiosZ},
+    };
+    for (const auto &entry : letterCases) {
+        expectKey(entry.scancode, SDL_KMOD_NONE, entry.expectedWord,
+                  "egReadKey maps alphabet keys to the original BIOS scan/ASCII word");
+    }
+
+    const struct {
+        SDL_Scancode scancode;
+        int expectedWord;
+    } numberCases[] = {
+        {SDL_SCANCODE_1, kBios1}, {SDL_SCANCODE_2, kBios2}, {SDL_SCANCODE_3, kBios3},
+        {SDL_SCANCODE_4, kBios4}, {SDL_SCANCODE_5, kBios5}, {SDL_SCANCODE_6, kBios6},
+        {SDL_SCANCODE_7, kBios7}, {SDL_SCANCODE_8, kBios8}, {SDL_SCANCODE_9, kBios9},
+        {SDL_SCANCODE_0, kBios0},
+    };
+    for (const auto &entry : numberCases) {
+        expectKey(entry.scancode, SDL_KMOD_NONE, entry.expectedWord,
+                  "egReadKey maps number-row keys to the original BIOS scan/ASCII word");
+    }
+    expectKey(SDL_SCANCODE_1, SDL_KMOD_SHIFT, kBiosShift1,
+              "egReadKey maps shifted number-row punctuation to the original BIOS word");
+
+    const struct {
+        SDL_Scancode scancode;
+        int expectedWord;
+    } punctuationCases[] = {
+        {SDL_SCANCODE_MINUS, kBiosMinus},       {SDL_SCANCODE_EQUALS, kBiosEquals},
+        {SDL_SCANCODE_LEFTBRACKET, kBiosLeftBracket},
+        {SDL_SCANCODE_RIGHTBRACKET, kBiosRightBracket},
+        {SDL_SCANCODE_SEMICOLON, kBiosSemicolon},
+        {SDL_SCANCODE_APOSTROPHE, kBiosApostrophe},
+        {SDL_SCANCODE_GRAVE, kBiosGrave},       {SDL_SCANCODE_BACKSLASH, kBiosBackslash},
+        {SDL_SCANCODE_COMMA, kBiosComma},       {SDL_SCANCODE_PERIOD, kBiosPeriod},
+        {SDL_SCANCODE_SLASH, kBiosSlash},       {SDL_SCANCODE_SPACE, kBiosSpace},
+        {SDL_SCANCODE_RETURN, kBiosEnter},      {SDL_SCANCODE_BACKSPACE, kBiosBackspace},
+        {SDL_SCANCODE_TAB, kBiosTab},           {SDL_SCANCODE_ESCAPE, kBiosEscape},
+    };
+    for (const auto &entry : punctuationCases) {
+        expectKey(entry.scancode, SDL_KMOD_NONE, entry.expectedWord,
+                  "egReadKey maps punctuation/control keys to the original BIOS word");
+    }
+
+    const struct {
+        SDL_Scancode scancode;
+        int expectedWord;
+    } functionCases[] = {
+        {SDL_SCANCODE_F2, kBiosF2},   {SDL_SCANCODE_F3, kBiosF3},
+        {SDL_SCANCODE_F4, kBiosF4},   {SDL_SCANCODE_F5, kBiosF5},
+        {SDL_SCANCODE_F6, kBiosF6},   {SDL_SCANCODE_F7, kBiosF7},
+        {SDL_SCANCODE_F8, kBiosF8},   {SDL_SCANCODE_F9, kBiosF9},
+        {SDL_SCANCODE_F10, kBiosF10},
+    };
+    for (const auto &entry : functionCases) {
+        expectKey(entry.scancode, SDL_KMOD_NONE, entry.expectedWord,
+                  "egReadKey maps function keys to the original scan-only BIOS word");
+    }
+
+    resetInputState();
+    pushKey(SDL_SCANCODE_PRINTSCREEN);
+    require(kbhit() == 0,
+            "egReadKey ignores keys that had no original egame command meaning");
+
+    resetInputState();
+    pushMouseMotion();
+    require(kbhit() == 0,
+            "egReadKey ignores non-key SDL events like the original command buffer did");
+
+    expectKeypadStick(SDL_SCANCODE_KP_7, kStickLow, kStickLow,
+                      "keypad 7 maps to the original up-left virtual stick deflection");
+    expectKeypadStick(SDL_SCANCODE_KP_9, kStickHigh, kStickLow,
+                      "keypad 9 maps to the original up-right virtual stick deflection");
+    expectKeypadStick(SDL_SCANCODE_KP_1, kStickLow, kStickHigh,
+                      "keypad 1 maps to the original down-left virtual stick deflection");
+    expectKeypadStick(SDL_SCANCODE_KP_3, kStickHigh, kStickHigh,
+                      "keypad 3 maps to the original down-right virtual stick deflection");
+
+    resetInputState();
+    std::thread delayedKey([] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(kBlockingPushDelayMs));
+        pushKey(SDL_SCANCODE_ESCAPE);
+    });
+    require(egReadKey() == kBiosEscape,
+            "egReadKey preserves the original blocking BIOS read when no key is ready yet");
+    delayedKey.join();
+
+    resetInputState();
+    pushQuit();
+    require(kbhit() != 0 && egReadKey() == kBiosAltQ,
+            "SDL quit events feed the original Alt+Q command word");
+
+    resetInputState();
+    pushKey(SDL_SCANCODE_RETURN, SDL_KMOD_ALT);
+    require(kbhit() == 0 && g_fullscreenToggleCalls == kExpectedOneCall,
+            "Alt+Enter toggles fullscreen and is swallowed before the key ring");
+
+    resetInputState();
+    for (int idx = 0; idx < kRingOverflowAttempts; ++idx) {
+        pushKey(SDL_SCANCODE_ESCAPE);
+    }
+    require(kbhit() != 0, "kbhit drains a burst of events into the original-size key ring");
+    int readCount = 0;
+    while (kbhit() != 0) {
+        require(egReadKey() == kBiosEscape,
+                "overflow burst preserves the queued ESC BIOS word");
+        ++readCount;
+    }
+    require(readCount == kRingStoredCapacity,
+            "key ring drops overflow after the original one-empty-slot ring capacity");
+
+    restoreInt9Handler();
+    SDL_QuitSubSystem(SDL_INIT_EVENTS);
+    std::cout << "input_behavior_tests passed\n";
+    return 0;
+}
