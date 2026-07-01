@@ -143,8 +143,8 @@ static float s_vpW, s_vpH;   /* active 3D viewport size in window pixels (screen
  * z-buffer (GL_LEQUAL) resolves genuine occlusion painter's order alone got wrong
  * (a plane behind a building does not show through); the objects are still
  * collected and drawn in the original's painter's order — farthest-first by the
- * LOD-normalized origin depth (insertSortedObject's key), back-face culled, faces
- * in display-list order — so that surfaces a z-buffer cannot separate (paper-thin
+ * LOD-normalized origin depth (insertSortedObject's key), faces in display-list
+ * order — so that surfaces a z-buffer cannot separate (paper-thin
  * coplanar faces: jet fire on the engine, surf on the sea, deck markings) keep the
  * original look, the later draw winning at equal depth. */
 typedef struct {
@@ -152,7 +152,6 @@ typedef struct {
     int16 combined[9];
     long camBase, camX, camY; /* camera-space origin axes (screen-X, screen-Y, depth) */
     int shade, colorBase, curLod;
-    int dirX, dirY, dirZ; /* object facing, for the per-face back-face cull */
     int posZ;             /* object world altitude (0 = ground/sea), for wire ground test */
     int sortHi, sortLo;   /* normalized origin depth (sort key, farthest = largest) */
     int immediate;        /* flat ground/sea (posZ==0, no sort flag): drawn first/behind */
@@ -818,7 +817,7 @@ static void gl_submit(const R3DSubmit *o) {
     GlSub *r;
     int16 combined[9];
     long camBase, camTransX, camTransY, depth;
-    int shade, dirX, dirY, dirZ, shift, i;
+    int shade, shift, i;
 
     if (s_nSub >= GL_MAX_SUBS) {
         s_subOverflow++;
@@ -827,8 +826,7 @@ static void gl_submit(const R3DSubmit *o) {
 
     if (r3d_objTransformFar((char far *)o->mesh, o->yaw, o->pitch, o->roll,
                             o->posX, o->posY, o->posZ,
-                            combined, &camBase, &camTransX, &camTransY, &shade,
-                            &dirX, &dirY, &dirZ))
+                            combined, &camBase, &camTransX, &camTransY, &shade))
         return; /* frustum-culled */
 
     r = &s_subs[s_nSub];
@@ -840,9 +838,6 @@ static void gl_submit(const R3DSubmit *o) {
     r->shade = shade;
     r->colorBase = g_objColorBase;
     r->curLod = g_curLod;
-    r->dirX = dirX;
-    r->dirY = dirY;
-    r->dirZ = dirZ;
     r->posZ = o->posZ;
 
     /* Immediate = the no-z-buffer ground class (drawn first, painter's): a flat,
@@ -940,7 +935,6 @@ static void drawSub(const GlSub *r) {
     int i, shift;
     float cm[9], scaleDiv;
     static float vx_[R3DMESH_MAX_VERTS], vy_[R3DMESH_MAX_VERTS], vd_[R3DMESH_MAX_VERTS];
-    static uint8 backFacing[R3DMESH_MAX_NORMALS];
 
     fillPools(&pools);
     if (r3dmesh_decode((const uint8 *)r->model,
@@ -993,14 +987,6 @@ static void drawSub(const GlSub *r) {
     }
 
     if (l->form != MESH_FORM_MODEL) return;
-
-    /* Back-face cull matching the original (rotatePoint3d): a face is hidden when
-     * its gating normal faces away, dot(normal, objDir) < threshold. */
-    for (i = 0; i < l->nNormals; i++) {
-        MeshNormal *nrm = &l->normals[i];
-        long dot = (long)nrm->nx * r->dirX + (long)nrm->ny * r->dirZ + (long)nrm->nz * r->dirY;
-        backFacing[i] = (dot < (long)nrm->threshold) ? 1 : 0;
-    }
 
     /* The LOD coordinate scale (8 - 2*curLod) cancels in the x/y projection ratio
      * (camX/depth); applied here only to keep depths consistent for the perspective
@@ -1077,8 +1063,6 @@ static void drawSub(const GlSub *r) {
         int ring[R3DMESH_MAX_FACE_EDGES + 1];
         int n, k, cur, prev, deg;
         if (f->nEdges < 3) continue;
-        /* Back-face cull (original's per-face normal sign test). */
-        if (f->cullNormal < l->nNormals && backFacing[f->cullNormal]) continue;
         /* Colour filters from renderPrimitiveCommand: 0xff is transparent, and the
          * lowest-LOD flat ground tile (colorBase == 0x400) draws only its
          * colorByte==1 ground face — the rest of that tile's faces are junk. */

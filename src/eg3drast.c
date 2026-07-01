@@ -2318,7 +2318,7 @@ void far projectSceneObject(char far *model, int yaw, int pitch, int roll,
 int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
                             int posX, int posY, int posZ,
                             int16 *combined, long *camBase, long *camX, long *camY,
-                            int *shade, int *dirX, int *dirY, int *dirZ) {
+                            int *shade) {
     int i;
     g_objRenderMode = *(unsigned char far *)model;
     g_objTransform[1] = yaw;
@@ -2368,24 +2368,9 @@ int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
     *camX = JOIN32(g_camTransXLo, g_camTransXHi);
     *camY = JOIN32(g_camTransYLo, g_camTransYHi);
 
-    /* Object facing direction in camera space — the back-face cull axis, computed
-     * exactly as rotatePoint3d does (so a GPU backend can reproduce the original's
-     * per-face cull). dot(faceNormal, objDir) < threshold => the face is hidden. */
-    {
-        int rX = -g_objRelX, rY = -g_objRelY, rZ = -g_objTransform[0];
-        if (g_objHasRotation == 0) {
-            *dirX = rX;
-            *dirY = rZ;
-            *dirZ = rY;
-        } else {
-            int16 *m = g_objOrientMatrix;
-            transposeOrientationMatrix();
-            *dirX = dirRound(imul16(rY, m[6]) + imul16(rZ, m[3]) + imul16(rX, m[0]));
-            *dirY = dirRound(imul16(rY, m[7]) + imul16(rZ, m[4]) + imul16(rX, m[1]));
-            *dirZ = dirRound(imul16(rY, m[8]) + imul16(rZ, m[5]) + imul16(rX, m[2]));
-            transposeOrientationMatrix();
-        }
-    }
+    /* No object-facing/back-face-cull axis is produced here: back-face culling is a
+     * software-rasterizer concern (the display-list walk's g_vtxSignMask path). The
+     * GPU backend fills double-sided, so a GPU consumer needs only the transform. */
     return 0;
 }
 

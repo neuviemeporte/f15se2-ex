@@ -40,7 +40,7 @@ int far multiplyMatrix3x3Far(const int16 *matA, const int16 *matB, int16 *result
 int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
                             int posX, int posY, int posZ,
                             int16 *combined, long *camBase, long *camX, long *camY,
-                            int *shade, int *dirX, int *dirY, int *dirZ);
+                            int *shade);
 /* Widen the object frustum cull (transformAndCullObject) to a wider-than-4:3 view
  * cone, so widescreen 3D fetches the peripheral models the central frustum would
  * reject. The X/Y half-extents are scaled by numX/denX and numY/denY (window vs
