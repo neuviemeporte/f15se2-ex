@@ -14,6 +14,8 @@ bool input_preferGamepad(void) { return commData != 0 && commData->setupUseJoy !
 
 extern const int16 g_angleLut[];
 extern int rangeApprox(int deltaX, int deltaY);
+extern int16 *g_pageFront;
+extern int16 *g_pageBack;
 extern int sinMul(int angle, int value);
 extern int randomRange(int maxVal);
 extern unsigned signedRatio16(int numerator, int denominator);
