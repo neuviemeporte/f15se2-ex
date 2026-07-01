@@ -451,6 +451,14 @@ extern const int16 g_maneuverTable[3][8][8] = {
 /* g_projectiles: in-flight projectile/missile table (player rounds + threat
  * shots), 12 entries. g_viewSnapshotRing: 16-entry camera/view replay snapshot ring. */
 struct Projectile g_projectiles[12];
+/* Per-projectile fine (worldX-scale, i.e. mapX<<5) interpolated position, filled
+ * each render frame by objApplyInterp. The sim only carries the coarse uint16
+ * mapX/mapY (1 unit = 32 fine); drawing/tracking a missile from mapX<<5 makes it
+ * jump 32 fine units per step, which the director tracking-camera amplifies into
+ * a world "earthquake". These hold the sub-mapX-unit interpolated position so the
+ * model and the director bearing move smoothly. */
+int32 g_projInterpX[12];
+int32 g_projInterpY[12];
 int16 g_threatScopeRange = 4;
 int16 g_trackedEnemyIdx = -1;
 int16 frameTick = 0;

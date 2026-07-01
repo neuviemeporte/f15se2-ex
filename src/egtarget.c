@@ -257,8 +257,8 @@ skip_aam:
 
             if (g_projDepth > -0x20) {
                 drawWorldObject(sams[g_projectiles[idx].specIdx].modelId,
-                                (long)g_projectiles[idx].mapX << 5,
-                                (long)g_projectiles[idx].mapY << 5,
+                                g_projInterpX[idx],
+                                g_projInterpY[idx],
                                 g_projectiles[idx].alt,
                                 g_projectiles[idx].worldX, g_projectiles[idx].worldY,
                                 g_projectiles[idx].worldZ + 0x2000,
