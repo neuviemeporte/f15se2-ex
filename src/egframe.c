@@ -576,10 +576,6 @@ void initFrameRandom(void) {
 
 // ==== seg000:0x1971 ====
 void resetSimObjectLocks() {
-    int i;
-    for (i = 0; i < g_groundUnitCount; i++) {
-        g_simObjects[i].terrainColor = -1;
-    }
     g_trackedEnemyIdx = -1;
 }
 
@@ -800,7 +796,7 @@ void moveStuff() {
     moveNearFar(&g_planeScanCount, 2);
     moveNearFar(&g_planeTable, g_planeCount * 16);
     moveNearFar(&g_groundUnitCount, 2);
-    moveNearFar(g_simObjects, g_groundUnitCount * 36);
+    moveNearFar(g_simObjects, g_groundUnitCount * sizeof(struct SimObject));
     moveNearFar(g_shapeTargetCategory, 100);
     moveNearFar(g_tileKillTally, 100);
     moveNearFar(g_stringPool, 750);

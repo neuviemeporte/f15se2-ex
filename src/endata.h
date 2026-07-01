@@ -136,14 +136,6 @@ extern struct Game far *gameData;
 extern char hercFlag;
 extern uint8 joyAxisY;
 extern uint8 joyAxisX;
-extern int hasVgaMode;
-/* END graphics scratch buffers (allocBuffer in enmain). DOS used these as raw
- * VGA/aux segments; the native debrief draws through the SDL gfx layer instead,
- * so they are allocated but never read — candidates for removal. */
-extern void *gfxBufSeg;
-extern void *vgaBufSeg;
-extern void *vgaBufSeg2;
-extern int vgaBufOffset;
 extern int spriteBufSeg;
 extern int missionResult;
 extern int selectedMenuItem;

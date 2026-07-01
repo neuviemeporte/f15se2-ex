@@ -133,12 +133,6 @@ void gfx_videoShutdown(void) {
     SDL_Quit();
 }
 
-/* File-scope object used only for its address: FP_SEG of its far pointer
- * yields f15.exe's DGROUP segment, recorded in GfxState.f15DataSeg so the
- * const tables below (palettes, font tables) can be reached via far pointer
- * regardless of which process's DS is current at call time (Finding A). */
-static int dgroupAnchor;
-
 /* The graphics layer's shared state. In the original game this lived in the
  * MGRAPHIC overlay segment so it survived far-calls from start/egame/end into
  * the overlay's namespace; in the merged single-process build every caller is
@@ -754,6 +748,14 @@ void gfx_restoreFromImage(struct R2DImage *img, int dstPage, int srcX, int srcY,
     r2d_drawImage(img, srcX, srcY, w, h, ensurePage(dstPage), dstX, dstY, -1);
 }
 
+int gfx_readImagePixel(struct R2DImage *img, int x, int y) {
+    SDL_Surface *surf = r2d_imageSurface(img);
+    if (!surf || x < 0 || y < 0 || x >= surf->w || y >= surf->h) {
+        return -1;
+    }
+    return ((const Uint8 *)surf->pixels)[y * surf->pitch + x];
+}
+
 void gfx_drawSpriteOpaque(int handle, int srcX, int srcY, int dstPage,
                           int dstX, int dstY, int w, int h) {
     (void)dstPage; /* single back buffer */
@@ -1117,7 +1119,6 @@ int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx) {
     if (!wt || ch < 0x20) return 8;
     return wt[ch - 0x20];
 }
-int FAR CDECL gfx_getAuxBufSize(void) { return 0x1950; }
 void FAR CDECL gfx_setFadeSteps(int steps) {
     (void)steps;
     return;
@@ -1214,9 +1215,6 @@ void FAR CDECL gfx_complexRender(int bxArg, int dxArg, int cxArg, int siArg) {
 
     wi = siArg / 2; /* si is a byte offset; table is word-indexed */
     if (wi < 0 || wi + 8 > 11) return;
-    /* g_ladderGeom is a real const array in this single-binary build; read it
-     * directly (the old MK_FP(f15DataSeg, ...) far-pointer reconstruction is the
-     * dead 16-bit-DOS path). */
     base = (uint16)g_ladderGeom[wi];
     loY = (uint16)g_ladderGeom[wi + 4];
     hiY = (uint16)g_ladderGeom[wi + 8];
@@ -1364,12 +1362,4 @@ void gfx_initState(void) {
     s->modeFlag = 1;
     s->dacPhase = 0x4d2; /* MGRAPHIC data-seg 0x1ccc seed (dacCycle phase) */
     /* rowOffsetsReady is zero by default (file-scope global). */
-
-    /* Record f15's DGROUP segment so the gfx const tables (palettes, font
-     * tables) remain reachable via far pointer regardless of the caller's DS
-     * (Finding A). */
-    {
-        void FAR *anchorFp = (void FAR *)&dgroupAnchor;
-        s->f15DataSeg = FP_SEG(anchorFp);
-    }
 }

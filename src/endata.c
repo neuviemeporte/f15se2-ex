@@ -4243,13 +4243,9 @@ int totalFlightRecords;
 char slotInfoTable[1194];
 uint16 cursorX;
 uint16 cursorY;
-int hasVgaMode;
 int spriteBufSeg;
 int g_dbiconsBuf;
 struct R2DImage *g_enBacking;
-void *vgaBufSeg;
-int vgaBufOffset;
-void *vgaBufSeg2;
 
 /* Theater sprite filename pointer table (8 entries) */
 const char *theaterSprFiles[] = {
@@ -4484,13 +4480,12 @@ uint8 bssPad179[4] = {0};
 uint8 worldRouteTable[516] = {0};
 uint8 animExitFlag = 0;
 int16 worldWaypointCount = 0;
-uint8 worldSamTable[720] = {0};
+uint8 worldSamTable[20 * sizeof(struct SimObject)] = {0};
 uint8 worldUnitFlags[102] = {0};
 int16 menuItemUnused = 0;
 int16 worldGridSize = 0;
 uint16 worldSamCount = 0;
 int16 worldRouteCount = 0;
-void *gfxBufSeg = nullptr;
 uint8 gfxBufPad[512] = {0};
 /* One contiguous 0x600 buffer backing both the flightTimeTable and flightRecords
  * views (declared in endata.h). Loaded as a unit by readWorldData. */

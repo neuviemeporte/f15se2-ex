@@ -606,11 +606,6 @@ char aTooMuchTileData[] = "Too much tile data";
 char aPressKeyWhenReady[] = "  Press a key when ready";
 char aBadGridFileFormat_[] = "Bad Grid file format.";
 
-/* Saved original INT 0 (divide-by-zero) interrupt vector: offset in
- * g_savedDivZeroVecOff, segment in g_savedDivZeroVecSeg. installDivZeroHandler records it before
- * pointing the vector at the in-game stub; installDivZeroVector restores it. */
-int16 g_savedDivZeroVecOff = 0;
-int16 g_savedDivZeroVecSeg = 0;
 
 /* Working state for the egseg1 midpoint-subdivide line clipper. The two
  * endpoints (P1, P2) and the midpoint accumulator each carry X and Y as
@@ -2055,8 +2050,7 @@ int16 g_damageTakenFlag;
 int16 g_threatRefHead;
 int16 g_nearestThreatRange;
 
-/* gameData: far pointer to the shared Game struct, set at startup.
- * g_biosPixelX/g_biosPixelY: tacmap screenX/screenY scratch. */
+/* gameData: far pointer to the shared Game struct, set at startup. */
 int16 g_finalThreatScore;
 int16 g_tileEntryCount;
 int16 g_targetEntityCount;
@@ -2204,9 +2198,6 @@ int16 g_gunHits;
 int16 g_thrust;
 /* regs: shared int86/int86x register union for INT 10h/16h calls. */
 union REGS regs;
-uint8 g_biosPixelPage;
-int16 g_biosPixelX;
-int16 g_biosPixelY;
 int16 g_unusedEventHist1;
 int16 g_wreckAlt;
 uint8 g_shapeTargetCategory[UNIT_STATE_COUNT];

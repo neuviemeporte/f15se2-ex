@@ -26,10 +26,6 @@ typedef struct {
     uint8 fillColor;                      /* replaces g_fillColor   */
     uint8 dacCounter;                     /* replaces g_dacCounter  */
     uint8 rowOffsetsReady;                /* replaces g_rowOffsetsReady */
-    uint16 f15DataSeg;                    /* FP_SEG of f15.exe's DGROUP — see Finding A.
-                                           * Lets gfx functions reach their own const tables
-                                           * (palettes, font tables) via far pointer when a
-                                           * child far-calls in with DS = the child's DGROUP. */
     uint16 dacPhase;                      /* MGRAPHIC data-seg 0x1ccc — the DAC fire-cycle phase
                                            * counter advanced by gfx_dacCycle (slot 0x2e) each
                                            * frame (LCG x*5+1); seeded 0x4d2 in gfx_initState. */

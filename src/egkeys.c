@@ -22,7 +22,6 @@
 
 /* Private helpers for this translation unit. */
 void selectMissile();
-void disableTextBlink(void);
 
 // ==== seg000:0xd260 ====
 void keyDispatch(uint16 scanCode) {
@@ -34,9 +33,6 @@ void keyDispatch(uint16 scanCode) {
         goto end_dispatch;
 
     switch (scanCode) {
-    case SCAN_ALT_Y:
-        disableTextBlink();
-        break;
     case SCAN_R:
         g_radarScopeRange++;
         if (g_radarScopeRange > 2)
@@ -383,11 +379,4 @@ void exitSlowMotion() {
     if (g_slowMotionMode == 2) {
         g_slowMotionMode = 1;
     }
-}
-
-// ==== seg000:0xdbe0 ====
-void disableTextBlink(void) {
-    regs.h.ah = 0;
-    regs.h.al = 0x8D;
-    int86(0x10, &regs, &regs);
 }

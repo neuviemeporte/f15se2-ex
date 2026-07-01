@@ -557,13 +557,15 @@ void drawNumber(int value, int x, int y, int color) {
 }
 
 // ==== seg000:0xa1b1 ====
+/* Recover the tac-scope terrain colour under a moving blip so callers can erase
+ * the blip by re-plotting it (see plotMapObject/targetLock). The DOS original read
+ * the live VGA page via INT 10h AH=0Dh; we sample g_eg2dBacking, the clean cached
+ * scope image (redrawTacMap captures it before per-frame blips are drawn), whose
+ * 320x200 pixels sit at their screen coords over the scope-clip region (24..96,
+ * 112..168). Backend-agnostic: on GL this erase-plot is never presented, but the
+ * sample stays valid. */
 int readScreenPixel(int screenX, int screenY) {
-    regs.h.ah = 0x0D;
-    g_biosPixelX = screenX;
-    g_biosPixelY = screenY;
-    g_biosPixelPage = 0;
-    int86(0x10, &regs, &regs);
-    return regs.h.al;
+    return gfx_readImagePixel(g_eg2dBacking, screenX, screenY);
 }
 
 // ==== seg000:0xa1e4 ====

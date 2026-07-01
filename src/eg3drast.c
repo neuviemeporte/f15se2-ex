@@ -54,7 +54,6 @@ extern int16 g_rotSinYaw, g_rotCosYaw;
 extern int16 g_primCoordPtr, g_primCountPtr, g_primDataBase;
 extern uint8 g_primRunCount, g_faceVtxCount, g_vtxSlotPhase, g_unusedClipFlag, g_edgeRunCount;
 extern int16 g_savedPrimVtxScale;
-extern int16 g_savedDivZeroVecOff, g_savedDivZeroVecSeg;
 /* Scene-pipeline globals (defined in egdata.c). g_camTransX/g_camTransY are the
  * lo/hi words of the object-origin camera-space accumulators; g_objDir the
  * rotated object facing; g_rotInputX a per-point scratch. */
@@ -2437,10 +2436,3 @@ int far renderSortedListFar(void) {
     g_sortedObjCount = 0;
     return 0;
 }
-
-/* ===================================================================== */
-/* Divide-overflow vector install/restore. sdiv32by16/udiv32by16 saturate  */
-/* explicitly, so an INT 0 divide-overflow handler is not needed: no-op.   */
-/* ===================================================================== */
-void installDivZeroHandler(void) {}
-void installDivZeroVector(void) {}

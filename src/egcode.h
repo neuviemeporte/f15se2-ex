@@ -27,8 +27,6 @@ void picBlit(SDL_IOStream *handle, int unk);
 void pascal shiftLongLeftInPlace(int count, long *ptr);
 void pascal shiftLongRightInPlace(int count, long *ptr);
 int far drawPolygonOutline(int fillColor, int pointCount, int *points, int edgeColor);
-void installDivZeroHandler();
-void installDivZeroVector();
 int far drawFlatHorizon(int);
 void storeObjTransformByOpcode();
 int far advanceModelPointerLod();

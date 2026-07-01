@@ -182,8 +182,7 @@ void drawNearestTileObject(uint32 coord1, uint32 coord2, uint32 coord3) {
         g_objRelX = g_curTileEntry->x - g_viewPosX;
         g_objRelY = g_curTileEntry->y - g_viewPosY;
         g_objTransform[0] = g_curTileEntry->z - g_viewPosZ;
-        FP_OFF(g_modelStreamPtr)
-        ++;
+        g_modelStreamPtr++;
         *(uint8 *)&g_objRenderMode = 0;
         g_objDistance = 0;
         advanceModelPointerLod();

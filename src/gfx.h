@@ -48,6 +48,9 @@ void gfx_captureToImage(struct R2DImage *img, int srcPage, int srcX, int srcY,
 /* Copy a w x h rect from `img` (srcX,srcY) into page `dstPage` at (dstX,dstY). */
 void gfx_restoreFromImage(struct R2DImage *img, int dstPage, int srcX, int srcY,
                           int dstX, int dstY, int w, int h);
+/* Read one palette-index pixel from `img` at (x,y); -1 if img is NULL or (x,y) is
+ * out of bounds. Lets game code sample a cached surface without touching SDL. */
+int gfx_readImagePixel(struct R2DImage *img, int x, int y);
 /* Opaque copy of a w x h rect from sprite buffer `handle` (srcX,srcY) into page
  * `dstPage` at (dstX,dstY). For asset sheets drawn opaquely (e.g. the debrief
  * popup icons), as distinct from gfx_blitSprite's transparent (skip-index-0) blit. */
@@ -86,7 +89,6 @@ void FAR CDECL gfx_copyRect(int srcPage, uint16 srcX, uint16 srcY, int dstPage, 
 void FAR CDECL gfx_dacAnimate();                                                                                                  /* slot 0x2c: DAC palette animation */
 void FAR CDECL gfx_dacCycle();                                                                                                    /* slot 0x2e: DAC fire/colour-cycle animation */
 int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx);                                                                             /* slot 0x2f: setup font metrics */
-int FAR CDECL gfx_getAuxBufSize();                                                                                                /* slot 0x31: getAuxBufSize */
 int FAR CDECL gfx_getRowOffset(int y);                                                                                            /* slot 0x3a: returns y*320 */
 /* dseg:0xbe4 */
 void FAR CDECL gfx_setMode13(void);          /* slot 0x3c: switch to 320x200 (lo-res) */

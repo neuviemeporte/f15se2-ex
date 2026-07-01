@@ -58,11 +58,6 @@ int egame_main(void) {
         restoreJoystickData(commData->joyData);
     }
     restoreCbreakHandler();
-    if (exitCode == 0) {
-        regs.h.ah = 0;
-        regs.h.al = 3;
-        int86(IRQ_VIDEO, &regs, &regs);
-    }
     return exitCode;
 }
 

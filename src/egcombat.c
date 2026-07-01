@@ -135,7 +135,6 @@ void spawnEnemyAircraft(int slot, int objType) {
     g_simObjects[slot].flags.w |= 0x403;
     g_simObjects[slot].objType = objType;
     g_simObjects[slot].timer = (int16)(((long)aircraftTypes[spec].range << 11) * (long)g_frameRateScaling / (long)aircraftTypes[spec].maxSpeed);
-    g_simObjects[slot].terrainColor = readMapPixelColor(g_planeTable.planes[objType].mapX, g_planeTable.planes[objType].mapY);
     if (g_padlockAircraft == -1) {
         g_simObjects[slot].flags.b[1] &= 0xfe;
     }
