@@ -6,9 +6,7 @@
 #include <cstdarg>
 #include <cstring>
 #include <string>
-#include <sys/mman.h>
-#include <sys/wait.h>
-#include <unistd.h>
+#include "posix_test_compat.h"
 
 extern int fileReadRaw(SDL_IOStream *io, void *dst, int count);
 extern int readFile(SDL_IOStream *io, int count, int bufOffset);

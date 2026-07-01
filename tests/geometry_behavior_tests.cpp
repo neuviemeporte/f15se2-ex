@@ -10,8 +10,7 @@
 #include <iostream>
 #include <utility>
 
-#include <sys/mman.h>
-#include <unistd.h>
+#include "posix_test_compat.h"
 
 extern uint32 scaleCoordToLod(int level, uint32 coord);
 extern void projectObjects(int heading, int rangeGate, long worldX, long worldY, long worldZ);

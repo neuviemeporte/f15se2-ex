@@ -2,8 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <sys/wait.h>
-#include <unistd.h>
+#include "posix_test_compat.h"
 
 // Include the C library headers before replacing abort(), so the macro does not
 // rewrite system declarations while vgapal.c is pulled into this test unit.

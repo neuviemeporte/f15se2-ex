@@ -5,8 +5,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <cstdarg>
-#include <sys/wait.h>
-#include <unistd.h>
+#include "posix_test_compat.h"
 
 void game_init(int16 showIntro);
 int f15_program_main(int argc, char *argv[]);

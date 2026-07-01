@@ -8,7 +8,6 @@
 void projectSceneObject(char *, int, int, int, int, int, int) __attribute__((weak));
 #define TEST_WEAK_STUB __attribute__((weak))
 #else
-extern void projectSceneObject(char *, int, int, int, int, int, int);
 #define TEST_WEAK_STUB
 #endif
 
@@ -71,8 +70,7 @@ void r3d_submit(const R3DSubmit *sub) {
                           sub->posX, sub->posY, sub->posZ);
     }
 #else
-    projectSceneObject(reinterpret_cast<char *>(sub->mesh), sub->yaw, sub->pitch, sub->roll,
-                      sub->posX, sub->posY, sub->posZ);
+    (void)sub;
 #endif
 }
 void r3d_endScene(void) {}

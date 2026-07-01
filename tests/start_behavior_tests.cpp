@@ -12,10 +12,10 @@
 #include <cstring>
 #include <iostream>
 #include <string>
-#include <sys/wait.h>
 #include <tuple>
-#include <unistd.h>
 #include <vector>
+
+#include "posix_test_compat.h"
 
 extern char *formatGridRef(int16 wx, int16 wy, int16 theater);
 extern int lookupGridCell(int16 level, int16 col, int16 row);

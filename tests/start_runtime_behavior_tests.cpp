@@ -7,8 +7,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <cstddef>
-#include <sys/wait.h>
-#include <unistd.h>
+#include "posix_test_compat.h"
 
 namespace {
 

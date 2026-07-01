@@ -8,8 +8,7 @@
 #include <cstdarg>
 #include <cstdlib>
 #include <iostream>
-#include <sys/wait.h>
-#include <unistd.h>
+#include "posix_test_compat.h"
 
 void FAR CDECL gfx_setCurPageSegReg(uint16 seg);
 void FAR CDECL gfx_getCurPage(int page);

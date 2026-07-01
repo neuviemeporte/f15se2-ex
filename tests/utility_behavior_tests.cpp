@@ -7,10 +7,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <sys/wait.h>
 #include <tuple>
-#include <unistd.h>
 #include <utility>
+
+#include "posix_test_compat.h"
 
 extern int randMul(uint16 arg);
 extern int approxDistance(int dx, int dy);

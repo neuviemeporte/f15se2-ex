@@ -6,8 +6,7 @@
 #include <sstream>
 #include <string>
 #include <csignal>
-#include <sys/wait.h>
-#include <unistd.h>
+#include "posix_test_compat.h"
 #include <vector>
 
 int vgapal_program_main(int argc, char *argv[]);

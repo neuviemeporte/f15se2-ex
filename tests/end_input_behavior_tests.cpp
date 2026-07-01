@@ -7,8 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <sys/wait.h>
-#include <unistd.h>
+#include "posix_test_compat.h"
 
 extern void waitForKeyOrJoy(void);
 

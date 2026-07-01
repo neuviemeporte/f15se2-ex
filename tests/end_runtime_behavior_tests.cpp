@@ -7,8 +7,7 @@
 
 #include <cstdlib>
 #include <iostream>
-#include <sys/wait.h>
-#include <unistd.h>
+#include "posix_test_compat.h"
 
 void enInitGraphics(void);
 int end_main(void);

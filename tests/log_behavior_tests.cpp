@@ -5,8 +5,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
-#include <sys/wait.h>
-#include <unistd.h>
+#include "posix_test_compat.h"
 
 namespace {
 

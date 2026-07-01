@@ -12,6 +12,8 @@ extern void render3DView(int camX, int camY, int camZ, long worldX, long worldY,
 extern void waitFrameSync(int frames);
 extern void loadColorPalette(int idx);
 
+char aRegn_xxx[] = "regn.xxx";
+
 namespace {
 
 // Behavior-sensitive constants are named here or explained at the use site.
