@@ -2,28 +2,24 @@
 #define R2D_H
 
 /*
- * 2D overlay renderer seam (see docs/render-2d-overlay.md).
+ * 2D overlay renderer seam.
  *
  * The 2D overlay (HUD, sprites, text, menus, cockpit) is submitted to the *same*
  * renderer as the in-flight 3D path (r3d.h) — there is no separate 2D backend.
  *
- * Step 1 (this file's current scope) confines only the present/compose boundary
- * behind the renderer: the game still draws into the 320x200 paletted page
- * surfaces (gfx_impl.c), and this seam owns *how that virtual overlay page reaches
- * the window*. The software backend presents it through SDL_Renderer (letterbox);
- * the GL backend composites it as a flat textured quad over the GL 3D
- * (r3dgl_present). The active 2D backend always matches the active 3D backend:
- * the GL backend owns the window, so the two must agree.
- *
- * Later steps move the page model -> image/primitive submission + a hidden back
- * buffer and add virtual-vs-real resolution + oversized submission for widescreen
- * (docs/render-2d-overlay.md, Steps 2-7).
+ * This seam owns the present/compose boundary and the image/primitive submission
+ * path. The game draws into the 320x200 paletted page surfaces (gfx_impl.c), and
+ * the seam owns *how that virtual overlay page reaches the window*. The software
+ * backend presents it through SDL_Renderer (letterbox); the GL backend composites
+ * it as a flat textured quad over the GL 3D (r3dgl_present). The active 2D backend
+ * always matches the active 3D backend: the GL backend owns the window, so the two
+ * must agree.
  */
 
 struct SDL_Surface;
 
 /*
- * Virtual-vs-real resolution (docs/render-2d-overlay.md, Step 2).
+ * Virtual-vs-real resolution.
  *
  * 2D is authored in a virtual coordinate box (320x200 in flight, 640x350 for
  * the hi-res title). R2DMapping is the uniform-scale + centring placement of
@@ -51,14 +47,13 @@ typedef struct {
 void r2d_computeMapping(int virtW, int virtH, int winW, int winH, R2DMapping *out);
 
 /*
- * Image submission API (docs/render-2d-overlay.md, Step 3).
+ * Image submission API.
  *
  * An R2DImage is an owned 2D image (sprite sheet, decoded PIC, captured screen
- * region) the renderer can sample. Today the software realization is an INDEX8
- * SDL_Surface and drawing is a direct clipped blit (no projection); a later GPU
- * backend realizes images as textures and draws them as ortho quads. Callers
- * submit *images and rects*, never "textured quad" — the realization is the
- * backend's (docs/render-2d-overlay.md, "one renderer, 2D submission path").
+ * region) the renderer can sample. The software realization is an INDEX8
+ * SDL_Surface and drawing is a direct clipped blit (no projection); a GPU backend
+ * realizes images as textures and draws them as ortho quads. Callers submit
+ * *images and rects*, never "textured quad" — the realization is the backend's.
  */
 typedef struct R2DImage R2DImage;
 
@@ -67,7 +62,7 @@ R2DImage *r2d_registerImage(int w, int h);
 
 /* Create a w x h image holding a snapshot of the (x,y,w,h) region of `src`.
  * Used for the cockpit/popup save-restore (capture a screen region, draw it back
- * later) — the page->page copy of the page-model era. NULL on failure. */
+ * later). NULL on failure. */
 R2DImage *r2d_captureImage(struct SDL_Surface *src, int x, int y, int w, int h);
 
 /* The image's backing surface, for code that fills it directly (the PIC decoder
@@ -93,24 +88,31 @@ void r2d_blit(struct SDL_Surface *src, int srcX, int srcY,
               int w, int h, int key);
 
 /*
- * Native 2D vector layer (docs/render-2d-overlay.md, Step 4).
+ * Native 2D vector layer.
  *
- * The HUD/MFD vector primitives (lines, pitch-ladder, symbology) are *submitted*
- * to the renderer rather than rasterized into the 320x200 page. The software
- * backend realizes a submission by rasterizing into the page (the low-end/DOS
- * path, pixel-identical to before, via the registered callbacks below). The GL
- * backend records the submission in 320-space and replays it at the **native
- * window resolution** over the composited frame, with a line width relative to
- * the native resolution — a crisp vector HUD instead of an upscaled low-res
- * image. Same call sites, the realization is the backend's.
+ * The HUD/MFD primitives (lines, pitch-ladder, symbology) and sprites are
+ * *submitted* to the renderer rather than rasterized into the 320x200 page. The
+ * software backend realizes a submission by rasterizing into the page (the
+ * low-end/DOS path, via the registered callbacks below). The GL backend records
+ * the submission in 320-space and replays it at the **native window resolution**
+ * over the composited frame — a crisp vector HUD and sharp sprites instead of an
+ * upscaled low-res image. Lines, points and images share ONE ordered stream so
+ * they replay in submission order (a sprite drawn after a line lands over it).
+ * Same call sites, the realization is the backend's.
  */
 typedef struct {
-    short x1, y1, x2, y2; /* absolute 320-space, already clipped to the page */
-    unsigned char color;  /* VGA palette index */
-    unsigned char kind;   /* R2D_PRIM_LINE / R2D_PRIM_POINT */
-} R2DVectorPrim;
+    unsigned char kind;   /* R2D_PRIM_LINE / R2D_PRIM_POINT / R2D_PRIM_IMAGE */
+    unsigned char color;  /* VGA palette index (line / point) */
+    short x1, y1, x2, y2; /* line/point: absolute 320-space, clipped to the page.
+                           * image: (x1,y1) is the destination corner. */
+    /* image submission (kind == R2D_PRIM_IMAGE): the sub-rect of `img` to draw. */
+    R2DImage *img;
+    short srcX, srcY, imgW, imgH;
+    short key;            /* <0 opaque; >=0 transparent on that index (sprites: 0) */
+} R2DOverlayPrim;
 #define R2D_PRIM_LINE  0
 #define R2D_PRIM_POINT 1
+#define R2D_PRIM_IMAGE 2
 
 /* Marks the start of a GL flight frame's 2D overlay (called from the 3D backend
  * once the main 3D view begins). Only between this and the present do 2D
@@ -129,12 +131,13 @@ int r2d_vectorActive(void);
 void r2d_submitLine(int x1, int y1, int x2, int y2, int color);
 void r2d_submitPoint(int x, int y, int color);
 
-/* Force the next line/point submissions to rasterize into the page (the software
- * path) instead of recording for the GL native-on-top replay. Set around an
- * in-flight MFD region (the radar scope) whose lines must compose *under* their
- * blip sprites in submission order — the native vector layer always draws last,
- * so its radar lines would otherwise land over the icons. No effect in software
- * (it already rasterizes). Bracket the region: set 1 before, 0 after. */
+/* Force the next line/point/image submissions to rasterize into the page (the
+ * software path) instead of recording for the GL native-on-top replay. Set around
+ * an in-flight MFD region (the radar scope) that must compose entirely in the page
+ * so its grid lines land under the blip icons in the original submission order,
+ * rather than the native overlay layer (which always draws last) reordering them.
+ * No effect in software (it already rasterizes). Bracket the region: 1 before,
+ * 0 after. */
 void r2d_setForceRaster(int on);
 
 /* The software backend (gfx_impl.c) registers how it rasterizes a submitted
@@ -142,19 +145,48 @@ void r2d_setForceRaster(int on);
 void r2d_registerSoftwarePrims(void (*line)(int x1, int y1, int x2, int y2, int color),
                                void (*point)(int x, int y, int color));
 
-/* The recorded vector primitives for the current frame, for the GL backend to
- * replay. Count via *count. */
-const R2DVectorPrim *r2d_vectorPrims(int *count);
+/*
+ * Image (sprite) submission.
+ *
+ * The UI/HUD sprites are *submitted* to the renderer rather than the call site
+ * blitting straight into a page. Draw the (srcX,srcY,w,h) sub-rect of `img` at
+ * (dstX,dstY); key>=0 skips matching source pixels (sprite transparency,
+ * conventionally 0), key<0 is opaque. On a GL flight frame the submission records
+ * into the ordered overlay stream for a textured-quad replay; otherwise the
+ * software backend realizes it as a clipped blit into the back buffer. Same seam
+ * as the lines, so sprites and vectors stay ordered. */
+void r2d_submitImage(R2DImage *img, int srcX, int srcY, int w, int h,
+                     int dstX, int dstY, int key);
+
+/* The software backend registers how it rasterizes a submitted image into the
+ * back buffer (r2d need not own the page surface). */
+void r2d_registerSoftwareImage(void (*image)(R2DImage *img, int srcX, int srcY,
+                                             int w, int h, int dstX, int dstY, int key));
+
+/* The recorded overlay primitives (lines, points, images) for the current frame,
+ * in submission order, for the GL backend to replay. Count via *count. */
+const R2DOverlayPrim *r2d_overlayPrims(int *count);
 
 /* Called by the backend after replaying the layer at present: clears it so each
- * frame composes a fresh layer (a frame that submits no lines — e.g. after a
- * view change — then correctly shows none, with no stale carry-over). */
+ * frame composes a fresh layer (a frame that submits nothing — e.g. after a view
+ * change — then correctly shows none, with no stale carry-over). */
 void r2d_vectorMarkPresented(void);
+
+/* Per-image backend texture cache: the GL backend stashes the INDEX8->RGBA
+ * texture it built for an image plus the palette generation it was built for, so
+ * a static sprite sheet uploads once and re-uploads only when the palette changes.
+ * The handle is opaque to r2d (a GLuint on the GL backend); 0 means "none". */
+unsigned int r2d_imageCacheTex(R2DImage *img);
+int r2d_imageCacheGen(R2DImage *img);
+void r2d_imageSetCache(R2DImage *img, unsigned int tex, int gen);
+
+/* Register a hook run when an image is released, so the backend can drop the
+ * cached texture it created for it. */
+void r2d_registerImageDestroy(void (*hook)(R2DImage *img));
 
 /* Present the virtual overlay page (its w/h are the virtual size) to the window
  * through the active backend. shakeOffset is the explosion screen-shake in
- * virtual pixels (0-3), applied as a horizontal present offset (Step 6 moves it
- * to a scene shake). */
+ * virtual pixels (0-3), applied as a horizontal present offset. */
 void r2d_present(struct SDL_Surface *page, int shakeOffset);
 
 /* Name of the active 2D backend ("opengl1" or "software"); follows the 3D

@@ -7,9 +7,9 @@
  * audio thread. Digitized voice cues (F15DGTL.BIN) are mixed in as raw PCM.
  *
  * The game-facing audio_* slot ABI (slot.h) maps by name onto the model's
- * sound_driver_* entry points; see docs/audio-sdl.md for the table. The audio
- * thread runs the sequencer at 60 Hz (the game tick rate); a single mutex guards
- * the driver/asopl state it shares with the game thread.
+ * sound_driver_* entry points. The audio thread runs the sequencer at 60 Hz (the
+ * game tick rate); a single mutex guards the driver/asopl state it shares with
+ * the game thread.
  */
 
 #include <SDL3/SDL.h>

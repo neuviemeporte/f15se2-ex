@@ -73,8 +73,8 @@ void drawCockpit() {
     strcpy(regnStr, scenarioPlh[gameData->theater]);
     loadRegion3D();
     {
-        /* Verify the Step-2 mesh decoder against the just-loaded world models,
-         * once per process (see docs/render-3d-backend.md). */
+        /* Verify the mesh decoder against the just-loaded world models, once
+         * per process. */
         static int meshSelfTestDone = 0;
         if (!meshSelfTestDone) {
             meshSelfTestDone = 1;
@@ -93,11 +93,9 @@ void drawCockpit() {
     } else {
         openBlitClosePic("cockpit.PIC", 1);
     }
-    /* Snapshot the clean lower cockpit into the save-under backing image (Step 5;
-     * was a copy into the offscreen page). The cockpit strip / scope panel /
-     * map-marker save-unders restore their regions from here. (The former page-1->0
-     * seed copy is gone: with the single back buffer the cockpit PIC already landed
-     * in the one buffer.) */
+    /* Snapshot the clean lower cockpit into the save-under backing image. The
+     * cockpit strip / scope panel / map-marker save-unders restore their regions
+     * from here. */
     if (!g_eg2dBacking) g_eg2dBacking = gfx_allocImage(320, 200);
     gfx_captureToImage(g_eg2dBacking, 1, 0, 96, 0, 96, 320, 104);
 }

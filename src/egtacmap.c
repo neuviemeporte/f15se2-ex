@@ -422,7 +422,7 @@ void drawClippedLineRegion(int x1, int y1, int x2, int y2, int clipLeft, int cli
     g_lineY2 = y2 - clipTop;
     drawClipLineGlobal();
     gfx_nop23();
-    (void)drawBothPages; /* the second page was the double buffer; single buffer now */
+    (void)drawBothPages; /* single back buffer, so there is no second page */
     g_clipMaxX = 319;
     g_clipMaxY = 199;
     gfx_setBlitOffset(0);

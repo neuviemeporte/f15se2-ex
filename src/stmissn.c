@@ -197,9 +197,8 @@ void animateArm(int a, int b) {
     armPosition = b;
     spriteIdx = armSpriteIndex[b];
     if (a == -1) {
-        /* Snapshot the clean briefing into the save-under backing image (Step 5;
-         * was a copy into the page-2 clean backup). The arm-cursor erase below
-         * restores from here. */
+        /* Snapshot the clean briefing into the save-under backing image. The
+         * arm-cursor erase below restores from here. */
         if (!g_stBacking) g_stBacking = gfx_allocImage(SCREEN_WIDTH, SCREEN_HEIGHT);
         gfx_captureToImage(g_stBacking, *page1NumPtr, 0, 0, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     }

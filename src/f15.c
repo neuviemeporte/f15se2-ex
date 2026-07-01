@@ -51,14 +51,14 @@ void game_init(const int16 showIntro) {
     r3d_init();
 
     /* F15.SPR (radar/tac-map/HUD sprite sheet) lives in a sprite-buffer image, not
-     * a page (Step 5.3c-pre). Allocated once here; START decodes f15.spr into it and
-     * EGAME blits from it via gfxBufPtr (the handle). */
+     * a page. Allocated once here; START decodes f15.spr into it and EGAME blits
+     * from it via gfxBufPtr (the handle). */
     commData->gfxInitResult = (int16)gfx_allocSpriteBuf();
 }
 
-/* In-process entry points for the former START.EXE / EGAME.EXE / END.EXE.
- * These used to be separate programs launched via dos_runProgram(); they are
- * now linked into this single executable and called directly. */
+/* In-process entry points for START.EXE / EGAME.EXE / END.EXE — three separate
+ * DOS programs in the original, here linked into this single executable and
+ * called directly. */
 int start_main(void);
 int egame_main(void);
 int end_main(void);

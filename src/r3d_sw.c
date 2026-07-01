@@ -1,10 +1,10 @@
-/* Software 3D backend (see docs/render-3d-backend.md) — the low-end / DOS path.
+/* Software 3D backend — the low-end / DOS path.
  *
- * Step 1 is a *move*, not a rewrite: beginScene/submit/endScene wrap the
- * existing eg3drast/eg3dmap entry points verbatim, so the scene stays
- * pixel-identical while the rest of the game stops calling them directly. The
- * painter's depth sort, shared-vertex precompute and raw-display-list rasterizer
- * remain software-backend internals (integer Q15, no FPU) for the 386+ target. */
+ * beginScene/submit/endScene wrap the eg3drast/eg3dmap entry points, so the scene
+ * is pixel-identical while the rest of the game routes through the backend seam
+ * rather than calling them directly. The painter's depth sort, shared-vertex
+ * precompute and raw-display-list rasterizer are software-backend internals
+ * (integer Q15, no FPU) for the 386+ target. */
 #include "r3d.h"
 #include "eg3dmap.h"
 #include "egcode.h"

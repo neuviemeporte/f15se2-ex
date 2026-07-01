@@ -977,7 +977,7 @@ void showEventPopup(void) {
         popupY = mapToScreenY(flightRecords[curRecordIdx].mapY) + mapViewY1 - 40;
     }
     /* Save what's behind the popup into the backing image, then draw the popup icon
-     * opaquely from the dbicons sprite-buffer image (Step 5; both were page copies). */
+     * opaquely from the dbicons sprite-buffer image. */
     if (!g_enBacking) g_enBacking = gfx_allocImage(LOGICAL_WIDTH, LOGICAL_HEIGHT);
     gfx_captureToImage(g_enBacking, 0, popupX, popupY, 0, POPUP_SAVE_Y, POPUP_WIDTH, POPUP_HEIGHT);
     gfx_drawSpriteOpaque(g_dbiconsBuf, popupSpriteX[spriteIdx], popupSpriteY[spriteIdx], 0, popupX, popupY, POPUP_WIDTH, POPUP_HEIGHT);

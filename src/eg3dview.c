@@ -28,8 +28,8 @@ void render3DView(int camX, int camY, int camZ, long worldX, long worldY, long w
     g_viewParams[8] = clipTop + clipHeight - 1;
     g_viewParams[9] = clipLeft;
     g_viewParams[10] = clipLeft + clipWidth - 1;
-    /* The view descriptor's page field is inert now — all 3D composites into the
-     * single hidden back buffer (Step 5.3c). */
+    /* The view descriptor's page field is inert — all 3D composites into the
+     * single hidden back buffer. */
     *g_viewParams = 0;
     g_viewParams[2] = (unsigned char)((char *)colorLut)[g_skyColorIndex & 0xFF];
     {

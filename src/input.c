@@ -1,12 +1,12 @@
 /*
  * input.c - single SDL event pump and shared BIOS-style key ring.
  *
- * Replaces the two near-duplicate event loops the port used to carry (the
- * flight ISR replacement in eginput.c and the MISC overlay keyboard in
- * shared/ovlimpl.c). Both the original DOS pieces hooked the keyboard hardware
- * (INT 09h / INT 16h) and read raw scancodes; here a single SDL_PollEvent drain
- * fills one BIOS-style key ring (AH = scan code, AL = ASCII, matching what INT
- * 16h returned and what the game dispatch compares against).
+ * The single SDL event pump for the whole game; the flight-loop keyboard
+ * (eginput.c) and the MISC overlay keyboard (shared/ovlimpl.c) are thin wrappers
+ * over it. The original DOS pieces hooked the keyboard hardware (INT 09h / INT
+ * 16h) and read raw scancodes; here a single SDL_PollEvent drain fills one
+ * BIOS-style key ring (AH = scan code, AL = ASCII, matching what INT 16h returned
+ * and what the game dispatch compares against).
  *
  * Window-level events are handled uniformly for every game phase: quit, the
  * Alt+Enter fullscreen toggle, focus changes, gamepad hotplug, and audio-device

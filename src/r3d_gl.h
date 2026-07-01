@@ -5,8 +5,8 @@
  * OpenGL 1.x backend support hooks consumed by the graphics layer (gfx_impl.c).
  *
  * The GL backend (r3d_gl.c) implements the R3DBackend 3D vtable AND owns the GL
- * context + the interim 2D-overlay composite (docs/render-3d-backend.md, Step 3):
- * the 3D viewport renders through GL, and the existing software 2D page is drawn
+ * context + the 2D-overlay composite: the 3D viewport renders through GL, and the
+ * existing software 2D page is drawn
  * over it as a single flat textured quad with the show-through key transparent.
  * gfx_impl.c keeps owning the window; it asks here whether to bring GL up instead
  * of an SDL_Renderer, and routes its present through here when GL is active.

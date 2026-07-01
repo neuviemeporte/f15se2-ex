@@ -2,28 +2,27 @@
 #define R3D_H
 
 /*
- * 3D mesh-submission renderer interface (see docs/render-3d-backend.md).
+ * 3D mesh-submission renderer interface.
  *
  * The whole in-flight 3D scene funnels through one submission API so the
- * software rasterizer becomes *one* backend and a GPU backend (OpenGL 1.x ->
- * VR -> exotic ports) can be dropped in alongside it. Backends are registered
- * in preference order; each init() probes the environment and either claims it
- * or declines, and the software backend always claims last.
+ * software rasterizer is *one* backend and a GPU backend (OpenGL 1.x -> VR ->
+ * exotic ports) can be dropped in alongside it. Backends are registered in
+ * preference order; each init() probes the environment and either claims it or
+ * declines, and the software backend always claims last.
  *
- * Step 1 (this file's current state) is the "confine it" step: the software
- * backend is a thin pass-through to the existing eg3drast/eg3dmap functions and
- * the scene is pixel-identical. The richer, fully backend-agnostic scene
- * description (decomposed view matrix, projection gates, decoded meshes) lands
- * with the GPU backend; see the doc for the target shape of R3DScene/R3DSubmit.
+ * The software backend is a thin pass-through to the eg3drast/eg3dmap functions,
+ * pixel-identical to the standalone rasterizer. The GPU backend consumes the
+ * fuller, backend-agnostic scene description (decomposed view matrix, projection
+ * gates, decoded meshes).
  */
 
 #include "inttype.h"
 
-/* Opaque mesh handle. Step 1: identity wrapper over the raw display-list model
- * pointer (g_world3dData + offset). Step 2 decodes it into a Mesh for upload. */
+/* Opaque mesh handle: identity wrapper over the raw display-list model pointer
+ * (g_world3dData + offset). r3dmesh decodes it into a Mesh for upload. */
 typedef void *R3DMesh;
 
-/* Per-scene state. Step 1 mirrors setup3DTransform's inputs verbatim: the
+/* Per-scene state — mirrors setup3DTransform's inputs: the
  * viewport descriptor (g_viewParams / g_targetViewParams), the view orientation
  * angles + position, and the renderScene flag (1 = main scene with the
  * background sphere + shared-vertex precompute, 0 = MFD/target sub-view). */
@@ -35,9 +34,9 @@ typedef struct {
 } R3DScene;
 
 /* One object submitted to the current scene: a mesh plus its orientation and
- * position. Step 1 leaves shade / render-mode / LOD where the existing code
- * already computes them (object globals + the display-list stream); they move
- * into this struct when the backend stops sharing those globals. */
+ * position. Shade / render-mode / LOD stay where the existing code computes them
+ * (object globals + the display-list stream); they move into this struct when the
+ * backend stops sharing those globals. */
 typedef struct {
     R3DMesh mesh;
     int yaw, pitch, roll;

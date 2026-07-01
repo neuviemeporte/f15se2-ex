@@ -204,7 +204,7 @@ static void drawInstrumentGauges(void) {
      * lands where the original (which assumed offset 0) put it. */
     gfx_setBlitOffset(0);
 
-    disp = 0; /* single back buffer (Step 5.3c) */
+    disp = 0; /* single back buffer */
     g_tapeText0[0] = g_tapeText1[0] = g_tapeText2[0] = g_tapeText3[0] = disp;
     g_tapeSprite0[3] = g_tapeSprite1[3] = g_tapeSprite2[3] = g_tapeSprite3[3] = disp;
 

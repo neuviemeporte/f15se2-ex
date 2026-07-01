@@ -33,9 +33,8 @@ typedef struct {
     uint16 dacPhase;                      /* MGRAPHIC data-seg 0x1ccc — the DAC fire-cycle phase
                                            * counter advanced by gfx_dacCycle (slot 0x2e) each
                                            * frame (LCG x*5+1); seeded 0x4d2 in gfx_initState. */
-    struct SDL_Surface *pageSurfaces[16]; /* SDL draw buffers. The 16-page model is gone
-                                           * (Step 5.3c); pages 0/1 alias to index 0, the single
-                                           * hidden back buffer everything composites into. */
+    struct SDL_Surface *pageSurfaces[16]; /* SDL draw buffers. Pages 0/1 alias to index 0, the
+                                           * single hidden back buffer everything composites into. */
     int shakeOffset;                      /* horizontal screen-shake in pixels, set by gfx_dacCycle
                                            * (the explosion CRTC start-address jitter) and applied
                                            * by the page present. 0 when not shaking. */
@@ -55,8 +54,7 @@ struct SDL_Surface *gfx_getCurPageSurface(void);
 
 /* Sprite buffers: each is a 320x200 8-bit SDL_Surface addressed by a small
  * integer handle. The public gfx_allocSpriteBuf (gfx.h) creates one; the pic
- * decoder fills it and gfx_blitSprite reads it via this accessor. Replaces the
- * DOS-era 64KB "segment" sprite sheets. */
+ * decoder fills it and gfx_blitSprite reads it via this accessor. */
 struct SDL_Surface *gfx_getSpriteSurface(int handle);
 
 /* The live 256-entry VGA DAC palette (reflects gfx_setDac/gfx_setDacRange). The
@@ -65,6 +63,7 @@ struct SDL_Surface *gfx_getSpriteSurface(int handle);
 struct SDL_Palette;
 struct SDL_Palette *gfx_getPalette(void);
 void gfx_paletteRGB(int idx, uint8 *r, uint8 *g, uint8 *b);
+int gfx_paletteGeneration(void);
 
 /* Palette index reserved as the GL "show-through" key: the GL backend fills the
  * 3D viewport region of the page with it, and the overlay composite makes those

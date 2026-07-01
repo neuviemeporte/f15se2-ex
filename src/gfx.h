@@ -34,12 +34,11 @@ bool video_setHiRes(void);
 struct SDL_Surface *gfx_getHiResSurface(void);
 void gfx_presentHiRes(void);
 
-/* ---- Off-buffer save/restore images (docs/render-2d-overlay.md, Step 5) ----
- * The page model's save-under scratch (the DOS-era offscreen page) becomes an
- * owned r2d image: capture a page region into it, draw it back later. These thin
- * wrappers bridge page indices to the r2d image API so the game code stays free
- * of r2d/SDL surface details. Coordinates match gfx_copyRect's, so a save-under
- * that used a scratch page maps 1:1 onto the same (x,y) in the image. */
+/* ---- Off-buffer save/restore images ----
+ * A save-under is an owned r2d image: capture a page region into it, draw it back
+ * later. These thin wrappers bridge page indices to the r2d image API so the game
+ * code stays free of r2d/SDL surface details. Coordinates match gfx_copyRect's,
+ * so a save-under maps 1:1 onto the same (x,y) in the image. */
 struct R2DImage;
 struct R2DImage *gfx_allocImage(int w, int h);  /* blank owned image; NULL on failure */
 void gfx_freeImage(struct R2DImage *img);        /* release; safe on NULL */

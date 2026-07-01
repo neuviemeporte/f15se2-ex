@@ -1,5 +1,4 @@
-/* 2D overlay renderer seam (see docs/render-2d-overlay.md, Step 1) — the
- * present/compose dispatch for the 2D overlay page.
+/* 2D overlay renderer seam — the present/compose dispatch for the 2D overlay page.
  *
  * Selection follows the active 3D backend rather than re-probing: the GL backend
  * owns the window (it requested an SDL_WINDOW_OPENGL surface instead of an
@@ -16,8 +15,22 @@
 struct SDL_Palette *gfx_getPalette(void);
 
 struct R2DImage {
-    SDL_Surface *surf; /* INDEX8 backing store */
+    SDL_Surface *surf;    /* INDEX8 backing store */
+    unsigned int cacheTex; /* backend texture cache (GLuint on GL); 0 = none */
+    int cacheGen;          /* palette generation the cache was built for */
 };
+
+static void (*s_imageDestroyHook)(R2DImage *);
+
+void r2d_registerImageDestroy(void (*hook)(R2DImage *)) { s_imageDestroyHook = hook; }
+
+unsigned int r2d_imageCacheTex(R2DImage *img) { return img ? img->cacheTex : 0; }
+int r2d_imageCacheGen(R2DImage *img) { return img ? img->cacheGen : -1; }
+void r2d_imageSetCache(R2DImage *img, unsigned int tex, int gen) {
+    if (!img) return;
+    img->cacheTex = tex;
+    img->cacheGen = gen;
+}
 
 void r2d_blit(SDL_Surface *src, int sx, int sy,
               SDL_Surface *dst, int dx, int dy,
@@ -93,6 +106,7 @@ void r2d_drawImage(R2DImage *img, int srcX, int srcY, int w, int h,
 
 void r2d_releaseImage(R2DImage *img) {
     if (!img) return;
+    if (s_imageDestroyHook) s_imageDestroyHook(img);
     SDL_DestroySurface(img->surf);
     SDL_free(img);
 }
@@ -116,12 +130,12 @@ void r2d_registerSoftwarePresent(void (*present)(struct SDL_Surface *page, int s
     s_swPresent = present;
 }
 
-/* ---- Native 2D vector layer (Step 4) ----------------------------------- */
+/* ---- Native 2D vector layer ---------------------------------------------- */
 
 static void (*s_swLine)(int, int, int, int, int);
 static void (*s_swPoint)(int, int, int);
 
-static R2DVectorPrim *s_prims;
+static R2DOverlayPrim *s_prims;
 static int s_primCount, s_primCap;
 
 /* When set, submissions rasterize into the page even on a GL flight frame (for
@@ -134,6 +148,45 @@ void r2d_registerSoftwarePrims(void (*line)(int, int, int, int, int),
                                void (*point)(int, int, int)) {
     s_swLine = line;
     s_swPoint = point;
+}
+
+static void (*s_swImage)(R2DImage *, int, int, int, int, int, int, int);
+
+void r2d_registerSoftwareImage(void (*image)(R2DImage *, int, int, int, int, int, int, int)) {
+    s_swImage = image;
+}
+
+static R2DOverlayPrim *primGrow(void) {
+    if (s_primCount >= s_primCap) {
+        int cap = s_primCap ? s_primCap * 2 : 256;
+        R2DOverlayPrim *grown = (R2DOverlayPrim *)SDL_realloc(s_prims, (size_t)cap * sizeof(*grown));
+        if (!grown) return NULL;
+        s_prims = grown;
+        s_primCap = cap;
+    }
+    return &s_prims[s_primCount++];
+}
+
+void r2d_submitImage(R2DImage *img, int srcX, int srcY, int w, int h,
+                     int dstX, int dstY, int key) {
+    /* On a GL flight frame record into the ordered overlay stream for a
+     * textured-quad replay (so sprites and lines keep submission order); the
+     * force-raster region (radar scope) and non-GL frames rasterize into the page,
+     * exactly like r2d_submitLine. */
+    if (img && r2d_vectorActive() && !s_forceRaster) {
+        R2DOverlayPrim *p = primGrow();
+        if (!p) return;
+        p->kind = R2D_PRIM_IMAGE;
+        p->color = 0;
+        p->x1 = (short)dstX; p->y1 = (short)dstY;
+        p->x2 = 0; p->y2 = 0;
+        p->img = img;
+        p->srcX = (short)srcX; p->srcY = (short)srcY;
+        p->imgW = (short)w; p->imgH = (short)h;
+        p->key = (short)key;
+    } else if (s_swImage) {
+        s_swImage(img, srcX, srcY, w, h, dstX, dstY, key);
+    }
 }
 
 /* Set for the duration of a GL flight frame (between gl_beginScene's main 3D view
@@ -156,19 +209,13 @@ int r2d_vectorActive(void) {
 }
 
 static void primAppend(int x1, int y1, int x2, int y2, int color, int kind) {
-    R2DVectorPrim *p;
-    if (s_primCount >= s_primCap) {
-        int cap = s_primCap ? s_primCap * 2 : 256;
-        R2DVectorPrim *grown = (R2DVectorPrim *)SDL_realloc(s_prims, (size_t)cap * sizeof(*grown));
-        if (!grown) return;
-        s_prims = grown;
-        s_primCap = cap;
-    }
-    p = &s_prims[s_primCount++];
+    R2DOverlayPrim *p = primGrow();
+    if (!p) return;
+    p->kind = (unsigned char)kind;
+    p->color = (unsigned char)color;
     p->x1 = (short)x1; p->y1 = (short)y1;
     p->x2 = (short)x2; p->y2 = (short)y2;
-    p->color = (unsigned char)color;
-    p->kind = (unsigned char)kind;
+    p->img = NULL;
 }
 
 void r2d_submitLine(int x1, int y1, int x2, int y2, int color) {
@@ -181,7 +228,7 @@ void r2d_submitPoint(int x, int y, int color) {
     else if (s_swPoint) s_swPoint(x, y, color);
 }
 
-const R2DVectorPrim *r2d_vectorPrims(int *count) {
+const R2DOverlayPrim *r2d_overlayPrims(int *count) {
     if (count) *count = s_primCount;
     return s_prims;
 }

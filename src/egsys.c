@@ -29,7 +29,7 @@ void renderHudFrame(int unused);
 void stepFlightModel(void);
 void updateFrame(void);
 
-/* ---- Fixed-timestep sim + interpolated rendering (see docs/render-sim-decouple.md) ----
+/* ---- Fixed-timestep sim + interpolated rendering ----
  *
  * The original ran one sim step per rendered frame and an adaptive governor held
  * the sim cadence constant by *sleeping* the loop (waitFrameSync / g_frameSyncWait),
@@ -41,9 +41,9 @@ void updateFrame(void);
  * stepRate == g_frameRateScaling (giving the mission clock 1 Hz), so we step at
  * exactly g_frameRateScaling steps/s. The governor's auto-rescale and the sleep
  * are retired (egframe.c/egkeys.c); g_frameRateScaling is pinned at 15 (max
- * precision). ALT+A "ACCEL" (egkeys.c) used to halve g_frameRateScaling; with
- * the decouple it instead multiplies the wall-clock step rate by g_slowMotionMode
- * (see simStepNsNow), so ACCEL is a clean 2x time compression at full precision. */
+ * precision). ALT+A "ACCEL" (egkeys.c) multiplies the wall-clock step rate by
+ * g_slowMotionMode (see simStepNsNow), a clean 2x time compression at full
+ * precision. */
 
 #define NS_PER_SEC 1000000000ULL
 #define SIM_OBJ_MAX 20

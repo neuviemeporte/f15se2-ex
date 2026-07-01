@@ -36,9 +36,12 @@ static bool s_useGL = false; /* OpenGL backend owns the context + present */
  * before their definitions further down. */
 static GfxState FAR *gfx_getState(void);
 static SDL_Palette *gfxPalette; /* shared 256-entry VGA DAC palette */
+static int gfxPaletteGen;       /* bumped on every palette-entry change (cache invalidation) */
 static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake);
 static void gfx_swLine(int x1, int y1, int x2, int y2, int color);
 static void gfx_swPoint(int x, int y, int color);
+static void gfx_swImage(struct R2DImage *img, int srcX, int srcY, int w, int h,
+                        int dstX, int dstY, int key);
 
 /* Bring up the SDL window and renderer. The 320x200 logical surface is stretched
  * to fill the resizable window (SDL_LOGICAL_PRESENTATION_STRETCH). */
@@ -55,6 +58,7 @@ void gfx_videoInit(void) {
      * not active. */
     r2d_registerSoftwarePresent(gfx_presentSurfaceSW);
     r2d_registerSoftwarePrims(gfx_swLine, gfx_swPoint);
+    r2d_registerSoftwareImage(gfx_swImage);
 
     s_useGL = r3dgl_wantGL();
 
@@ -254,6 +258,7 @@ static SDL_Palette *gfx_buildPalette(void) {
     }
     pal = SDL_CreatePalette(256);
     if (pal) SDL_SetPaletteColors(pal, colors, 0, 256);
+    gfxPaletteGen++;
     return pal;
 }
 
@@ -261,6 +266,11 @@ SDL_Palette *gfx_getPalette(void) {
     if (!gfxPalette) gfxPalette = gfx_buildPalette();
     return gfxPalette;
 }
+
+/* Monotonic counter bumped whenever a palette entry changes (gfx_setDacRange /
+ * gfx_dacCycle / rebuild). The GL backend keys its per-image RGBA texture cache on
+ * it so a static sprite sheet re-uploads only when the palette actually moved. */
+int gfx_paletteGeneration(void) { return gfxPaletteGen; }
 
 void gfx_paletteRGB(int idx, uint8 *r, uint8 *g, uint8 *b) {
     SDL_Palette *pal = gfx_getPalette();
@@ -277,16 +287,13 @@ void gfx_paletteRGB(int idx, uint8 *r, uint8 *g, uint8 *b) {
 static SDL_Surface *ensurePage(int page) {
     GfxState FAR *s = gfx_getState();
     if (page < 0 || page >= 16) return NULL;
-    /* Step 5.2: pages 0 (front/visible) and 1 (back/composite) collapse onto one
-     * hidden back buffer. The DOS double buffer is redundant natively — the page
-     * surface is only snapshotted into the window at present time (SDL texture
-     * upload / GL composite), so a single draw surface can't tear, and every
-     * compose-then-present sequence finishes drawing before it presents. All
-     * page-1 references resolve to page 0's surface; the per-frame back->front
-     * copy (gfx_dacAnimate) and the front/back dual writes become self-copies.
-     * This also subsumes the old alternate-view flicker fix (no front/back
-     * divergence can exist). Pre-req: 5.1 moved every non-double-buffer use of
-     * pages 0/1 off the page array (see docs/render-2d-overlay.md). */
+    /* Pages 0 (front/visible) and 1 (back/composite) alias to one hidden back
+     * buffer. The DOS double buffer is redundant natively — the page surface is
+     * only snapshotted into the window at present time (SDL texture upload / GL
+     * composite), so a single draw surface can't tear, and every compose-then-
+     * present sequence finishes drawing before it presents. All page-1 references
+     * resolve to page 0's surface; the per-frame back->front copy (gfx_dacAnimate)
+     * and the front/back dual writes become self-copies. */
     if (page == 1) page = 0;
     if (!s->pageSurfaces[page]) {
         SDL_Surface *surf = SDL_CreateSurface(LOGICAL_WIDTH, LOGICAL_HEIGHT,
@@ -300,8 +307,8 @@ static SDL_Surface *ensurePage(int page) {
 }
 
 struct SDL_Surface *gfx_getPageSurface(int page) { return ensurePage(page); }
-/* The single hidden back buffer (Step 5). Every draw target in the game is page
- * index 0 or 1, which alias to buffer 0, so the "current page" is always it. */
+/* The single hidden back buffer. Every draw target in the game is page index 0
+ * or 1, which alias to buffer 0, so the "current page" is always it. */
 struct SDL_Surface *gfx_getCurPageSurface(void) { return ensurePage(0); }
 
 /* Public: writable pixel base + stride of a page's surface (the single back
@@ -339,6 +346,21 @@ int gfx_allocSpriteBuf(void) {
 struct SDL_Surface *gfx_getSpriteSurface(int handle) {
     if (handle < 1 || handle > MAX_SPRITE_BUFS) return NULL;
     return r2d_imageSurface(s_spriteBufs[handle - 1]);
+}
+
+/* The R2DImage behind a sprite-buffer handle, for the image-submission path
+ * (r2d_submitImage) — the renderer owns realization (page blit or GL quad). */
+static R2DImage *gfx_spriteImage(int handle) {
+    if (handle < 1 || handle > MAX_SPRITE_BUFS) return NULL;
+    return s_spriteBufs[handle - 1];
+}
+
+/* Software realization of an image submission: clipped blit into the back buffer.
+ * Registered with r2d so a submitted sprite rasterizes exactly as gfx_blitSprite
+ * used to. */
+static void gfx_swImage(R2DImage *img, int srcX, int srcY, int w, int h,
+                        int dstX, int dstY, int key) {
+    r2d_blit(r2d_imageSurface(img), srcX, srcY, ensurePage(0), dstX, dstY, w, h, key);
 }
 
 void gfx_freeSpriteBuf(int handle) {
@@ -432,9 +454,9 @@ static void initRowOffsets(void) {
 }
 
 /* ---- Slot 0x3c: gfx_setMode13 ----
- * Switch to the 320x200 game resolution. Formerly an INT 10h mode-13h set; now
- * the renderer presents the 320x200 logical surface through SDL. This is also
- * the lo-res restore after the (possibly hi-res) title. */
+ * Switch to the 320x200 game resolution (the native equivalent of the DOS INT
+ * 10h mode-13h set): the renderer presents the 320x200 logical surface through
+ * SDL. This is also the lo-res restore after the (possibly hi-res) title. */
 void FAR CDECL gfx_setMode13(void) {
     initRowOffsets();
     gfxHiResActive = false;
@@ -495,7 +517,7 @@ void FAR CDECL gfx_setBlitOffset(int offset) {
 
 /* ---- Slot 0x25: gfx_dirtyRect ---- */
 /* eg3drast.c hands us the real span buffer pointer; gfx_dirtyRect2 walks rows
- * [yMin..yMax]. Was the egame-side cdecl spelling in compat64/egregsh.c. */
+ * [yMin..yMax]. */
 void FAR CDECL gfx_dirtyRect(int16 *spanBuf, int yMin, int yMax) {
     gfx_dirtyRect2(spanBuf, (uint16)yMin, (uint16)yMax);
 }
@@ -671,7 +693,7 @@ void gfx_drawStringClipped_impl(int16 *params, const char *string, int mode) {
 /* Slots 0x01/0x02/0x03/0x04/0x06: the clipped glyph variants. Each selects which
  * clip stages run (bit0 = horizontal window, bit1 = vertical window) and shares
  * the gfx_drawStringClipped_impl core. They take the param block + string as real
- * arguments (formerly marshalled from BP/BX by regshim.asm). */
+ * arguments. */
 void FAR CDECL gfx_fillDirty(int16 *params, const char *string) { gfx_drawStringClipped_impl(params, string, 2); }
 void FAR CDECL gfx_blitTransparent(int16 *params, const char *string) { gfx_drawStringClipped_impl(params, string, 1); }
 void FAR CDECL gfx_blitVariant(int16 *params, const char *string) { gfx_drawStringClipped_impl(params, string, 1); }
@@ -679,8 +701,7 @@ void FAR CDECL gfx_copyBlock(int16 *params, const char *string) { gfx_drawString
 void FAR CDECL gfx_drawStringUnclipped(int16 *params, const char *string) { gfx_drawStringClipped_impl(params, string, 3); }
 
 /* Slots 0x01-0x06: the clipped glyph engine. The egame HUD selects the clip mode
- * by slot index; map each to the real glyph function. Was the egame-side cdecl
- * dispatcher in compat64/egregsh.c. */
+ * by slot index; map each to the real glyph function. */
 void FAR CDECL gfx_drawGlyphStr(int16 *desc, const char *str, int slot) {
     switch (slot) {
     case 0x01:
@@ -714,12 +735,11 @@ void FAR CDECL gfx_copyRect(int srcPage, uint16 srcX, uint16 srcY,
              width, height, -1);
 }
 
-/* ---- Off-buffer save/restore images (Step 5) ----
+/* ---- Off-buffer save/restore images ----
  * Bridge page indices to the r2d image API: gfx_captureToImage copies a page
  * region into an owned image (the save-under), gfx_restoreFromImage copies it
- * back. They replace the DOS-era offscreen-page scratch, which was a separate
- * 320x200 surface in the page array; an image is the same surface, just no longer
- * a "page". Coordinates match gfx_copyRect's so call sites map 1:1. */
+ * back. An image is a standalone 320x200 surface, not a page. Coordinates match
+ * gfx_copyRect's so call sites map 1:1. */
 struct R2DImage *gfx_allocImage(int w, int h) { return r2d_registerImage(w, h); }
 void gfx_freeImage(struct R2DImage *img) { r2d_releaseImage(img); }
 
@@ -736,8 +756,8 @@ void gfx_restoreFromImage(struct R2DImage *img, int dstPage, int srcX, int srcY,
 
 void gfx_drawSpriteOpaque(int handle, int srcX, int srcY, int dstPage,
                           int dstX, int dstY, int w, int h) {
-    r2d_blit(gfx_getSpriteSurface(handle), srcX, srcY,
-             ensurePage(dstPage), dstX, dstY, w, h, -1);
+    (void)dstPage; /* single back buffer */
+    r2d_submitImage(gfx_spriteImage(handle), srcX, srcY, w, h, dstX, dstY, -1);
 }
 
 /* ---- Slot 0x29: gfx_switchColor ---- */
@@ -847,6 +867,7 @@ void gfx_setDacRange(uint16 startReg, uint16 count, const uint8 *vgaTriples) {
         colors[i].a = 255;
     }
     SDL_SetPaletteColors(gfxPalette, colors, (int)startReg, (int)count);
+    gfxPaletteGen++;
 }
 
 void FAR CDECL gfx_setDac(uint16 palIdx) {
@@ -867,22 +888,19 @@ void FAR CDECL gfx_setColor(int color) {
  * over width*height — with NO flags test (flags lives at SpriteParams+0x18, past
  * the 8-word block the core reads). egame chooses transparent (0x11) vs opaque
  * (copyRect 0x2a / blitToCurrent 0x30) at the C level, so slot 0x11 must always
- * skip zero bytes. An earlier `flags & 0x10` gate made the HUD gun-sight blit
- * opaque, copying its black background as a square behind the reticle (bug 7). */
+ * skip zero bytes — a flags test here would copy the gun-sight's black background
+ * as a square behind the reticle. */
 int FAR CDECL gfx_blitSprite(struct SpriteParams *p) {
-    SDL_Surface *srcSurf, *dstSurf;
-
     if (!p) return 0;
     if (p->page < 0 || p->page >= 16) return 0;
     /* bufPtr is a 1-based sprite-buffer handle (F15.SPR via gfxBufPtr, the
-     * theater/menu sheets). All sprite sources are images now (Step 5.3c). */
-    srcSurf = gfx_getSpriteSurface((int)p->bufPtr);
-    dstSurf = gfx_getPageSurface((int)p->page);
-    /* Unconditionally transparent (skip index 0): the gun-sight/symbol sprites
-     * rely on the see-through background (see thunk comment above). */
-    r2d_blit(srcSurf, (int)p->srcX, (int)p->srcY,
-             dstSurf, (int)p->dstX, (int)p->dstY,
-             (int)p->width, (int)p->height, 0);
+     * theater/menu sheets). Submit the sprite to the renderer; the realization
+     * is the backend's (software page blit / GL quad). Unconditionally
+     * transparent (skip index 0) — the gun-sight/symbol sprites rely on the
+     * see-through background. */
+    r2d_submitImage(gfx_spriteImage((int)p->bufPtr),
+                    (int)p->srcX, (int)p->srcY, (int)p->width, (int)p->height,
+                    (int)p->dstX, (int)p->dstY, 0);
     return 0;
 }
 /* Slot 0x1f: register-called via the _gfx_drawLine shim (regshim.asm).
@@ -909,7 +927,7 @@ static int gfx_lineOutcode(int x, int y) {
  * submitted line/point (registered with r2d via r2d_registerSoftwarePrims).
  * Endpoints/coords arrive already blitOffset-absolute and clipped to the page;
  * these just write the current page surface. The GL backend instead records the
- * submission and replays it at native resolution (docs Step 4). */
+ * submission and replays it at native resolution. */
 static void gfx_swLine(int x1, int y1, int x2, int y2, int colorArg) {
     SDL_Surface *surf = gfx_getCurPageSurface();
     uint8 *base;
@@ -1008,13 +1026,12 @@ void FAR CDECL gfx_drawLine(uint16 ux1, uint16 uy1, uint16 ux2, uint16 uy2) {
 
     /* Submit the clipped, blitOffset-absolute segment. The software backend
      * Bresenhams it into the current page (gfx_swLine); the GL backend records it
-     * for a crisp native-resolution replay (docs/render-2d-overlay.md, Step 4). */
+     * for a crisp native-resolution replay. */
     r2d_submitLine(x1, y1, x2, y2, color);
 }
-/* drawLineWrapper - draw a line from the lineX1..lineY2 globals.
- * The original clipped the endpoints (Cohen-Sutherland) before passing them to
- * the line slot in registers; gfx_drawLine now does that clipping itself, so
- * this just marshals the globals into its by-value args. */
+/* drawLineWrapper - draw a line from the lineX1..lineY2 globals. gfx_drawLine
+ * does the Cohen-Sutherland clipping itself, so this just marshals the globals
+ * into its by-value args. */
 extern int16 lineX1, lineY1, lineX2, lineY2;
 void drawLineWrapper(void) {
     gfx_drawLine((uint16)lineX1, (uint16)lineY1, (uint16)lineX2, (uint16)lineY2);
@@ -1254,9 +1271,9 @@ int FAR CDECL gfx_getBlitOffset(void) {
     return (int)s->blitOffset;
 }
 /* Slot 0x2c: advance the fire colour-cycle and present the frame, once per frame
- * from gameMainLoop (egame_rc.asm). MGRAPHIC copied the back page to the visible
- * page here; under the single back buffer (Step 5.2) compose and present target
- * the one surface, so the copy is gone — just present it. Args (AX/BX) ignored. */
+ * from gameMainLoop (egame_rc.asm). With a single back buffer, compose and
+ * present target the one surface, so there is no back->front copy — just present
+ * it. Args (AX/BX) ignored. */
 void FAR CDECL gfx_dacAnimate(void) {
     GfxState FAR *s = gfx_getState();
     /* Advance the fire colour-cycle on a fixed FIRE_CYCLE_HZ wall-clock schedule. */
@@ -1322,6 +1339,7 @@ void FAR CDECL gfx_dacCycle(void) {
         SDL_SetPaletteColors(gfxPalette, &col, (int)reg, 1);
         reg = (uint8)(reg + 0x10);
     } while (reg != 0x1d);
+    gfxPaletteGen++;
 
     /* Screen-shake: while the countdown is nonzero, shift the presented frame by
      * the phase high byte (0-3 px), decrementing the countdown and clearing the
@@ -1337,10 +1355,9 @@ void FAR CDECL gfx_dacCycle(void) {
 }
 
 /* ---- Initialise the shared GfxState ----
- * Called once at startup from game_init(). The slot-dispatch table, OvlHeader
- * and MISC/SOUND stub overlays that used to live here are gone: in the merged
- * single-process build the gfx functions are called directly, so only the
- * state defaults remain. */
+ * Called once at startup from game_init(). In the merged single-process build the
+ * gfx functions are called directly (no slot-dispatch table), so this just sets
+ * the state defaults. */
 void gfx_initState(void) {
     GfxState FAR *s = gfx_getState();
 
