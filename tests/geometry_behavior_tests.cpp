@@ -93,6 +93,9 @@ extern void drawTargetView(int shapeId, int worldX, int worldY, int altitude,
                            int objYaw, int objPitch, int objRoll, int mode, int shift);
 extern int readAxisInput(int axisIdx);
 extern int shapeDataOffset(int shapeId);
+extern int16 *g_pageBack;
+extern int16 *g_pageOffscreen;
+extern int16 *g_pageFront;
 
 namespace {
 

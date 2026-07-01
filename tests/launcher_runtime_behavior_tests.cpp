@@ -8,7 +8,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-void game_init(void);
+void game_init(int16 showIntro);
 int f15_program_main(int argc, char *argv[]);
 
 // The test target renames f15.c's program entry point; keep this file's test
@@ -128,7 +128,7 @@ int end_main(void) {
 }
 
 int main() {
-    game_init();
+    game_init(kInitialNeedSplash);
 
     require(commData != nullptr, "game_init should publish the COMM buffer");
     require(gameData != nullptr, "game_init should publish the GAME buffer");

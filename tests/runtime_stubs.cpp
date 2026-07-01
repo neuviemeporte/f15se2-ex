@@ -23,6 +23,11 @@ void timerPump(void);
 
 void r3d_init(void) {}
 void r3d_shutdown(void) {}
+bool setGamePath(const char* path) {
+    (void)path;
+    return true;
+}
+bool verifyGameAssets() { return true; }
 
 void joy_init(void) {}
 void joy_shutdown(void) {}

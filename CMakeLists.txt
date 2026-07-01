@@ -260,6 +260,7 @@ add_executable(geometry_behavior_tests
 add_executable(file_io_behavior_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/file_io_behavior_tests.cpp
     ${SRC_DIR}/shared/file_io.c
+    ${quick_digest5_SOURCE_DIR}/src/quickdigest5.cpp
 )
 add_executable(gameplay_behavior_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/gameplay_behavior_tests.cpp
@@ -284,6 +285,7 @@ add_executable(hud_raster_behavior_tests
     ${SRC_DIR}/eghudr.c
     ${SRC_DIR}/eghudm.c
     ${SRC_DIR}/egdata.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/r3d_render_stubs.cpp
 )
 add_executable(view_behavior_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/view_behavior_tests.cpp
@@ -364,6 +366,7 @@ add_executable(eg_main_behavior_tests
     ${SRC_DIR}/egmain.c
     ${SRC_DIR}/egdata.c
     ${SRC_DIR}/egfarbuf.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/r3d_render_stubs.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/eg_main_behavior_aux.cpp
 )
 add_executable(eg3drast_behavior_tests
@@ -391,6 +394,7 @@ add_executable(start_behavior_tests
     ${SRC_DIR}/stdata.c
     ${SRC_DIR}/entext.c
     ${SRC_DIR}/shared/filepic.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/r3d_render_stubs.cpp
 )
 add_executable(start_parse_behavior_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/start_parse_behavior_tests.cpp
@@ -504,6 +508,7 @@ target_include_directories(file_io_behavior_tests BEFORE PRIVATE
     ${SRC_DIR}/compat64
     ${SRC_DIR}
     ${SRC_DIR}/shared
+    ${quick_digest5_SOURCE_DIR}/include
 )
 target_include_directories(gameplay_behavior_tests BEFORE PRIVATE
     ${SRC_DIR}/compat64
