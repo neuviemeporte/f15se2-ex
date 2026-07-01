@@ -137,6 +137,7 @@ set(EGAME_SOURCES
     ${SRC_DIR}/eg3dmap.c
     ${SRC_DIR}/eg3dvp.c
     ${SRC_DIR}/eg3dcam.c
+    ${SRC_DIR}/eg3dutil.c
     ${SRC_DIR}/egflight.c
     ${SRC_DIR}/egthreat.c
     ${SRC_DIR}/egcombat.c
@@ -196,9 +197,11 @@ add_executable(original_behavior_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/original_behavior_tests.cpp
     ${SRC_DIR}/eg3dmath.c
     ${SRC_DIR}/egmath.c
+    ${SRC_DIR}/eg3dutil.c
     ${SRC_DIR}/egflight.c
     ${SRC_DIR}/eghudm.c
     ${SRC_DIR}/egdata.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/egdata_link_stubs.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/r3d_render_stubs.cpp
 )
 add_executable(utility_behavior_tests
@@ -207,7 +210,7 @@ add_executable(utility_behavior_tests
     ${SRC_DIR}/shared/filepic.c
     ${SRC_DIR}/shared/textfmt.c
     ${SRC_DIR}/shared/drawstr.c
-    ${SRC_DIR}/eg3dload.c
+    ${SRC_DIR}/eg3dutil.c
     ${SRC_DIR}/enbrief.c
     ${SRC_DIR}/enworld.c
     ${SRC_DIR}/enmisc.c
@@ -254,7 +257,9 @@ add_executable(geometry_behavior_tests
     ${SRC_DIR}/eg3dcam.c
     ${SRC_DIR}/eg3dmath.c
     ${SRC_DIR}/egmath.c
+    ${SRC_DIR}/eg3dutil.c
     ${SRC_DIR}/egdata.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/egdata_link_stubs.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/r3d_render_stubs.cpp
 )
 add_executable(file_io_behavior_tests
@@ -270,7 +275,9 @@ add_executable(gameplay_behavior_tests
     ${SRC_DIR}/egframe.c
     ${SRC_DIR}/egkeys.c
     ${SRC_DIR}/egmath.c
+    ${SRC_DIR}/eg3dutil.c
     ${SRC_DIR}/egdata.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/egdata_link_stubs.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/r3d_render_stubs.cpp
 )
 add_executable(input_behavior_tests
@@ -286,6 +293,7 @@ add_executable(hud_raster_behavior_tests
     ${SRC_DIR}/eghudr.c
     ${SRC_DIR}/eghudm.c
     ${SRC_DIR}/egdata.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/egdata_link_stubs.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/r3d_render_stubs.cpp
 )
 add_executable(view_behavior_tests
@@ -303,6 +311,7 @@ add_executable(sys_behavior_tests
 add_executable(egsys_internal_behavior_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/egsys_internal_behavior_tests.cpp
     ${SRC_DIR}/egdata.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/egdata_link_stubs.cpp
 )
 add_executable(io_wrapper_behavior_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/io_wrapper_behavior_tests.cpp
@@ -326,8 +335,10 @@ add_executable(load_behavior_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/load_behavior_tests.cpp
     ${SRC_DIR}/eg3dload.c
     ${SRC_DIR}/egmath.c
+    ${SRC_DIR}/eg3dutil.c
     ${SRC_DIR}/egdata.c
     ${SRC_DIR}/egfarbuf.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/r3d_render_stubs.cpp
 )
 add_executable(start_runtime_behavior_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/start_runtime_behavior_tests.cpp
@@ -376,10 +387,13 @@ add_executable(eg3drast_behavior_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/eg3drast_behavior_tests.cpp
     ${SRC_DIR}/eg3drast.c
     ${SRC_DIR}/egdata.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/egdata_link_stubs.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/eg3drast_link_stubs.cpp
 )
 add_executable(eg3drast_internal_behavior_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/eg3drast_internal_behavior_tests.cpp
     ${SRC_DIR}/egdata.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/egdata_link_stubs.cpp
 )
 add_executable(tick_behavior_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/tick_behavior_tests.cpp
@@ -702,6 +716,7 @@ target_link_libraries(gfx_impl_behavior_tests PRIVATE SDL3::SDL3)
 set_source_files_properties(
     ${SRC_DIR}/eg3dmath.c
     ${SRC_DIR}/egmath.c
+    ${SRC_DIR}/eg3dutil.c
     ${SRC_DIR}/egflight.c
     ${SRC_DIR}/eghudm.c
     ${SRC_DIR}/egdata.c

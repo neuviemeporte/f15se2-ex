@@ -1173,7 +1173,7 @@ void redrawTacMap(int centerX, int centerY) {
     g_lastRedrawX = centerX;
     g_lastRedrawY = centerY;
 }
-void plotMapObject(int, int, int, int) {}
+int plotMapObject(int, int, int, int) { return 0; }
 void drawNearestTileObject(unsigned int coord1, unsigned int coord2, unsigned int coord3) {
     ++g_drawNearestTileObjectCalls;
     g_lastDrawNearestCoord1 = coord1;

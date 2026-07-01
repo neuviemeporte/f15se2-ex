@@ -232,8 +232,14 @@ void setTimerTickHook(void(FAR *)(void)) { ++g_timerHookCalls; }
 void egAdvanceFrameTick(void) {}
 void setTimerIrqHandler(void) { ++g_setTimerCalls; }
 void restoreTimerIrqHandler(void) { ++g_restoreTimerCalls; }
-void setInt9Handler(void) { ++g_setInt9Calls; }
-void restoreInt9Handler(void) { ++g_restoreInt9Calls; }
+int setInt9Handler(void) {
+    ++g_setInt9Calls;
+    return 0;
+}
+int restoreInt9Handler(void) {
+    ++g_restoreInt9Calls;
+    return 0;
+}
 void runGameLoop(void) { ++g_runGameLoopCalls; }
 void moveDataFar(void) { ++g_moveDataCalls; }
 void FAR CDECL gfx_setDacAnimCount(uint16 count) {

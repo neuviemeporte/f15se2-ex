@@ -15,6 +15,7 @@ using pid_t = int;
 #define MAP_ANONYMOUS 0x20
 #define MAP_FIXED_NOREPLACE 0x100000
 #define MAP_FAILED ((void *)-1)
+#define _SC_PAGESIZE 1
 
 static inline pid_t fork(void) { return -1; }
 static inline pid_t waitpid(pid_t, int *, int) { return -1; }
@@ -25,6 +26,7 @@ static inline int WTERMSIG(int) { return 0; }
 static inline int mprotect(void *, std::size_t, int) { return -1; }
 static inline void *mmap(void *, std::size_t, int, int, int, int) { return MAP_FAILED; }
 static inline int munmap(void *, std::size_t) { return -1; }
+static inline long sysconf(int) { return 4096; }
 static inline int dup(int fd) { return _dup(fd); }
 static inline int dup2(int fd1, int fd2) { return _dup2(fd1, fd2); }
 static inline int close(int fd) { return _close(fd); }

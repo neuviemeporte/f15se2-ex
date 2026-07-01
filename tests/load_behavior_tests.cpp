@@ -18,6 +18,7 @@ extern void load15Flt3d3(void);
 
 char aRegn_xxx[] = "regn.xxx";
 struct Game *gameData = nullptr;
+struct GameComm *commData = nullptr;
 SDL_IOStream *fileHandle = nullptr;
 
 namespace {
@@ -540,10 +541,22 @@ void drawStringBothPages(const char *text, int x, int y, int color) {
 }
 
 void gfx_flipPage(void) { ++g_flipCalls; }
-void misc_getKey(void) { ++g_keyCalls; }
+int FAR CDECL misc_getKey(void) {
+    ++g_keyCalls;
+    return 0;
+}
 void gfx_waitRetrace(void) { ++g_waitRetraceCalls; }
 void setDrawColor(int) {}
 void fillRectBoth(int, int, int, int) {}
+void setViewPosition(int, int, int) {}
+int fixedMulQ14(int a, int b) { return static_cast<int>((static_cast<int32>(a) * b) >> 15); }
+int sine(int) { return 0; }
+void shiftLongLeftInPlace(int count, long *value) { *value <<= count; }
+void shiftLongRightInPlace(int count, long *value) { *value >>= count; }
+int FAR CDECL fillSpanRect(const int16 *, int, int, int, int) { return 0; }
+int getTimeOfDay(void) { return 1; }
+void drawStringActivePage(const char *, int, int, int) {}
+int FAR CDECL misc_readJoystick(int16) { return 0; }
 
 int main() {
     resetLoadState();
