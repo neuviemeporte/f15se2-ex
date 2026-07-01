@@ -263,6 +263,7 @@ add_executable(geometry_behavior_tests
     ${SRC_DIR}/egdata.c
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/egdata_link_stubs.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/egmath_file_link_stubs.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/geometry_egmath_link_stubs.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/r3d_render_stubs.cpp
 )
 add_executable(file_io_behavior_tests
