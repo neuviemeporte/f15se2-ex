@@ -47,7 +47,7 @@ int start_main(void) {
                 break;
             }
         }
-        if (timerCounter >= MPS_TIMEOUT) {
+        if (timerCounter >= MPS_TIMEOUT) { // key was not pressed, show adv.pic
             gfx_waitRetrace();
             gfx_setFadeSteps(15);
             openShowPic("adv.pic", 0);
