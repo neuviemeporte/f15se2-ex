@@ -111,6 +111,8 @@ void keyDispatch(uint16 scanCode) {
          * step rate via g_slowMotionMode in simStepNsNow(). */
         if (g_slowMotionMode == 1) {
             g_slowMotionMode = 2;
+            g_frameRateScaling >>= 1;
+            recalcTimeScale();
         } else {
             exitSlowMotion();
         }
@@ -131,9 +133,7 @@ void keyDispatch(uint16 scanCode) {
         break;
     case SCAN_ALT_T:
         g_playerPlaneFlags ^= 0x1000;
-        if (g_playerPlaneFlags & 0x1000) {
-            *(char far *)&commData->trainingFlag |= 1;
-        }
+        commData->trainingFlag = (g_playerPlaneFlags & 0x1000) ? 1 : 0;
         break;
     case SCAN_S:
         missileSpecIndex = 0;
@@ -378,5 +378,7 @@ void setupLodDistances(void) {
 void exitSlowMotion() {
     if (g_slowMotionMode == 2) {
         g_slowMotionMode = 1;
+        g_frameRateScaling <<= 1;
+        recalcTimeScale();
     }
 }

@@ -81,7 +81,11 @@ void drawTacticalMap(char page) {
                 if (g_currentWeaponType == 1 && i == g_airTargetLock) {
                     drawMapMarkerBox(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, 7);
                 }
-                if (g_scopeSweepTimer > 0 && i == 0xffff - g_threatLabelTarget) {
+                /* The original stores the threat label as a 16-bit encoded
+                 * complement; keep the subtraction unsigned so labels like
+                 * 0xfffe still identify object index 1 instead of promoting
+                 * to signed -2 and making the branch unreachable. */
+                if (g_scopeSweepTimer > 0 && i == 0xffff - (uint16)g_threatLabelTarget) {
                     drawMapMarkerBox(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, g_scopeArcColor);
                 }
                 code = g_simObjects[i].heading.w - g_ourHead + 0x800;

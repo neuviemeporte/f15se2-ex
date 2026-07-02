@@ -56,7 +56,7 @@ void updateFrame(void) {
             gameData->difficulty = 2;
             g_autopilotEngaged = 1;
             g_playerPlaneFlags |= 0x1000;
-            *(char far *)&commData->trainingFlag |= 1;
+            commData->trainingFlag |= 1;
         }
         findWaypointFeatures();
         g_threatActiveTimer = 0;
@@ -645,6 +645,7 @@ void finalizeMission(int outcome) {
     }
     commData->worldX = g_viewX_;
     commData->worldY = g_viewY_;
+    commData->gunHits = g_gunHits;
     commData->weaponCount[0] = g_finalThreatScore;
     commData->weaponCount[1] = g_resupplyCount;
     appendMapEvent(8, 0);
