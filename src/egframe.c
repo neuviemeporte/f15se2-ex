@@ -354,7 +354,7 @@ skip_autopilot:
             if ((gameData->unk4 != 0 || g_gunHits > 4 || g_fuelRemaining == 0) &&
                 g_ejectState == 0 && g_knots > 50) {
                 makeSound(0, 2);
-                setDrawColor(0);
+                setDrawColor(COLOR_BLACK);
                 fillRectBoth(0, 0, 319, 199);
                 waitFrameSync(120);
                 finalizeMission(1);
@@ -611,7 +611,7 @@ void drawWeaponAmmo() {
         return;
     }
     for (i = 0; i < 3; i++) {
-        setDrawColor(0);
+        setDrawColor(COLOR_BLACK);
         x = g_tacmapIndicators[i];
         fillRectBoth(x - 1, 190, x + 2, 194);
         drawNumber(missleSpec[i].ammo, x, 190, 0x0c);

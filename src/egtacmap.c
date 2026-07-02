@@ -52,38 +52,37 @@ void renderHudFrame(int unused) {
         if (g_damageTakenFlag != 0) {
             g_damageTakenFlag = 0;
             if (!(keyValue & 0x80)) {
-                setDrawColor(0xd);
+                setDrawColor(COLOR_FLAMING);
                 fillRectBoth(0, 0, 319, 96);
                 gfx_setDacAnimCount(60);
             }
         }
         g_hudDrawnFlag = 1;
         if (keyValue == 0 && g_halfScaleRender == 0) {
-            if (!commData->setupUseJoy) {
-                setDrawColor(0);
-                drawViewportLine(277, 83, 293, 83);
-                drawViewportLine(293, 83, 293, 95);
-                drawViewportLine(293, 95, 277, 95);
-                drawViewportLine(277, 95, 277, 83);
-                drawViewportLine(285, 89, 285, 89);
-                setDrawColor(0xf);
-                markerX = ((int16)(joyAxes[0] - 120) >> 4) + 285;
-                markerY = ((int16)((joyAxes[1] * 3) - 360) >> 6) + 89;
-                drawViewportLine(markerX - 1, markerY, markerX + 1, markerY);
-                drawViewportLine(markerX, markerY + 1, markerX, markerY - 1);
-            }
+            // draw stick position indicator
+            setDrawColor(COLOR_BLACK);
+            drawViewportLine(277, 83, 293, 83);
+            drawViewportLine(293, 83, 293, 95);
+            drawViewportLine(293, 95, 277, 95);
+            drawViewportLine(277, 95, 277, 83);
+            drawViewportLine(285, 89, 285, 89);
+            setDrawColor(COLOR_WHITE);
+            markerX = ((int16)(joyAxes[0] - 120) >> 4) + 285;
+            markerY = ((int16)((joyAxes[1] * 3) - 360) >> 6) + 89;
+            drawViewportLine(markerX - 1, markerY, markerX + 1, markerY);
+            drawViewportLine(markerX, markerY + 1, markerX, markerY - 1);
             if (g_playerPlaneFlags & 0x200) {
-                setDrawColor(0xf);
+                setDrawColor(COLOR_WHITE);
                 drawViewportLine(156, 89, 164, 89);
                 drawViewportLine(160, 86, 160, 92);
             }
-            setDrawColor(g_nightMode != 0 ? 4 : 0);
+            setDrawColor(g_nightMode != 0 ? COLOR_RED : COLOR_BLACK);
             speedBarLen = clampRange((((g_cornerSpeed - g_knots) * 2) / 5) + 29, 0, 61);
             if (speedBarLen) drawViewportLine(72, 85 - speedBarLen, 72, 85);
             drawViewportLine(247, 56, 247, clampRange(-((g_climbRate >> 4) - 56), 20, 85));
             if ((g_playerPlaneFlags & 1) == 0 && (frameTick & 1) != 0 && gameData->unk4 != 0 && g_climbRate < 0) {
                 climbMarkerY = (((g_planeTable.planes[g_closestThreatIndex].flags & 0x200 ? 0x100 : 0x80) / gameData->unk4) >> 4) + 56;
-                setDrawColor(0xf);
+                setDrawColor(COLOR_WHITE);
                 drawViewportLine(242, climbMarkerY - 2, 244, climbMarkerY);
                 drawViewportLine(242, climbMarkerY + 2, 244, climbMarkerY);
             }
@@ -92,7 +91,7 @@ void renderHudFrame(int unused) {
                 drawStringActivePage("stall warning", 132, 30, 0xf);
             }
             if (g_currentWeaponType == 0 || g_currentWeaponType == 2) {
-                setDrawColor(7);
+                setDrawColor(COLOR_LIGHTGRAY);
                 g_flightPathMarkerY = (g_rollPitchTrim >> 6) + 56;
                 if (g_flightPathMarkerY > 10 && g_flightPathMarkerY < 111) {
                     blitSprite(154, g_flightPathMarkerY - 4, 0x94, 21, 11, 7, 0xf);
@@ -107,7 +106,7 @@ void renderHudFrame(int unused) {
                 }
                 // 7 = air to air? Only Sidewinder and Amraam have it
                 if (sams[missiles[missleSpec[missileSpecIndex].weaponIdx].specIndex].weaponClass == 7) {
-                    setDrawColor(7);
+                    setDrawColor(COLOR_LIGHTGRAY);
                     for (angle = 0; angle <= 0x100; angle += 0x10) {
                         angleFixed = angle << 8;
                         circleX = sinMul(angleFixed, 40) + 159;
@@ -132,7 +131,7 @@ void renderHudFrame(int unused) {
                 drawStringBothPages("AUTOPILOT", 236, 90, 0xf);
             }
             waypointMarkerX = clampRange((((int16)(g_waypointBearing - g_ourHead) >> 6) / 3) + 159, 89, 229);
-            setDrawColor(0x0b);
+            setDrawColor(COLOR_LIGHTCYAN);
             drawViewportLine(waypointMarkerX - 2, 15, waypointMarkerX, 17);
             drawViewportLine(waypointMarkerX, 17, waypointMarkerX + 2, 15);
             drawViewportLine(waypointMarkerX - 2, 15, waypointMarkerX + 2, 15);

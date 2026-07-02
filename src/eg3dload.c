@@ -77,7 +77,7 @@ void load3D3(char *fileName) {
     }
     fileClose(fileHandle);
     while ((fileHandle = openFile("photo.3d3", 0)) == NULL) {
-        setDrawColor(0);
+        setDrawColor(COLOR_BLACK);
         fillRectBoth(0, 40, 319, 45);
         drawStringBothPages("Please insert F15 Disk B", 108, 40, 0x0f);
         gfx_flipPage();

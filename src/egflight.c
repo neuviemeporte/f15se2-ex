@@ -149,7 +149,7 @@ void stepFlightModel(void) {
         if (g_hudVisible != 0) {
             gfx_captureToImage(g_eg2dBacking, *g_pageFront, 0, 97, 0, 97, 320, 103);
         }
-        setDrawColor(0);
+        setDrawColor(COLOR_BLACK);
         fillRectBoth(0, 0, 319, 199);
         blitSprite(0, 0, 113, 55, 12, 7, 0);
         waitForKeyPress();
@@ -989,12 +989,12 @@ void renderFrame() {
 
 void UpdateThrottleState(void) {
     if (g_hudVisible != 0) {
-        setDrawColor(0);
+        setDrawColor(COLOR_BLACK);
         fillRectBoth(212, 127, 222, 175);
-        setDrawColor(0x0c);
+        setDrawColor(COLOR_LIGHTRED);
         fillRectBoth(212, -(g_setThrust / 3 - 175), 222, 175);
         if (100 < g_setThrust) {
-            setDrawColor(0x0e);
+            setDrawColor(COLOR_YELLOW);
             fillRectBoth(212, -(g_setThrust / 3 - 175), 222, 142);
         }
     }
@@ -1003,9 +1003,9 @@ void drawFuelGauge(void) {
     if (g_hudVisible == 0) {
         return;
     }
-    setDrawColor(0);
+    setDrawColor(COLOR_BLACK);
     fillRectBoth(5, 109, 10, 152);
-    setDrawColor(g_fuelRemaining > 2000 ? 2 : 14);
+    setDrawColor(g_fuelRemaining > 2000 ? COLOR_GREEN : COLOR_YELLOW);
     fillRectBoth(5, -(g_fuelRemaining / 250 - 152), 10, 152);
 }
 

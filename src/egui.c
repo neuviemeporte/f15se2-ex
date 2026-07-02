@@ -45,9 +45,9 @@ void drawTacticalMap(char page) {
      * layer replaying the lines over the icons (no effect in software). */
     r2d_setForceRaster(1);
     radius = g_radarScopeRange + 1;
-    setDrawColor(0);
+    setDrawColor(COLOR_BLACK);
     fillSpanRect(g_pageFront, 120, 104, 199, 175);
-    setDrawColor(8);
+    setDrawColor(COLOR_DARKGRAY);
     gridStep = 1;
     if (g_radarScopeRange < 2 && g_detailLevel != 0) {
         gridStep = (1 << (2 - (unsigned char)g_radarScopeRange)) + 1;
@@ -101,18 +101,18 @@ void drawTacticalMap(char page) {
             projectMapPoint(g_projectiles[i].mapX, g_projectiles[i].mapY);
             if (g_projDepth != -1) {
                 if (sams[g_projectiles[i].specIdx].weaponClass <= 0) {
-                    setDrawColor(0x0c);
+                    setDrawColor(COLOR_LIGHTRED);
                 } else {
-                    setDrawColor(0x0e);
+                    setDrawColor(COLOR_YELLOW);
                 }
                 if (sams[g_projectiles[i].specIdx].weaponClass == 3) {
-                    setDrawColor(0x0d);
+                    setDrawColor(COLOR_FLAMING);
                 }
                 if (!(g_projectiles[i].alt & 1)) {
-                    setDrawColor(7);
+                    setDrawColor(COLOR_LIGHTGRAY);
                 }
                 if (i >= 8) {
-                    setDrawColor(0x0f);
+                    setDrawColor(COLOR_WHITE);;
                 }
                 code = g_projectiles[i].worldX - g_ourHead;
                 drawScreenLineOnePage(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, vtxScratch.vproj.x.lo - sinMul(code, radius), cosMul(code, radius) + vtxScratch.vproj.y.lo);

@@ -142,13 +142,13 @@ selectTheater:
 int missionMenuSelect(const char **names, const char **desc, const char *title, int selection) {
     int yPos, row, action;
     enableHighlight = 1;
-    page1Desc.color = COLOR_TITLE;
+    page1Desc.color = COLOR_BLUE;
     drawStringCentered(page1NumPtr, title, 113, 14, 185);
     drawLine(page1NumPtr, 173, 22, 235, 22, 1);
     yPos = 26;
     for (row = 0; row < 5; row++) {
         if (scenarioFoundArr[row] == 0) {
-            page1Desc.color = COLOR_TITLE;
+            page1Desc.color = COLOR_BLUE;
             drawStringCentered(page1NumPtr, names[row], 113, yPos, 185);
             page1Desc.font = FONT_SMALL;
             page1Desc.color = COLOR_BRIEF_DESC_NORMAL;
@@ -266,7 +266,7 @@ void missionDecode() {
 void printMission() {
     int armStep;
     clearBriefing();
-    page1Desc.color = COLOR_TITLE;
+    page1Desc.color = COLOR_BLUE;
     drawStringCentered(page1NumPtr, "TODAY'S MISSION", 113, 14, 185);
     drawLine(page1NumPtr, 160, 22, 249, 22, 1);
     drawStringAt(page1NumPtr, "Takeoff from:", 130, 32);
@@ -276,27 +276,27 @@ void printMission() {
     mystrcpy(todayMissStrBuf, "ONC ");
     mystrcat(todayMissStrBuf, getItemCoordStr(targets[0].baseIdx));
     page1Desc.font = FONT_SMALL;
-    page1Desc.color = COLOR_COORDS;
+    page1Desc.color = COLOR_CYAN;
     drawStringCentered(page1NumPtr, todayMissStrBuf, 113, 52, 185);
     page1Desc.font = FONT_NORMAL;
-    page1Desc.color = COLOR_TITLE;
+    page1Desc.color = COLOR_BLUE;
     drawStringAt(page1NumPtr, "Primary Target:", 130, 64);
     page1Desc.color = COLOR_BRIEF_DESC_HL;
     buildTargetLabel(targets[0].targetIdx);
     drawStringCentered(page1NumPtr, todayMissStrBuf, 113, 74, 185);
     page1Desc.font = FONT_SMALL;
-    page1Desc.color = COLOR_COORDS;
+    page1Desc.color = COLOR_CYAN;
     mystrcpy(todayMissStrBuf, "ONC ");
     mystrcat(todayMissStrBuf, targets[0].coord);
     drawStringCentered(page1NumPtr, todayMissStrBuf, 113, 84, 185);
     page1Desc.font = FONT_NORMAL;
-    page1Desc.color = COLOR_TITLE;
+    page1Desc.color = COLOR_BLUE;
     drawStringAt(page1NumPtr, "Secondary Target:", 130, 96);
     page1Desc.color = COLOR_BRIEF_DESC_HL;
     buildTargetLabel(targets[1].targetIdx);
     drawStringCentered(page1NumPtr, todayMissStrBuf, 113, 106, 185);
     page1Desc.font = FONT_SMALL;
-    page1Desc.color = COLOR_COORDS;
+    page1Desc.color = COLOR_CYAN;
     mystrcpy(todayMissStrBuf, "ONC ");
     mystrcat(todayMissStrBuf, targets[1].coord);
     drawStringCentered(page1NumPtr, todayMissStrBuf, 113, 116, 185);
