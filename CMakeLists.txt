@@ -309,3 +309,12 @@ elseif(
 else()
     message(WARNING "Unknown C++ compiler: ${CMAKE_CXX_COMPILER_ID}")
 endif()
+
+# copy sdl3.dll into the build directory after build
+if(WIN32)
+    add_custom_command(TARGET f15se2 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:SDL3::SDL3>
+        $<TARGET_FILE_DIR:f15se2>
+    )
+endif()

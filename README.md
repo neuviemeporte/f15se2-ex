@@ -88,6 +88,8 @@ Problems with the game that were introduces by the port, and to the best of our 
 4. The "BRG" bearing value in the target screen is sometimes a huge positive value (overflow?).
 5. In the debriefing screen, plane names are only the long string e.g. "Flogger shot down".
 6. When starting a new mission after a previous one has been completed, the sound for the previous flight's landing ("Nice landing") is played, looks as if the sound queue is not drained before terminating the previous mission?
+1. Missile marker on radar is too short/thick and should be drawn on top everything else as the most important threat that should be very visible.
+1. Pausing the game appears to be busy waiting, makes fans spin.
 
 ## Building
 
