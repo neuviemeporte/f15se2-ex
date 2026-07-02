@@ -91,6 +91,54 @@ void drawWorldObject(int shapeId, long worldX, long worldY, int altitude, int ob
     }
 }
 
+/* Transform one world point (worldX/worldY in drawWorldObject's long convention,
+ * altitude) into scene camera space, mirroring drawWorldObject's origin math at
+ * scaleShift 0. A bare origin's projected screen position is scaleShift-invariant,
+ * so this lands exactly where a smoke particle at the point would. Returns 1 if
+ * the relative offset overflows int16 (too far — drop the endpoint). */
+static int worldPointToCamera(long worldX, long worldY, int altitude,
+                              long *baseX, long *camX, long *camY) {
+    long relX, relY;
+    int altDiff, shiftAmt;
+
+    relX = worldX - g_ViewX;
+    relY = worldY + g_ViewY - 0x01000000L;
+    altDiff = altitude - g_viewZ;
+    if ((keyValue & 0x80) != 0) {
+        relX += g_ViewX - g_camEyeX;
+        relY += g_camEyeY - g_ViewY;
+        altDiff += g_viewZ - g_camEyeZ;
+    }
+    /* scaleShift 0 -> -2 (half-scale) / -3 (full) in drawWorldObject; a right shift. */
+    shiftAmt = (g_halfScaleRender != 0) ? 2 : 3;
+    shiftLongRightInPlace(shiftAmt, &relX);
+    shiftLongRightInPlace(shiftAmt, &relY);
+    altDiff >>= (char)shiftAmt;
+    if ((long)(int16)labs(relX) >= (long)0x7FFF) return 1;
+    if ((long)(int16)labs(relY) >= (long)0x7FFF) return 1;
+    /* Matches projectSceneObject's inputs after setViewPosition(0,0,-altDiff):
+     * g_objRelX = (int16)relX, g_objRelY = -(int16)relY, g_objTransform[0] = altDiff
+     * (+1 when altitude != 0, from posZ). */
+    r3d_worldPointToCameraFar(-(int16)relY, altDiff + (altitude != 0),
+                              (int16)relX, baseX, camX, camY);
+    return 0;
+}
+
+/* Submit a world-space 3D line segment (cannon tracer / explosion spark) into the
+ * current scene. worldX/worldY are in drawWorldObject's long convention (fine map
+ * coord << 5), alt is altitude, color is a final palette index. Drawn like a model
+ * line: depth-sorted + occluded (software), z-tested + fogged (GL). */
+void drawWorldLine(long worldX1, long worldY1, int alt1,
+                   long worldX2, long worldY2, int alt2, int color) {
+    R3DLine ln;
+    if (worldPointToCamera(worldX1, worldY1, alt1, &ln.baseXA, &ln.camXA, &ln.camYA))
+        return;
+    if (worldPointToCamera(worldX2, worldY2, alt2, &ln.baseXB, &ln.camXB, &ln.camYB))
+        return;
+    ln.color = color;
+    r3d_submitLine(&ln);
+}
+
 // ==== seg000:0xcb42 ====
 void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYaw, int objPitch, int objRoll, int mode, int shift) {
     int unused;

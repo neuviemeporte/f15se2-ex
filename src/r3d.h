@@ -43,6 +43,19 @@ typedef struct {
     int posX, posY, posZ;
 } R3DSubmit;
 
+/* One world-space line segment submitted to the current scene (cannon tracers,
+ * explosion sparks) — real 3D geometry, drawn like a model "line" primitive:
+ * depth-sorted/occluded (software) and z-tested + fogged (GL). Endpoints are in
+ * the scene's integer camera space — the (screen-X axis, screen-Y axis, depth)
+ * triple transformAndCullObject produces (g_camBaseX / g_camTransX / g_camTransY),
+ * so a line consumes the exact coords models do. `color` is a final VGA palette
+ * index (effect colours are palette indices, not colorLut bytes). */
+typedef struct {
+    long baseXA, camXA, camYA; /* endpoint A: screen-X axis, screen-Y axis, depth */
+    long baseXB, camXB, camYB; /* endpoint B */
+    int color;
+} R3DLine;
+
 /* A renderer backend. Selected once at startup by probe order. */
 typedef struct R3DBackend {
     const char *(*name)(void);
@@ -57,6 +70,7 @@ typedef struct R3DBackend {
     /* Frame. submit() may be called in any order; endScene() orders + flushes. */
     void (*beginScene)(const R3DScene *scene);
     void (*submit)(const R3DSubmit *sub);
+    void (*submitLine)(const R3DLine *line);
     void (*endScene)(void);
 } R3DBackend;
 
@@ -75,6 +89,7 @@ R3DMesh r3d_registerMesh(R3DMesh raw);
 void r3d_releaseMesh(R3DMesh mesh);
 void r3d_beginScene(const R3DScene *scene);
 void r3d_submit(const R3DSubmit *sub);
+void r3d_submitLine(const R3DLine *line);
 void r3d_endScene(void);
 
 /* Registered backends (preference order is defined in r3d.c). */

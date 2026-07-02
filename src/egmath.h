@@ -4,6 +4,7 @@
 
 void load15Flt3d3();
 void drawWorldObject(int shapeId, long worldX, long worldY, int altitude, int objYaw, int objPitch, int objRoll, int scaleShift);
+void drawWorldLine(long worldX1, long worldY1, int alt1, long worldX2, long worldY2, int alt2, int color);
 void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYaw, int objPitch, int objRoll, int mode, int shift);
 int shapeDataOffset(int shapeId);
 int clampRange(int value, int minVal, int maxVal);

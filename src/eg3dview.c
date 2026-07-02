@@ -38,6 +38,7 @@ void render3DView(int camX, int camY, int camZ, long worldX, long worldY, long w
     }
     projectObjects(camX, camY, worldX, worldY, worldZ);
     updateTargetLock();
+    drawWorldEffects(); /* 3D tracers + explosion sparks: inside the scene so they sort/occlude/fog */
     r3d_endScene();
     drawHudWorldOverlay();
     g_renderPageToggle ^= 1;

@@ -3,6 +3,7 @@
 /* public interface of egtarget.c */
 
 void updateTargetLock();
+void drawWorldEffects(void);
 void drawHudWorldOverlay(void);
 int findWaypointEntry(int mapX, int mapY);
 int computeLoftAngle();

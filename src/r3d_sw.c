@@ -10,6 +10,9 @@
 #include "egcode.h"
 #include "egtypes.h"
 
+void far r3d_submitLineFar(long baseXA, long camXA, long camYA,
+                           long baseXB, long camXB, long camYB, int color);
+
 static const char *sw_name(void) { return "software"; }
 
 /* The software rasterizer needs no environment probe; it always claims. */
@@ -30,6 +33,11 @@ static void sw_submit(const R3DSubmit *o) {
                        o->posX, o->posY, o->posZ);
 }
 
+static void sw_submitLine(const R3DLine *l) {
+    r3d_submitLineFar(l->baseXA, l->camXA, l->camYA,
+                      l->baseXB, l->camXB, l->camYB, l->color);
+}
+
 static void sw_endScene(void) {
     rasterize3DWorld();
 }
@@ -42,5 +50,6 @@ const R3DBackend r3d_softwareBackend = {
     sw_releaseMesh,
     sw_beginScene,
     sw_submit,
+    sw_submitLine,
     sw_endScene,
 };

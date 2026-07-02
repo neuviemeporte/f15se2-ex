@@ -300,21 +300,18 @@ skip_aam:
 done:;
 }
 
-void drawHudWorldOverlay(void) {
-    int p, lockFlag, prevDepth, r, wpEntry, hitFlag, tmp, t, missileSpecD, loftDist, e, missileSpec, marker, idx, g, radius, objIdx, pointY, pointX, dist, wpIdx, prevX, gunRadius, compat, prevY;
+/* World-space radius of an explosion burst, in fine map (posX) units; the alt
+ * axis is 32x finer (velZ carries a << 5), so vertical offsets are scaled to
+ * match. Tunable by eye. */
+static const int EXPLOSION_WORLD_RADIUS = 0x10;
 
-    g_prevKillMarker = g_targetInHudFlag;
-    g_targetInHudFlag = 0;
-
-    for (idx = 0; idx < 12; idx++) {
-        if (g_projectiles[idx].ttl != 0) {
-            projectWorldToHud(g_projectiles[idx].mapX, g_projectiles[idx].mapY, g_projectiles[idx].alt);
-            if (vtxScratch.vproj.x.lo != -1) {
-                setDrawColor(idx < 8 ? 0x0e : 0x0a);
-                drawTargetBox(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, 6, 0);
-            }
-        }
-    }
+/* Cannon tracers + explosion sparks as real world-space 3D line geometry
+ * (drawWorldLine): submitted into the scene BEFORE r3d_endScene so the software
+ * depth sort occludes them and the GL backend z-tests + fogs them. Split out of
+ * drawHudWorldOverlay (which keeps the 2D HUD symbology) so the effects join the
+ * 3D pass; game-logic order is unchanged (tracer hit-detect then explosion). */
+void drawWorldEffects(void) {
+    int prevDepth, hitFlag, tmp, idx, radius, objIdx, pointY, pointX, dist, wpEntry, prevX, gunRadius, prevY;
 
     gunRadius = 0x200 / isqrt(g_frameRateScaling * 4 + 8);
 
@@ -337,8 +334,18 @@ void drawHudWorldOverlay(void) {
 
                     dist = ((frameTick >> 1) - idx) & 7;
 
-                    setDrawColor(idx < g_bulletTrackCount ? 0x0d : 0x0c);
-                    drawViewportLine(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, prevX, prevY);
+                    /* The projectWorldToHud pair above still gates on-screen
+                     * visibility (prevX / vproj.x != -1); the tracer itself is a
+                     * real world-space 3D segment (bullet position -> half a
+                     * velocity-step ahead) so it perspective-projects, occludes
+                     * and hazes with the scene instead of overlaying a flat line. */
+                    drawWorldLine((long)(uint16)bulletTracks[idx].posX << 5,
+                                  (long)(uint16)bulletTracks[idx].posY << 5,
+                                  bulletTracks[idx].alt,
+                                  (long)(uint16)((bulletTracks[idx].velX >> 1) + bulletTracks[idx].posX) << 5,
+                                  (long)(uint16)((bulletTracks[idx].velY >> 1) + bulletTracks[idx].posY) << 5,
+                                  (bulletTracks[idx].velZ >> 1) + bulletTracks[idx].alt,
+                                  idx < g_bulletTrackCount ? 0x0d : 0x0c);
 
                     hitFlag = 0;
 
@@ -420,30 +427,57 @@ void drawHudWorldOverlay(void) {
     }
 
     if (g_hitEffectTimer != 0) {
+        /* Explosion burst as world-space 3D sparks radiating from the hit point:
+         * each is a real line (drawWorldLine) so the star has perspective, occludes
+         * and hazes — not a flat screen-space starburst. The projectWorldToHud call
+         * only gates on-screen visibility (the sparks are re-randomised every frame
+         * the timer is active, giving the flicker). radius is a WORLD radius (fine
+         * map units), so the burst shrinks with distance instead of a screen-px fan. */
         projectWorldToHud(g_hitMapX, g_hitMapY, g_hitAlt);
         if (vtxScratch.vproj.x.lo != -1) {
-            radius = abs(0x100 / g_projDepth);
+            long hx = (long)(uint16)g_hitMapX << 5;
+            long hy = (long)(uint16)g_hitMapY << 5;
+            radius = EXPLOSION_WORLD_RADIUS;
             for (idx = 0; idx < 8; idx++) {
-                setDrawColor(randomRange(4) + 0x0c);
+                int color = randomRange(4) + 0x0c;
+                int ex, ey, ez;
                 if (g_hitAlt > 0) {
-                    drawViewportLine(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo,
-                                     randomRange(radius << 1) - radius + vtxScratch.vproj.x.lo,
-                                     randomRange(radius << 1) - radius + vtxScratch.vproj.y.lo);
+                    /* airburst: scatter in a world-space sphere around the hit */
+                    ex = g_hitMapX + randomRange(radius << 1) - radius;
+                    ey = g_hitMapY + randomRange(radius << 1) - radius;
+                    ez = g_hitAlt + ((randomRange(radius << 1) - radius) << 5);
                 } else {
-                    tmp = randomRange(0x6000) - 0x3000;
-                    if (g_hudVisible != 0) {
-                        tmp -= g_ourRoll;
-                    }
+                    /* ground burst: fan horizontally and plume upward */
+                    tmp = randomRange(0x8000) - 0x4000;
                     prevDepth = randomRange(radius);
-                    prevX = sinMul(tmp, prevDepth) + vtxScratch.vproj.x.lo;
-                    prevY = vtxScratch.vproj.y.lo - cosMul(tmp, prevDepth);
-                    drawViewportLine(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, prevX, prevY);
+                    ex = g_hitMapX + sinMul(tmp, prevDepth);
+                    ey = g_hitMapY - cosMul(tmp, prevDepth);
+                    ez = g_hitAlt + (randomRange(radius) << 5);
                 }
+                drawWorldLine(hx, hy, g_hitAlt,
+                              (long)(uint16)ex << 5, (long)(uint16)ey << 5, ez, color);
             }
         }
         g_hitEffectTimer -= signOf(g_hitEffectTimer);
     } else {
         g_lockedTargetKilled = 0;
+    }
+}
+
+void drawHudWorldOverlay(void) {
+    int p, lockFlag, r, wpEntry, tmp, t, missileSpecD, loftDist, e, missileSpec, marker, idx, g, radius, objIdx, pointY, pointX, dist, wpIdx, prevX, compat, prevY;
+
+    g_prevKillMarker = g_targetInHudFlag;
+    g_targetInHudFlag = 0;
+
+    for (idx = 0; idx < 12; idx++) {
+        if (g_projectiles[idx].ttl != 0) {
+            projectWorldToHud(g_projectiles[idx].mapX, g_projectiles[idx].mapY, g_projectiles[idx].alt);
+            if (vtxScratch.vproj.x.lo != -1) {
+                setDrawColor(idx < 8 ? 0x0e : 0x0a);
+                drawTargetBox(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, 6, 0);
+            }
+        }
     }
 
     if (g_hudVisible == 0) return;

@@ -143,8 +143,8 @@ static float s_vpW, s_vpH;   /* active 3D viewport size in window pixels (screen
  * z-buffer (GL_LEQUAL) resolves genuine occlusion painter's order alone got wrong
  * (a plane behind a building does not show through); the objects are still
  * collected and drawn in the original's painter's order — farthest-first by the
- * LOD-normalized origin depth (insertSortedObject's key), back-face culled, faces
- * in display-list order — so that surfaces a z-buffer cannot separate (paper-thin
+ * LOD-normalized origin depth (insertSortedObject's key), faces in display-list
+ * order — so that surfaces a z-buffer cannot separate (paper-thin
  * coplanar faces: jet fire on the engine, surf on the sea, deck markings) keep the
  * original look, the later draw winning at equal depth. */
 typedef struct {
@@ -152,7 +152,6 @@ typedef struct {
     int16 combined[9];
     long camBase, camX, camY; /* camera-space origin axes (screen-X, screen-Y, depth) */
     int shade, colorBase, curLod;
-    int dirX, dirY, dirZ; /* object facing, for the per-face back-face cull */
     int posZ;             /* object world altitude (0 = ground/sea), for wire ground test */
     int sortHi, sortLo;   /* normalized origin depth (sort key, farthest = largest) */
     int immediate;        /* flat ground/sea (posZ==0, no sort flag): drawn first/behind */
@@ -162,6 +161,20 @@ typedef struct {
 static GlSub s_subs[GL_MAX_SUBS];
 static int s_nSub;
 static int s_subOverflow;
+
+/* World-space 3D line segments (cannon tracers, explosion sparks) submitted this
+ * frame; drawn as camera-facing ribbons (z-tested + fogged) at the end of the
+ * scene. Endpoints are the scene camera-space (screen-X axis, screen-Y axis,
+ * depth) triples; color is a final palette index. */
+typedef struct {
+    long baseXA, camXA, camYA;
+    long baseXB, camXB, camYB;
+    int color;
+} GlLine;
+#define GL_MAX_LINES 256
+static GlLine s_lines[GL_MAX_LINES];
+static int s_nLine;
+static int s_lineOverflow;
 
 /* INDEX8 -> RGBA8888 conversion scratch, shared by the page composite, the sprite
  * textures and the sub-view backdrop snapshot. */
@@ -610,6 +623,8 @@ static void gl_beginSubScene(const R3DScene *s) {
     beginModelPass();
     s_nSub = 0;
     s_subOverflow = 0;
+    s_nLine = 0;
+    s_lineOverflow = 0;
     s_flatN = 0;
     s_sceneRendered = 1; /* live 3D is now in the framebuffer; the present must not clear it */
 }
@@ -810,6 +825,8 @@ static void gl_beginScene(const R3DScene *s) {
     }
     s_nSub = 0;
     s_subOverflow = 0;
+    s_nLine = 0;
+    s_lineOverflow = 0;
     s_flatN = 0; /* model-flatness cache is per-frame (world data may reload) */
     s_sceneRendered = 1;
 }
@@ -818,7 +835,7 @@ static void gl_submit(const R3DSubmit *o) {
     GlSub *r;
     int16 combined[9];
     long camBase, camTransX, camTransY, depth;
-    int shade, dirX, dirY, dirZ, shift, i;
+    int shade, shift, i;
 
     if (s_nSub >= GL_MAX_SUBS) {
         s_subOverflow++;
@@ -827,8 +844,7 @@ static void gl_submit(const R3DSubmit *o) {
 
     if (r3d_objTransformFar((char far *)o->mesh, o->yaw, o->pitch, o->roll,
                             o->posX, o->posY, o->posZ,
-                            combined, &camBase, &camTransX, &camTransY, &shade,
-                            &dirX, &dirY, &dirZ))
+                            combined, &camBase, &camTransX, &camTransY, &shade))
         return; /* frustum-culled */
 
     r = &s_subs[s_nSub];
@@ -840,9 +856,6 @@ static void gl_submit(const R3DSubmit *o) {
     r->shade = shade;
     r->colorBase = g_objColorBase;
     r->curLod = g_curLod;
-    r->dirX = dirX;
-    r->dirY = dirY;
-    r->dirZ = dirZ;
     r->posZ = o->posZ;
 
     /* Immediate = the no-z-buffer ground class (drawn first, painter's): a flat,
@@ -870,6 +883,22 @@ static void gl_submit(const R3DSubmit *o) {
     if (g_curLod == 2 && g_objRenderMode == 5) r->sortHi += 0x20;
 }
 
+static void gl_submitLine(const R3DLine *o) {
+    GlLine *l;
+    if (s_nLine >= GL_MAX_LINES) {
+        s_lineOverflow++;
+        return;
+    }
+    l = &s_lines[s_nLine++];
+    l->baseXA = o->baseXA;
+    l->camXA = o->camXA;
+    l->camYA = o->camYA;
+    l->baseXB = o->baseXB;
+    l->camXB = o->camXB;
+    l->camYB = o->camYB;
+    l->color = o->color;
+}
+
 /* Distance-scaled single-pixel decoration. The original drew these as a fixed 1px
  * dot at any range; here the point shrinks with camera depth (and, with smooth-point
  * coverage, the far sub-pixel ones fade out) so the scattered ground decorations read
@@ -887,7 +916,7 @@ static void gl_submit(const R3DSubmit *o) {
  * is poor) yet stay far below the gap between genuinely separated objects, so the
  * z-test still drives real occlusion. Raise if coplanar faces still shimmer; lower
  * if a clearly-nearer surface is punched through by a later, farther draw. */
-static const float GL_PAINT_BIAS = 4.0f;
+static const float GL_PAINT_BIAS = 20.0f;
 static int s_paintSeq; /* primitives drawn so far this frame (reset in gl_endScene) */
 
 /* Bias the next primitive one draw-step toward the camera. Call OUTSIDE glBegin/End,
@@ -940,7 +969,6 @@ static void drawSub(const GlSub *r) {
     int i, shift;
     float cm[9], scaleDiv;
     static float vx_[R3DMESH_MAX_VERTS], vy_[R3DMESH_MAX_VERTS], vd_[R3DMESH_MAX_VERTS];
-    static uint8 backFacing[R3DMESH_MAX_NORMALS];
 
     fillPools(&pools);
     if (r3dmesh_decode((const uint8 *)r->model,
@@ -993,14 +1021,6 @@ static void drawSub(const GlSub *r) {
     }
 
     if (l->form != MESH_FORM_MODEL) return;
-
-    /* Back-face cull matching the original (rotatePoint3d): a face is hidden when
-     * its gating normal faces away, dot(normal, objDir) < threshold. */
-    for (i = 0; i < l->nNormals; i++) {
-        MeshNormal *nrm = &l->normals[i];
-        long dot = (long)nrm->nx * r->dirX + (long)nrm->ny * r->dirZ + (long)nrm->nz * r->dirY;
-        backFacing[i] = (dot < (long)nrm->threshold) ? 1 : 0;
-    }
 
     /* The LOD coordinate scale (8 - 2*curLod) cancels in the x/y projection ratio
      * (camX/depth); applied here only to keep depths consistent for the perspective
@@ -1077,8 +1097,6 @@ static void drawSub(const GlSub *r) {
         int ring[R3DMESH_MAX_FACE_EDGES + 1];
         int n, k, cur, prev, deg;
         if (f->nEdges < 3) continue;
-        /* Back-face cull (original's per-face normal sign test). */
-        if (f->cullNormal < l->nNormals && backFacing[f->cullNormal]) continue;
         /* Colour filters from renderPrimitiveCommand: 0xff is transparent, and the
          * lowest-LOD flat ground tile (colorBase == 0x400) draws only its
          * colorByte==1 ground face — the rest of that tile's faces are junk. */
@@ -1205,6 +1223,66 @@ static void drawSub(const GlSub *r) {
     }
 }
 
+/* Effect-line ribbon half-width as a fraction of camera depth, so a tracer /
+ * explosion spark keeps a roughly constant thin screen width (the offset is added
+ * in camera space and divided by depth on projection). Tune to taste. */
+static const float GL_EFFECT_HW_FRAC = 0.0016f;
+
+/* The LOD coordinate scale drawWorldObject/gl_submit apply to these effects
+ * (g_curLod == 1 -> 1 << (8 - 2*1)). drawSub divides every model vertex by the
+ * same scaleDiv; it cancels in the x/y projection ratio but sets the absolute
+ * magnitude the fog distance (vd_) is read in, so a loose line must divide too or
+ * it hazes ~64x too hard. */
+static const float GL_EFFECT_SCALEDIV = 64.0f;
+
+/* Draw one world-space 3D line (tracer / explosion spark) as a camera-facing
+ * ribbon quad, the same construction as a model wire (drawSub): work in true
+ * camera space (z = depth, same scale as x/y) so the perpendicular is Euclidean
+ * and the near plane clips it, divide z out on emit. z-tested + fogged by the
+ * caller's GL state, so it occludes and hazes like scene geometry. */
+static void drawGlLine(const GlLine *ln) {
+    const float sd = GL_EFFECT_SCALEDIV;
+    float ax = (float)ln->baseXA / sd, ay = (float)ln->camXA / sd, az = (float)ln->camYA / sd;
+    float bx = (float)ln->baseXB / sd, by = (float)ln->camXB / sd, bz = (float)ln->camYB / sd;
+    float lx = bx - ax, ly = by - ay, lz = bz - az;
+    float len = SDL_sqrtf(lx * lx + ly * ly + lz * lz);
+    float avgDepth, hw, pax, pay, paz, pbx, pby, pbz, pl;
+    if (len < 1.0f) return;
+    avgDepth = 0.5f * (az + bz);
+    if (avgDepth < 1.0f) avgDepth = 1.0f;
+    hw = avgDepth * GL_EFFECT_HW_FRAC;
+
+    /* per-end normalize(cross(lineDir, ray)) * hw (ray = endpoint position) */
+    pax = ly * az - lz * ay;
+    pay = lz * ax - lx * az;
+    paz = lx * ay - ly * ax;
+    pl = SDL_sqrtf(pax * pax + pay * pay + paz * paz);
+    if (pl < 1e-3f) return;
+    pax = pax / pl * hw;
+    pay = pay / pl * hw;
+    paz = paz / pl * hw;
+    pbx = ly * bz - lz * by;
+    pby = lz * bx - lx * bz;
+    pbz = lx * by - ly * bx;
+    pl = SDL_sqrtf(pbx * pbx + pby * pby + pbz * pbz);
+    if (pl < 1e-3f) return;
+    pbx = pbx / pl * hw;
+    pby = pby / pl * hw;
+    pbz = pbz / pl * hw;
+    if (pax * pbx + pay * pby + paz * pbz < 0.0f) {
+        pbx = -pbx;
+        pby = -pby;
+        pbz = -pbz;
+    }
+    glColorIndex(ln->color);
+    glBegin(GL_QUADS);
+    fogVertex(ax + pax, ay + pay, (az + paz) / 65536.0f);
+    fogVertex(bx + pbx, by + pby, (bz + pbz) / 65536.0f);
+    fogVertex(bx - pbx, by - pby, (bz - pbz) / 65536.0f);
+    fogVertex(ax - pax, ay - pay, (az - paz) / 65536.0f);
+    glEnd();
+}
+
 /* Painter's order, reproducing projectSceneObject + renderSortedListFar: the
  * immediate (flat ground/sea) objects first in walk order, then the sorted queue
  * farthest first (descending sortHi, then unsigned sortLo). */
@@ -1246,7 +1324,16 @@ static void gl_endScene(void) {
     for (i = 0; i < s_nSub; i++)
         if (!s_subs[i].immediate) drawSub(&s_subs[i]);
 
+    /* 3D effect lines (tracers / explosion sparks): z-tested against the scene
+     * just drawn and fogged like it, so they occlude and haze. Drawn after the
+     * objects with no polygon offset (they are thin free-standing ribbons, not
+     * coplanar decals). */
+    if (s_lineOverflow)
+        LogWarn(("r3d_gl: %d effect lines dropped (cap %d)", s_lineOverflow, GL_MAX_LINES));
     glPolygonOffset(0.0f, 0.0f);
+    for (i = 0; i < s_nLine; i++) drawGlLine(&s_lines[i]);
+    s_nLine = 0;
+
     glDisable(GL_FOG);
     s_nSub = 0;
     glDisable(GL_SCISSOR_TEST);
@@ -1260,6 +1347,7 @@ const R3DBackend r3d_glBackend = {
     gl_releaseMesh,
     gl_beginScene,
     gl_submit,
+    gl_submitLine,
     gl_endScene,
 };
 
