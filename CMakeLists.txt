@@ -200,6 +200,10 @@ set_source_files_properties(
 # the base GL library; SDL3 supplies the GL headers and context management.
 find_package(OpenGL REQUIRED)
 
+# Some tests use std::thread; link a threads library explicitly so it resolves
+# across toolchains (not all fold pthread into libc).
+find_package(Threads REQUIRED)
+
 #------------------------------------------------------------------------------
 # Sanitizers (GCC/Clang, opt-in). Applied at directory scope so the executable
 # and the tests (which each compile the game code they exercise) are instrumented
@@ -337,9 +341,9 @@ function(add_behavior_test name)
         ${SRC_DIR}/shared
     )
     if(T_LINK_CORE)
-        target_link_libraries(${name} PRIVATE f15se2_core)
+        target_link_libraries(${name} PRIVATE f15se2_core Threads::Threads)
     else()
-        target_link_libraries(${name} PRIVATE SDL3::SDL3)
+        target_link_libraries(${name} PRIVATE SDL3::SDL3 Threads::Threads)
     endif()
     if(T_DEFS)
         target_compile_definitions(${name} PRIVATE ${T_DEFS})
