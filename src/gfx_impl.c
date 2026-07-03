@@ -109,6 +109,8 @@ void gfx_videoInit(void) {
 void gfx_toggleFullscreen(void) {
     bool full = (SDL_GetWindowFlags(sdlWindow) & SDL_WINDOW_FULLSCREEN) != 0;
     SDL_SetWindowFullscreen(sdlWindow, !full);
+    if (!full) SDL_HideCursor();
+    else SDL_ShowCursor();
 }
 
 void gfx_videoShutdown(void) {
