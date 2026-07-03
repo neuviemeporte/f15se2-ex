@@ -55,7 +55,7 @@ void resetGameplayState() {
     std::memset(&g_planeTable, 0, sizeof(g_planeTable));
     std::memset(g_projectiles, 0, sizeof(struct Projectile) * 12);
     std::memset(g_targetSlots, 0, sizeof(struct TargetSlot) * 2);
-    std::memset(mapEvents, 0, sizeof(struct MapEvent) * 12);
+    std::memset(mapEvents, 0, sizeof(struct MapEvent) * 4);
     std::memset(&g_replayLog, 0, sizeof(g_replayLog));
     strBuf[0] = '\0';
     g_viewX_ = g_viewY_ = 0;
@@ -388,11 +388,11 @@ int main() {
     g_slowMotionMode = 2;
     g_frameRateScaling = 8;
     exitSlowMotion();
-    require(g_slowMotionMode == 1 && g_frameRateScaling == 15,
-            "exitSlowMotion leaves mode 2, doubles the scale, and re-clamps");
-    const int16 keptScale = g_frameRateScaling;
+    require(g_slowMotionMode == 1 && g_frameRateScaling == 8,
+            "exitSlowMotion leaves ACCEL mode without touching frame-rate scaling "
+            "(render/sim decouple: ACCEL scales the wall-clock step rate instead)");
     exitSlowMotion();
-    require(g_slowMotionMode == 1 && g_frameRateScaling == keptScale,
+    require(g_slowMotionMode == 1 && g_frameRateScaling == 8,
             "exitSlowMotion is a no-op when not in mode 2");
 
     // --- setupLodDistances thresholds (egkeys) ------------------------------

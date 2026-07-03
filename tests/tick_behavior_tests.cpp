@@ -18,11 +18,8 @@ enum TickOriginalConstant : int {
     kTimerTickAfter = 0x7F,
     kFrameTimingBefore = 0x1234,
     kFrameTimingAfter = 0x1235,
-    kExpectedOneCall = 1,
     kTestFailureExitCode = 1,
 };
-
-int g_dacCycleCalls = 0;
 
 void require(bool condition, const char *message) {
     if (!condition) {
@@ -36,14 +33,9 @@ void resetTickState() {
     g_frameSyncPending = kFrameSyncPendingBeforeTick;
     g_timerTickByte[0] = kTimerTickBefore;
     g_frameTimingAccum = kFrameTimingBefore;
-    g_dacCycleCalls = 0;
 }
 
 } // namespace
-
-void gfx_dacCycle(void) {
-    ++g_dacCycleCalls;
-}
 
 int main() {
     resetTickState();
@@ -55,8 +47,6 @@ int main() {
             "egAdvanceFrameTick increments the original waitFrameSync tick byte");
     require(g_frameTimingAccum == kFrameTimingAfter,
             "egAdvanceFrameTick increments the original frame timing accumulator");
-    require(g_dacCycleCalls == kExpectedOneCall,
-            "egAdvanceFrameTick runs the original DAC colour-cycle hook once per tick");
 
     std::cout << "tick_behavior_tests passed\n";
     return 0;

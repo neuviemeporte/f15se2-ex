@@ -57,12 +57,7 @@ void updateFrame(void) {
             gameData->difficulty = 2;
             g_autopilotEngaged = 1;
             g_playerPlaneFlags |= 0x1000;
-            // Keep this write at the original comm byte offset (0x30).
-            *(unsigned char *)&((unsigned char *)commData)[0x30] |= 1;
-            i = (unsigned char)((unsigned char *)commData)[0x0d];
-            if (i == 0x69 || i == 0x49) {
-                g_axisInputAccum[2] = 1;
-            }
+            *(char far *)&commData->trainingFlag |= 1;
         }
         findWaypointFeatures();
         g_threatActiveTimer = 0;
