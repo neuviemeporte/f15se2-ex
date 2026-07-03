@@ -101,6 +101,13 @@ static int32 lerpLinear(int32 a, int32 b, int64 num, int64 den) {
  * don't in practice, where the int16 delta degenerates to a plain difference). */
 static int32 lerpAngle(int32 a, int32 b, int64 num, int64 den) {
     int16 d = (int16)(b - a);
+    /* A single sim step never rotates the airframe ~90deg from stick input; a
+     * delta that large is the discontinuous 0x8000 heading/roll flip
+     * computeAttitudeAngles() emits as pitch crosses +/-90deg (gimbal). Tweening
+     * across it would sweep the view 180deg for one render frame, so snap to the
+     * new pose instead. */
+    if (d >= 0x4000 || d <= -0x4000)
+        return b;
     return a + (int32)(((int64)d * num) / den);
 }
 

@@ -752,6 +752,15 @@ int isqrt(int value) { /* Original: Sqrt(N). Return integer square root using Ne
     return guess;
 }
 
+/* Q12 shortest-arc tween that snaps across the 0x8000 gimbal flip (see lerpAngle
+ * in egsys.c) rather than sweeping the view 180deg for one frame. */
+static int lerpViewAngle(int a0, int a1, int alpha) {
+    int16 d = (int16)(a1 - a0);
+    if (d >= 0x4000 || d <= -0x4000)
+        return a1;
+    return a0 + ((d * alpha) >> 12);
+}
+
 // something to do with view switching?
 void renderFrame() {
     int camDist, savedCamDist, range, camOffset, dx, dy, tmp;
@@ -794,9 +803,9 @@ void renderFrame() {
         r1 = (tmp + 1) & 0xf;
         s0 = &g_viewSnapshotRing[tmp];
         s1 = &g_viewSnapshotRing[r1];
-        g_viewHeading = s0->heading + (((int16)(s1->heading - s0->heading) * a) >> 12);
-        g_viewPitch = s0->pitch + (((int16)(s1->pitch - s0->pitch) * a) >> 12);
-        g_viewRoll = s0->roll + (((int16)(s1->roll - s0->roll) * a) >> 12);
+        g_viewHeading = lerpViewAngle(s0->heading, s1->heading, a);
+        g_viewPitch = lerpViewAngle(s0->pitch, s1->pitch, a);
+        g_viewRoll = lerpViewAngle(s0->roll, s1->roll, a);
         g_camEyeX = s0->worldX + (int32)(((int64)(s1->worldX - s0->worldX) * a) >> 12);
         g_camEyeY = s0->worldY + (int32)(((int64)(s1->worldY - s0->worldY) * a) >> 12);
         g_camEyeZ = s0->alt + (((int32)(s1->alt - s0->alt) * a) >> 12);
