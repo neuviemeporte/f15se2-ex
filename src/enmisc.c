@@ -14,7 +14,6 @@
 void drawStringAtPos(int16 *s, const char far *str, int x, int y);
 void drawFarString(int16 *s, const char far *str);
 void farStrcpy(char *dst, const char far *src);
-void outportByte(int port, int value);
 void restoreVideoMode(void);
 void restoreInterrupts(void);
 void setupWorldBufPtr(void);
@@ -56,10 +55,6 @@ void restoreVideoMode(void) {
 }
 
 void restoreInterrupts(void) {
-}
-
-void outportByte(int port, int value) {
-    outp(port, value);
 }
 
 void setupWorldBufPtr(void) {

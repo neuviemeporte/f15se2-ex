@@ -4424,8 +4424,8 @@ char str_insertDiskA[] = "Please insert F15 Disk A";
 char str_pressKey2[] = "<Press a key when ready>";
 char str_missionDebrief[] = "  MISSION DEBRIEFING\0";
 
-/* Ctrl-Break handler state. origCBreak* and the timer block are shared
- * impl state owned by stdata.c. */
+/* Ctrl-Break handler state (cbreakHit and the timer block are shared
+ * impl state owned by stdata.c). */
 uint8 quitFlag = 0;
 
 /* Random number generator */
@@ -4472,8 +4472,8 @@ int16 lzw2CurCode = 0;
 int16 lzw2FirstChar = 0;
 uint8 lzw2WorkBuf[10] = {0};
 
-/* gameData, commData, worldObjectCount and ovlInsaneFlag are the shared
- * inter-module comm state owned by stdata.c. */
+/* gameData, commData and worldObjectCount are the shared inter-module comm
+ * state owned by stdata.c. */
 
 /* BSS variables */
 uint8 worldMiscHeader[4] = {0};

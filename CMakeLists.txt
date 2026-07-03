@@ -105,7 +105,6 @@ set(F15SE2_SOURCES
     # f15 launcher
     ${SRC_DIR}/f15.c
     ${SRC_DIR}/dosfunc.c
-    ${SRC_DIR}/biosfunc.c
     ${SRC_DIR}/log.c
     ${SRC_DIR}/gfx_impl.c
     ${SRC_DIR}/joystick.c
@@ -145,7 +144,6 @@ set(EGAME_SOURCES
     ${SRC_DIR}/egtgt2.c
     ${SRC_DIR}/egmath.c
     ${SRC_DIR}/egkeys.c
-    ${SRC_DIR}/egfileio.c
     ${SRC_DIR}/egpic.c
     ${SRC_DIR}/egdata.c
     ${SRC_DIR}/egfarbuf.c

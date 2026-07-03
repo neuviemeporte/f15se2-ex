@@ -114,6 +114,7 @@ open_dbicons:
         e += 10;
         c++;
     } while (c < 2);
+    menuLabelsReset(); /* labels just drawn in the unselected colour */
 
     g = 0;
     ejectedFlag = 1;

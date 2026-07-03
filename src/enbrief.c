@@ -22,14 +22,14 @@ void drawClippedLine(int x1, int y1, int x2, int y2);
 int drawEventSprite(int recordIdx);
 void drawMapPixel(int x, int y, int color);
 int isPointInRect(const struct MenuItem *p);
-void blinkWidget(MenuItem *item, int16 *gfxPage);
+void blinkWidget(MenuItem *item);
 unsigned int countFlightRecords(void);
 void showEventPopup(void);
 void drawFlightLine(int p1, int p2, int p3, int p4);
 char *formatFlightTime(int timeValue, char *buffer);
 void plotMapPoint(int x, int y, int color, int unused);
 void timerWait(unsigned int ticks);
-void processDebriefInput(const int16 *cursorBounds, const MenuItem *menuItem, int16 *gfxPage);
+void processDebriefInput(const int16 *cursorBounds, const MenuItem *menuItem);
 void drawMenuItem(const MenuItem *items, unsigned int index, int16 *gfxPage);
 static void debriefPresent(void);
 static void drawEventBlinkSprite(int recordIdx);
@@ -37,6 +37,29 @@ static void drawEventBlinkSprite(int recordIdx);
 /* Popup icon (index into popupSpriteX/Y) drawn by debriefPresent while
  * popupVisible; picked by showEventPopup. */
 static int popupSpriteIdx;
+
+/* Menu label geometry (matches the setup draw in debriefMainLoop). */
+#define MENU_LABEL_X 236
+#define MENU_LABEL_Y 150
+#define MENU_LABEL_STEP 10
+#define MENU_LABEL_COLOR 6 /* unselected label colour */
+
+/* Current colour of each debrief menu label. debriefPresent repaints the
+ * labels in this colour every present; selection, blink and the colour-cycle
+ * just update it — page pixels are never read back and recoloured. */
+static uint8 menuLabelColor[2];
+
+void menuLabelsReset(void) {
+    menuLabelColor[0] = menuLabelColor[1] = MENU_LABEL_COLOR;
+}
+
+/* Colour-replace on a menu label rect: the label text is uniformly one
+ * colour, so replacing colour `from` with `to` reduces to a state update. */
+static void menuLabelSwitch(const MenuItem *item, int from, int to) {
+    ptrdiff_t idx = item - debriefMenuItems;
+    if (idx >= 0 && idx < 2 && menuLabelColor[idx] == from)
+        menuLabelColor[idx] = (uint8)to;
+}
 
 void computeMissionResult(void) {
     unsigned int gridX, gridY;
@@ -66,7 +89,7 @@ void processMenuItems(MenuItem *items, int unused, int itemCount, int cursorStar
         if (items[idx].state == 2) {
             selectedMenuItem = idx;
             items[idx].state = 0;
-            blinkWidget(&items[idx], gfxPage);
+            blinkWidget(&items[idx]);
             drawMenuItem(items, idx, gfxPage);
         } else {
             if (items[idx].state != 3) {
@@ -81,8 +104,6 @@ void processMenuItems(MenuItem *items, int unused, int itemCount, int cursorStar
 // 224a
 int selectMenuItem(MenuItem *items, int unused, int itemCount, int16 *inputState, int16 *gfxPage) {
     char p[2];
-    int toColor;
-    int fromColor;
     char c[2];
     char e[2];
     int groupIdx;
@@ -111,7 +132,7 @@ int selectMenuItem(MenuItem *items, int unused, int itemCount, int16 *inputState
                 colorAnimEnabled = 1;
             }
             // 22d4
-            processDebriefInput(inputState, &items[curIdx], gfxPage);
+            processDebriefInput(inputState, &items[curIdx]);
         } while (inputChanged == 0 && enterPressed == 0);
         // 22e8
         if (enterPressed != 0) {              // 22f2
@@ -122,13 +143,10 @@ int selectMenuItem(MenuItem *items, int unused, int itemCount, int16 *inputState
             } // 2320
             // 232c
             if (items[selectedMenuItem].colorTableIdx == 0) {
-                fromColor = 0x0b;
-                toColor = 9;
-                gfx_switchColor(gfxPage, items[selectedMenuItem].colorX1, items[selectedMenuItem].colorY1, items[selectedMenuItem].colorX2, items[selectedMenuItem].colorY2, 0x0b, 9);
-                fromColor = 3;
-                gfx_switchColor(gfxPage, items[selectedMenuItem].colorX1, items[selectedMenuItem].colorY1, items[selectedMenuItem].colorX2, items[selectedMenuItem].colorY2, 3, toColor);
-                fromColor = 0x0d;
-                gfx_switchColor(gfxPage, items[selectedMenuItem].colorX1, items[selectedMenuItem].colorY1, items[selectedMenuItem].colorX2, items[selectedMenuItem].colorY2, 0x0d, toColor);
+                /* the colour-cycle may have left the label on 0x0b/3/0x0d */
+                menuLabelSwitch(&items[selectedMenuItem], 0x0b, 9);
+                menuLabelSwitch(&items[selectedMenuItem], 3, 9);
+                menuLabelSwitch(&items[selectedMenuItem], 0x0d, 9);
             }
             // 23bc
             goto done;
@@ -142,26 +160,20 @@ int selectMenuItem(MenuItem *items, int unused, int itemCount, int16 *inputState
                 for (groupIdx = 0; groupIdx < itemCount; groupIdx++) {
                     if (items[groupIdx].state != 0 &&
                         items[curIdx].groupId == items[groupIdx].groupId) {
-                        blinkWidget(&items[groupIdx], gfxPage);
+                        blinkWidget(&items[groupIdx]);
                     }
                 }
                 if (items[selectedMenuItem].colorTableIdx == 0) {
-                    fromColor = 9;
-                    toColor = 6;
-                    gfx_switchColor(gfxPage, items[selectedMenuItem].colorX1, items[selectedMenuItem].colorY1, items[selectedMenuItem].colorX2, items[selectedMenuItem].colorY2, 9, 6);
-                    fromColor = 3;
-                    gfx_switchColor(gfxPage, items[selectedMenuItem].colorX1, items[selectedMenuItem].colorY1, items[selectedMenuItem].colorX2, items[selectedMenuItem].colorY2, 3, toColor);
-                    fromColor = 0x0d;
-                    gfx_switchColor(gfxPage, items[selectedMenuItem].colorX1, items[selectedMenuItem].colorY1, items[selectedMenuItem].colorX2, items[selectedMenuItem].colorY2, 0x0d, toColor);
-                    fromColor = 0x0b;
-                    gfx_switchColor(gfxPage, items[selectedMenuItem].colorX1, items[selectedMenuItem].colorY1, items[selectedMenuItem].colorX2, items[selectedMenuItem].colorY2, 0x0b, toColor);
+                    /* back to the unselected colour from any cycle colour */
+                    menuLabelSwitch(&items[selectedMenuItem], 9, 6);
+                    menuLabelSwitch(&items[selectedMenuItem], 3, 6);
+                    menuLabelSwitch(&items[selectedMenuItem], 0x0d, 6);
+                    menuLabelSwitch(&items[selectedMenuItem], 0x0b, 6);
                 }
                 if (items[selectedMenuItem].colorTableIdx == 1) {
-                    fromColor = 8;
-                    toColor = 7;
-                    gfx_switchColor(gfxPage, items[selectedMenuItem].colorX1, items[selectedMenuItem].colorY1, items[selectedMenuItem].colorX2, items[selectedMenuItem].colorY2, 8, 7);
+                    menuLabelSwitch(&items[selectedMenuItem], 8, 7);
                 }
-                blinkWidget(&items[curIdx], gfxPage);
+                blinkWidget(&items[curIdx]);
             }
             selectedMenuItem = curIdx;
             // 256f
@@ -172,7 +184,7 @@ done:
     return curIdx;
 }
 
-void blinkWidget(MenuItem *item, int16 *gfxPage) {
+void blinkWidget(MenuItem *item) {
     int toColor;
     int fromColor;
     if (item->state == 0) {
@@ -180,7 +192,7 @@ void blinkWidget(MenuItem *item, int16 *gfxPage) {
         fromColor = (unsigned)item->colorPair >> 4;
         toColor = item->colorPair & 0xF;
         if (item->colorPair != 0) {
-            gfx_switchColor(gfxPage, item->colorX1, item->colorY1, item->colorX2, item->colorY2, fromColor, toColor);
+            menuLabelSwitch(item, fromColor, toColor);
         }
     } else {
         item->state = 0;
@@ -188,7 +200,7 @@ void blinkWidget(MenuItem *item, int16 *gfxPage) {
         toColor = (unsigned)item->colorPair >> 4;
     }
     if (item->colorPair != 0) {
-        gfx_switchColor(gfxPage, item->colorX1, item->colorY1, item->colorX2, item->colorY2, fromColor, toColor);
+        menuLabelSwitch(item, fromColor, toColor);
     }
 }
 
@@ -199,7 +211,7 @@ int isPointInRect(const MenuItem *p) {
         return 0;
 }
 
-/*static*/ void processDebriefInput(const int16 *cursorBounds, const MenuItem *menuItem, int16 *gfxPage) {
+/*static*/ void processDebriefInput(const int16 *cursorBounds, const MenuItem *menuItem) {
     int fromColor;
     int toColor;
     int joyBtn0;
@@ -258,7 +270,7 @@ int isPointInRect(const MenuItem *p) {
                 timerCounter2 = 0;
                 toColor = colorTablePtr[colorAnimIdx + 1] >> 4;
                 fromColor = colorTablePtr[colorAnimIdx + 1] & 0xF;
-                gfx_switchColor(gfxPage, menuItem->colorX1, menuItem->colorY1, menuItem->colorX2, menuItem->colorY2, toColor, fromColor);
+                menuLabelSwitch(menuItem, toColor, fromColor);
                 colorAnimIdx++;
                 colorAnimIdx = (unsigned)colorAnimIdx % *colorTablePtr;
             }
@@ -668,6 +680,18 @@ static void debriefPresent(void) {
     if (popupVisible)
         gfx_drawSpriteOpaque(g_dbiconsBuf, popupSpriteX[popupSpriteIdx], popupSpriteY[popupSpriteIdx],
                              0, popupX, popupY, POPUP_WIDTH, POPUP_HEIGHT);
+    /* Menu labels, repainted in their current selection/blink/cycle colour
+     * (glyphs only write foreground pixels, so this recolours the same pixels
+     * the old in-place colour-replace touched). */
+    {
+        int16 savedColor = debriefPage[2];
+        int i;
+        for (i = 0; i < 2; i++) {
+            debriefPage[2] = menuLabelColor[i];
+            drawStringAt(debriefPage, debriefMenuStrings[i], MENU_LABEL_X, MENU_LABEL_Y + i * MENU_LABEL_STEP);
+        }
+        debriefPage[2] = savedColor;
+    }
     gfx_commitPage();
 }
 

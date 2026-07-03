@@ -14,7 +14,6 @@
 
 #include "inttype.h"
 #include "pointers.h"
-#include "dosfunc.h"
 #include "log.h"
 #include "comm.h"
 #include "offsets.h"
