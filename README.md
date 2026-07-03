@@ -47,29 +47,32 @@ The entire game is playable, rendering and input handling is ported to SDL, soun
   </table>
 </div>
 
-## Current enhancements over the original game
+## Completed enhancements over the original game
 
 1. The original was limited to 15 FPS with a convoluted time scale implementation to make sure the game engine kept up with rendering. This has been eliminated, with the game engine being decoupled from rendering, so now it plays much smoother. 
 1. Input loop has been upgraded to an SDL event pump which should make it deal with simultaneous inputs much bettern and improve general responsiveness.
 1. The game originally supported 4 levels of detail (`0-3`, switchable with `Alt-D`), with the highest one still suffering from limited draw distance. An additional level of detail (`4`) has been implemented with unlimited draw distance, and enabled by default.
-1. Rendering has been moved out of the bespoke software engine that was capped at `320x200` resolution (still available with `F15_RENDER=software` envvar) and into OpenGL, enabling higher resolutions and improved clarity. At a later time, perhaps it will also be possible to upgrade the original software renderer to support higher resolutions.
+1. Rendering has been moved out of the bespoke software engine that was capped at `320x200` resolution (still available with `F15_RENDER=software` envvar) and into OpenGL (with MSAA), enabling higher resolutions and improved clarity and nicer graphics (particularly the horizon now has fog). At a later time, perhaps it will also be possible to upgrade the original software renderer to support higher resolutions.
+1. The map, radar and target views have also been upgraded to high resolution 3D rendering (was done in 2D).
 1. Air targets are now also selectable with the `T` key, just like ground targets.
-1. Widescreen is supported, HUD scaling could still use improvements
+1. Widescreen is supported, HUD scaling could still use improvements (too big)
+1. 3D object occlusion was fixed, was difficult due to the engine handling the draw order and aspects of rendering in an unorthodox way, many models containing coplanar surfaces which would z-fight; solved by introducing depth bias.
 
 ## Planned features and improvements
 
 These are things that were never part of, or were broken in the original that are planned to get fixed in this project.
 
-1. Fix 3D object occlusion, difficult now due to the engine handling the draw order and aspects of rendering in an unorthodox way, many models containing coplanar surfaces which will z-fight if occlusion is just enabled as is.
-1. Make the square bounding boxes marking objects like planes and missiles move less erratically when the object is close to the player.
-1. Make the missiles more difficult to evade, as it's currently trivial (just beam them, i.e. put them on approx 90deg angle to the plane). Implement quasi-realistic self propelled/ballistic stages, have missile run out of energy and maneuverability when propellant has been burned off.
-1. Make the gun more predictable, right now it's spraying all over the place so it's difficult to tell where it's going. Show nice tracers, make them affected by gravity etc.
+1. Make the missiles more difficult to evade, as it's currently trivial (just beam them, i.e. put them on approx 90deg angle to the plane). Implement quasi-realistic missile energy management with self propelled/ballistic stages and gradual reduction in maneuverability. Denser air at lower altitudes should influence missile drag. Terrain masking should make missiles lose track.
+1. Countermeasures (chaff/flare) are likewise too effective (100%) against missiles. Take missile aspect into account, e.g. chaff should not do much for a missile coming straight on, and flares should be less effective against a heat seeker missile coming from the rear.
+1. Make enemy plane AI more capable, right now planes are barely a nuisance, slow, barely maneuvering, will rarely shoot missiles, not sure getting hit by gunfire is even possible.
+1. Make the gun more predictable, right now it's spraying all over the place so it's difficult to tell where it's going. The gun and explosion effects were moved to 3D (they were 2D in the original game), but the point of impact does not really line up with the reticle, make bullets affected by gravity etc.
+1. More realistic player aircraft handling, right now it's too responsive, turns too quickly.
 1. Implement missile trails for better situational awareness/cool visuals.
+1. Make the square bounding boxes marking objects like planes and missiles move less erratically when the object is close to the player.
 1. In-game menu for configuration (keyboard/joystick binds, video resolution, turn engine sounds on and off, ...)
-1. More realistic plane handling, right now it's too responsive, turns too quickly.
 1. Better damage model for player aircraft, currently being hit by a missile only results in a small drop of maximum RPM. Simulate full/partial loss of stability, broken systems, weapons, hydraulics etc., up to instant destruction.
 1. Better clouds and smoke effects, right now these are solid polygons in mid air.
-1. More varied terrain and water, these are completely flat with an occasional pyramids that are supposed to represent mountains. It can continue to be flat shaded/polygon based to not change the look of the game too much, but we definitely need more vertices.
+1. More varied terrain and water, these are completely flat with an occasional pyramids that are supposed to represent mountains. It can continue to be flat shaded/polygon based to not change the look of the game too much, but we definitely need more vertices or textures.
 1. Let player skip the ejection sequence and go straight to debriefing.
 1. Implement a full 3D cockpit with 3DOF/6DOF head movement with the hat switch and/or TrackIR.
 1. Scenario/model editor.
@@ -81,17 +84,21 @@ These are things that were never part of, or were broken in the original that ar
 
 Problems with the game that were introduces by the port, and to the best of our knowledge are not present in the original.
 
-1. Sometimes after starting a mission, planes and missiles are invisible.
+1. Sometimes after starting a mission, planes and missiles are invisible (3d models missing?).
 1. Fired missiles (Maverick only?) sometimes disappear near the target without a message ("Ineffective hit") or any other feedback.
 1. It's sometimes impossible to lock some targets even when nearby, cycling targets just jumps over them.
 1. The "BRG" bearing value in the target screen is sometimes a huge positive value (overflow?).
 1. In the debriefing screen, plane names are only the long string e.g. "Flogger shot down".
 1. When starting a new mission after a previous one has been completed, the sound for the previous flight's landing ("Nice landing") is played, looks as if the sound queue is not drained before terminating the previous mission?
-1. When on the airfield/carrier, can see through to the ground on the sides of the view (exposed by widescreen support)
+1. When on the airfield/carrier, can see through to the ground on the sides of the view (exposed by widescreen support). Also, aircraft geometry sometimes flickers beneath the player.
+1. Missile markers on radar are too short/thick and should be drawn on top everything else as the most important threat that should be very visible.
+1. Pausing the game (`Alt-P`) appears to be busy waiting, CPU/GPU not idle.
+1. Terrain is sometimes visible through "holes" in the cockpit
+1. Some problems with keyboard input, in particular holding down `Backspace` to fire the gun sometimes stops repeating.
 
 ## Building
 
-The build system is [CMake](https://cmake.org/download/) with [Ninja](https://github.com/ninja-build/ninja/releases) being used as the generator backend. It is intended to be built with Clang, but gcc also seems to work. To build, run:
+The build system is [CMake](https://cmake.org/download/) with [Ninja](https://github.com/ninja-build/ninja/releases) being used as the generator backend. It's been built successfully with both gcc and Clang. To build, run:
 
 ```
 $ cmake --preset <preset-name> # only needed the first time around, or when making changes to cmake files
@@ -135,10 +142,10 @@ To build on Windows using [llvm-mingw](https://github.com/mstorsjo/llvm-mingw), 
 }
 ```
 
-With this, I run `cmake --preset windows-clang` followed by `cmake --build build` to obtain `build/f15se2.exe`.
+With this, I run `cmake --preset windows-clang` followed by `cmake --build build` to obtain `build/f15se2.exe`. 
+
+Building with MSVC should also work.
 
 ## Running
 
-After building, either drop the resulting binary into a directory with the game assets, or use the `--game` command line option or the `F15SE2_DIR` environmental variable to set the assets' location.
-
-On Windows, it also needs `SDL3.dll` from `SDL3-3.4.10\x86_64-w64-mingw32\bin` in the same directory to run.
+After building, either drop the resulting binary into a directory with the game assets, use the `--game` command line option or the `F15SE2_DIR` environmental variable to set the assets' location.
