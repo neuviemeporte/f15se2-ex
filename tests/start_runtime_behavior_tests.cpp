@@ -29,12 +29,7 @@ enum StartRuntimeOriginalConstant : int {
     kSpriteByte12 = 0x6D,
     kSpriteByte16 = 0x3F,
     kSpriteByte17 = 0x01,
-    kInitPage0 = 0,
-    kInitPage1 = 1,
-    kInitPage0Segment = 0x2100,
-    kInitPage1Segment = 0x2200,
     kExpectedOneCall = 1,
-    kExpectedTwoCalls = 2,
     kExpectedNoCalls = 0,
     kChildExitOk = 0,
     kTestFailureExitCode = 1,
@@ -46,16 +41,9 @@ int g_cleanupCalls = 0;
 int g_printCalls = 0;
 int g_blitCalls = 0;
 int g_seedCalls = 0;
-int g_setPageCalls = 0;
-int g_allocPageCalls = 0;
-int g_storeBufPtrCalls = 0;
 int g_clearKeyFlagsCalls = 0;
 void *g_allocResult = reinterpret_cast<void *>(0x123456);
 struct SpriteParams *g_lastSpriteParams = nullptr;
-int g_allocPages[2] = {};
-int g_lastSetPage = -1;
-int g_lastStoreSeg = 0;
-int g_lastStorePage = -1;
 
 void require(bool condition, const char *message) {
     if (!condition) {
@@ -71,19 +59,10 @@ void resetRuntimeState() {
     g_printCalls = 0;
     g_blitCalls = 0;
     g_seedCalls = 0;
-    g_setPageCalls = 0;
-    g_allocPageCalls = 0;
-    g_storeBufPtrCalls = 0;
     g_clearKeyFlagsCalls = 0;
     g_allocResult = reinterpret_cast<void *>(0x123456);
     g_lastSpriteParams = nullptr;
-    g_allocPages[0] = -1;
-    g_allocPages[1] = -1;
-    g_lastSetPage = -1;
-    g_lastStoreSeg = 0;
-    g_lastStorePage = -1;
     menuSprites = kMenuSpriteHandle;
-    page1Ptr = 0;
 }
 
 } // namespace
@@ -94,13 +73,9 @@ void *dos_alloc(const size_t size) {
     return g_allocResult;
 }
 
-void cleanup(void) {
-    ++g_cleanupCalls;
-}
+void cleanup(void) { ++g_cleanupCalls; }
 
-void dos_printstring(const char *) {
-    ++g_printCalls;
-}
+void dos_printstring(const char *) { ++g_printCalls; }
 
 int FAR CDECL gfx_blitSprite(struct SpriteParams *spritePtr) {
     ++g_blitCalls;
@@ -108,31 +83,9 @@ int FAR CDECL gfx_blitSprite(struct SpriteParams *spritePtr) {
     return 0;
 }
 
-void seedRandom(void) {
-    ++g_seedCalls;
-}
+void seedRandom(void) { ++g_seedCalls; }
 
-void FAR CDECL gfx_setPageN(uint16 pageNum) {
-    ++g_setPageCalls;
-    g_lastSetPage = pageNum;
-}
-
-int FAR CDECL gfx_allocPage(int pageNum) {
-    require(g_allocPageCalls < kExpectedTwoCalls,
-            "initGraphics should allocate exactly the original two graphics pages");
-    g_allocPages[g_allocPageCalls++] = pageNum;
-    return pageNum == kInitPage0 ? kInitPage0Segment : kInitPage1Segment;
-}
-
-void FAR CDECL gfx_storeBufPtr(uint16 seg, int pageIdx) {
-    ++g_storeBufPtrCalls;
-    g_lastStoreSeg = seg;
-    g_lastStorePage = pageIdx;
-}
-
-void misc_clearKeyFlags(void) {
-    ++g_clearKeyFlagsCalls;
-}
+void FAR CDECL misc_clearKeyFlags(void) { ++g_clearKeyFlagsCalls; }
 
 int main() {
     resetRuntimeState();
@@ -177,23 +130,12 @@ int main() {
                 spriteParams.byte17 == kSpriteByte17,
             "showSprite preserves original sprite descriptor constant bytes");
 
+    // initGraphics no longer sets up gfx pages (that plumbing was deleted with
+    // the DOS segment page model); it now just seeds the RNG and clears keys.
     resetRuntimeState();
     initGraphics();
-    require(g_seedCalls == kExpectedOneCall,
-            "initGraphics preserves the original startup RNG seed call");
-    require(g_setPageCalls == kExpectedOneCall && g_lastSetPage == kInitPage0,
-            "initGraphics selects original graphics page 0 before allocation");
-    require(g_allocPageCalls == kExpectedTwoCalls &&
-                g_allocPages[0] == kInitPage0 &&
-                g_allocPages[1] == kInitPage1,
-            "initGraphics allocates the original graphics pages 0 and 1");
-    require(g_storeBufPtrCalls == kExpectedOneCall &&
-                g_lastStoreSeg == kInitPage1Segment &&
-                g_lastStorePage == kInitPage1 &&
-                page1Ptr == kInitPage1Segment,
-            "initGraphics stores the original page-1 buffer pointer");
-    require(g_clearKeyFlagsCalls == kExpectedOneCall,
-            "initGraphics clears keyboard flags after graphics setup");
+    require(g_seedCalls == kExpectedOneCall && g_clearKeyFlagsCalls == kExpectedOneCall,
+            "initGraphics seeds the RNG and clears keyboard flags");
 
     std::cout << "start_runtime_behavior_tests passed\n";
     return 0;

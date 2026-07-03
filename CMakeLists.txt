@@ -396,15 +396,13 @@ add_behavior_test(end_runtime_behavior_tests LINK_CORE)
 #     ${SRC_DIR}/eg3dgrid.c ${SRC_DIR}/eg3dmap.c ${SRC_DIR}/eg3dcam.c ${SRC_DIR}/eg3dmath.c
 #     ${SRC_DIR}/egmath.c ${SRC_DIR}/egdata.c)
 add_behavior_test(file_io_behavior_tests LINK_CORE)
-# add_behavior_test(gameplay_behavior_tests SOURCES       # farPointer; huge, de-generate
-#     ${SRC_DIR}/egthreat.c ${SRC_DIR}/egcombat.c ${SRC_DIR}/egtarget.c ${SRC_DIR}/egframe.c
-#     ${SRC_DIR}/egkeys.c ${SRC_DIR}/egmath.c ${SRC_DIR}/egdata.c ${TEST_DIR}/r3d_render_stubs.cpp)
+add_behavior_test(gameplay_behavior_tests LINK_CORE)
 add_behavior_test(input_behavior_tests LINK_CORE)
 # add_behavior_test(hud_raster_behavior_tests SOURCES ${SRC_DIR}/eghudr.c ${SRC_DIR}/eghudm.c ${SRC_DIR}/egdata.c)  # render arch
 # add_behavior_test(view_behavior_tests SOURCES ${SRC_DIR}/eg3dview.c ${SRC_DIR}/egdata.c)   # render arch
 add_behavior_test(egsys_internal_behavior_tests LINK_CORE)
-# add_behavior_test(start_runtime_behavior_tests SOURCES                                  # page1Ptr (gfx page rename)
-#     ${SRC_DIR}/stinit.c ${SRC_DIR}/stalloc.c ${SRC_DIR}/stsprit.c ${SRC_DIR}/stdata.c)
+add_behavior_test(start_runtime_behavior_tests SOURCES
+    ${SRC_DIR}/stinit.c ${SRC_DIR}/stalloc.c ${SRC_DIR}/stsprit.c ${SRC_DIR}/stdata.c)
 add_behavior_test(shared_overlay_behavior_tests LINK_CORE)
 add_behavior_test(shared_misc_behavior_tests)
 add_behavior_test(shared_picimpl_behavior_tests SOURCES ${SRC_DIR}/shared/picimpl.c)
@@ -412,18 +410,18 @@ add_behavior_test(eg_stubs_behavior_tests LINK_CORE)
 # eg_main_behavior_tests: SCRAPPED - all-spy test of deleted behavior (gfxInit,
 #   moveDataFar, DOS text-mode exit). Per-mission reset intent -> docs/test-migration.md.
 # add_behavior_test(eg3drast_internal_behavior_tests SOURCES ${SRC_DIR}/egdata.c)         # installDivZeroHandler
-# add_behavior_test(start_behavior_tests SOURCES          # moveDst; huge
-#     ${SRC_DIR}/stgen.c ${SRC_DIR}/strand.c ${SRC_DIR}/stparse.c ${SRC_DIR}/stterr.c ${SRC_DIR}/stmissn.c
-#     ${SRC_DIR}/stpilot.c ${SRC_DIR}/stdata.c ${SRC_DIR}/entext.c ${SRC_DIR}/shared/filepic.c)
-# add_behavior_test(launcher_runtime_behavior_tests SOURCES ${SRC_DIR}/f15.c DEFS main=f15_program_main)
+add_behavior_test(start_behavior_tests LINK_CORE)
+# launcher_runtime_behavior_tests: SCRAPPED - tested the deleted /d1//d2//d3 debug
+#   launcher loop and the old game_init(void) signature. Future intent in docs.
 add_behavior_test(log_behavior_tests LINK_CORE)
 # dosfunc_behavior_tests: SCRAPPED - tested the deleted DOS-exec bridge
 #   (loadprog/dos_sysvars/EXEC param blocks). Only dos_alloc survives; see
 #   docs/test-migration.md "Future tests".
 # add_behavior_test(vgapal_behavior_tests SOURCES ${SRC_DIR}/vgapal.c DEFS main=vgapal_program_main)  # render arch
 # add_behavior_test(vgapal_internal_behavior_tests)                                       # render arch
-# add_behavior_test(start_main_autostart_behavior_tests SOURCES ${SRC_DIR}/stmain.c DEFS DEBUG_AUTOSTART)
-# add_behavior_test(start_main_behavior_tests SOURCES ${SRC_DIR}/stmain.c)
+# start_main / start_main_autostart: SCRAPPED - all-spy tests pinning the DOS
+#   intro flow (int86 video-mode set, gfx_getVal MCGA branch) since rewritten to
+#   video_setHiRes/showPic640; block on pilot/mission select. Future intent in docs.
 # add_behavior_test(gfx_impl_behavior_tests SOURCES ${SRC_DIR}/gfx_impl.c ${TEST_DIR}/r3d_render_stubs.cpp)  # render arch
 
 
