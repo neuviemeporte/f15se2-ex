@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include "endata.h"
 #include "enmisc.h"
-#include "enworld.h"
 
 /* Private helpers for this translation unit. */
 void drawStringAtPos(int16 *s, const char far *str, int x, int y);
@@ -16,14 +15,12 @@ void drawFarString(int16 *s, const char far *str);
 void farStrcpy(char *dst, const char far *src);
 void restoreVideoMode(void);
 void restoreInterrupts(void);
-void setupWorldBufPtr(void);
 
 void loadWorldStrings(void) {
     int strIdx;
     int pos;
-    setupWorldBufPtr();
-    worldDataReady = 1;
-    readWorldData();
+    /* World data is already in the END globals (worldExportToEnd, at mission end);
+     * just (re)build the place-name pointer table over worldStringBuf. */
     worldStrings[0] = worldStringBuf;
     strIdx = 1;
     pos = 0;
@@ -55,8 +52,4 @@ void restoreVideoMode(void) {
 }
 
 void restoreInterrupts(void) {
-}
-
-void setupWorldBufPtr(void) {
-    worldBufCursor = (uint8 far *)commData->worldBuf;
 }

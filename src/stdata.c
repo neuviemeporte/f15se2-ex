@@ -71,7 +71,6 @@ uint8 timerCounter = 0;
 uint8 timerCounter2 = 0;
 uint8 timerCounter3 = 0;
 uint8 timerCounter4 = 0;
-uint8 far *moveDst = 0;
 
 /* Sprite blit params struct */
 struct SpriteParams spriteParams = {

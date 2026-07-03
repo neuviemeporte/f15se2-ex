@@ -4182,7 +4182,7 @@ char textBuf[100];
 char unitTypeTable[100];
 char gridFlags[256];
 
-/* Target data — one contiguous 36-byte block (see TargetBlock / readWorldData) */
+/* Target data — one contiguous 36-byte block (see TargetBlock / worldExportToEnd) */
 TargetBlock targetBlock;
 
 /* Score string buffer */
@@ -4224,7 +4224,6 @@ int popupY;
 typedef struct SDL_IOStream SDL_IOStream;
 
 /* World data */
-int worldDataReady;
 char *worldStrings[100];
 char worldStringBuf[750];
 SDL_IOStream *worldBufHandle;
@@ -4454,8 +4453,6 @@ uint8 joyAxisY = 0;
 
 /* Pic decoder state (the picReadBufEndPtr..picSlotCounter run is shared impl
  * state owned by stdata.c). */
-/* Read-back cursor into commData->worldBuf (mirrors stgen.c's moveDst). */
-uint8 far *worldBufCursor = 0;
 uint8 picProcessFlag = 0;
 
 /* Second LZW decoder state */
@@ -4489,5 +4486,5 @@ uint16 worldSamCount = 0;
 int16 worldRouteCount = 0;
 uint8 gfxBufPad[512] = {0};
 /* One contiguous 0x600 buffer backing both the flightTimeTable and flightRecords
- * views (declared in endata.h). Loaded as a unit by readWorldData. */
+ * views (declared in endata.h). Filled from EGAME's g_replayLog by worldExportToEnd. */
 uint8 flightDataBuf[0x600] = {0};

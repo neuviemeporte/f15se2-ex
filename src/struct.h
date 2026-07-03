@@ -232,9 +232,9 @@ struct SimObject {
 };
 #pragma pack()
 /* This record is the in-flight form of the on-disk .WLD FlightUnit: START loads
- * FlightUnit records from disk and memcpy's them into the COMM worldBuf, and EGAME
- * reads that block straight into g_simObjects (egframe.c moveStuff). So the size is
- * locked to the on-disk record — it must equal FLIGHTUNIT_SIZE, not just be 36. */
+ * FlightUnit records from disk, and worldImportToEgame() copies that block
+ * straight into g_simObjects (worldxfer.c). So the size is locked to the on-disk
+ * record — it must equal FLIGHTUNIT_SIZE, not just be 36. */
 STATIC_ASSERT(sizeof(struct SimObject) == 36);
 STATIC_ASSERT(sizeof(struct SimObject) == FLIGHTUNIT_SIZE);
 

@@ -5,14 +5,6 @@
 #include "inttype.h"
 #include "sassert.h"
 
-/* Size of the world-export scratch area that START fills and END reads back.
- * Must hold EGAME's worst-case moveDataFar() write: 1272 fixed bytes + 74
- * planes*16 + 20 ground*sizeof(SimObject) + the 1536-byte replay log. Matches the
- * original COMM block's worldBuf capacity (0x1400 total - 0x7A header = 0x1386);
- * the earlier 0x1194 overflowed the heap on busy missions, corrupting the
- * debrief flight log (garbage sprites, missing lines, intermittent lockups). */
-#define COMM_WORLDBUF_SIZE 0x1386
-
 /* In-memory only (never serialized; the three former DOS EXEs are one process
  * now) and accessed solely by named field, so no packing / size contract. */
 struct GameComm {
@@ -30,8 +22,6 @@ struct GameComm {
     uint16 worldX;
     uint16 worldY;
     int16 needSplash; /* show splash/intro on the first START pass */
-    /* world-export scratch: exportWorldToComm() fills this, END reads it back */
-    uint8 worldBuf[COMM_WORLDBUF_SIZE];
 };
 
 /* The shared communication record. */

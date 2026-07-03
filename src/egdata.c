@@ -1996,7 +1996,6 @@ uint8 picBuf[0x200] = {0};
 
 /* g_eventLogCount, g_objLocalX..672: standalone int16 flags. */
 int16 g_eventLogCount = 0;
-uint8 far *farPointer = 0;
 int16 g_objLocalX = 0;
 int16 g_objLocalY = 0;
 int16 g_objLocalZ = 0;
@@ -2213,7 +2212,6 @@ int16 g_flightPathMarkerY;
 int16 g_aamLockActive;
 int16 g_unusedSavedWord;
 int g_rollInput;
-int16 flagFarToNear;
 uint16 keyScancode;
 int16 g_unusedEventHist2;
 int16 g_projDepth;

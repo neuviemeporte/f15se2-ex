@@ -6,6 +6,7 @@
 #include "egdata.h"
 #include "egflight.h"
 #include "egframe.h"
+#include "worldxfer.h"
 #include "egkeys.h"
 #include "egmath.h"
 #include "egtacmap.h"
@@ -733,9 +734,7 @@ void placeString(int waypointIdx) {
 // ==== seg000:0x1e0e ====
 void initMissionStrings() {
     int nameIdx, i;
-    setCommWorldbufPtr();
-    flagFarToNear = 1;
-    moveStuff();
+    worldImportToEgame();
     g_targetNameTable[0] = g_stringPool;
     nameIdx = 1;
     for (i = 0; i < 750; ++i) {
@@ -776,50 +775,4 @@ void findWaypointFeatures() {
         }
     }
     g_render3DTiles = 0;
-}
-
-// ==== seg000:0x2049 ====
-void moveDataFar() {
-    int unused1, unused2;
-    setCommWorldbufPtr();
-    flagFarToNear = 0;
-    moveStuff();
-    moveNearFar(g_replayLog.events, 1536);
-}
-
-// ==== seg000:0x206d ====
-void moveStuff() {
-    moveNearFar(g_landTargetId, 1);
-    moveNearFar(g_waterTargetId, 1);
-    moveNearFar(&g_planeCount, 2);
-    moveNearFar(&g_targetEntityCount, 2);
-    moveNearFar(&g_planeScanCount, 2);
-    moveNearFar(&g_planeTable, g_planeCount * 16);
-    moveNearFar(&g_groundUnitCount, 2);
-    moveNearFar(g_simObjects, g_groundUnitCount * sizeof(struct SimObject));
-    moveNearFar(g_shapeTargetCategory, 100);
-    moveNearFar(g_tileKillTally, 100);
-    moveNearFar(g_stringPool, 750);
-    moveNearFar(g_mapCellFlags, 0x100);
-    moveNearFar(&g_unusedSavedWord, 2);
-    moveNearFar(&g_padlockAircraft, 2);
-    moveNearFar(waypoints, 16);
-    moveNearFar(g_targetSlots, 36);
-}
-
-// ==== seg000:0x215c ====
-void moveNearFar(void *nearPtr, int count) {
-    /* farPointer is a real cursor into commData->worldBuf. */
-    if (flagFarToNear != 0) {
-        memcpy(nearPtr, farPointer, count); /* load: worldBuf -> near globals */
-    } else {
-        memcpy(farPointer, nearPtr, count); /* save: near globals -> worldBuf */
-    }
-    farPointer += count;
-}
-
-// ==== seg000:0x21a9 ====
-int setCommWorldbufPtr() {
-    farPointer = (uint8 FAR *)commData->worldBuf;
-    return 0;
 }

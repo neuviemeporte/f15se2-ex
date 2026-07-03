@@ -84,7 +84,6 @@ extern int16 *cursorBoundsPtr;
 extern const char *theaterSprFiles[];
 extern const char *debriefMenuStrings[];
 extern MenuItem debriefMenuItems[];
-extern int worldDataReady;
 extern char *worldStrings[];
 extern char worldStringBuf[];
 extern SDL_IOStream *worldBufHandle;
@@ -137,7 +136,6 @@ extern uint8 joyAxisX;
 extern int spriteBufSeg;
 extern int missionResult;
 extern int selectedMenuItem;
-extern uint8 far *worldBufCursor;
 
 /* Named views into weaponDataBlock[] (offsets documented in endata.c):
  *   planeArray     +0x156  SamDataEntry[] — enemy aircraft specs

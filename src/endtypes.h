@@ -93,11 +93,11 @@ typedef struct {
     char unk5;
 } FlightRecord;
 
-/* TargetBlock: the 36-byte (0x24) world target record that readWorldData loads
- * in a single movedata (loadWorldData(&targetBlock, 36), see enworld.c). The
- * original keeps these five fields in one contiguous block at DS:0x4800; the
- * struct guarantees that layout instead of relying on the linker placing five
- * separate communal globals adjacently (which it does not). */
+/* TargetBlock: the 36-byte (0x24) world target record that worldExportToEnd()
+ * fills from EGAME's g_targetSlots (worldxfer.c). The original keeps these five
+ * fields in one contiguous block at DS:0x4800; the struct guarantees that layout
+ * instead of relying on the linker placing five separate communal globals
+ * adjacently (which it does not). */
 #pragma pack(1)
 typedef struct {
     int16 target1Type[2];     /* 0x00 */

@@ -101,7 +101,6 @@ extern int spriteBlitW;
 extern int spriteBlitH;
 extern int16 flag4Saved;
 extern int16 theaterSaved;
-extern uint8 far *moveDst;
 /* Grid-reference string buffer: "<colLetter><rowLetter><colDigit><rowDigit>\0".
    The data named these 4 bytes separately but they form one contiguous
    buffer (mystrcpy writes the whole string into it). */

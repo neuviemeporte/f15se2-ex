@@ -4,6 +4,7 @@
 #include "egdata.h"
 #include "egframe.h"
 #include "egmath.h"
+#include "worldxfer.h"
 #include "egpic.h"
 #include "egtypes.h"
 #include "offsets.h"
@@ -107,7 +108,7 @@ void runGameSession() {
         setInt9Handler();
     }
     runGameLoop();
-    moveDataFar();
+    worldExportToEnd();
     if (commData->setupUseJoy == 0) {
         restoreInt9Handler();
     }

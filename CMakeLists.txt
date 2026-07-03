@@ -128,6 +128,7 @@ set(EGAME_SOURCES
     ${SRC_DIR}/egmain.c
     ${SRC_DIR}/egsphere.c
     ${SRC_DIR}/egframe.c
+    ${SRC_DIR}/worldxfer.c
     ${SRC_DIR}/eg3dview.c
     ${SRC_DIR}/eg3dproj.c
     ${SRC_DIR}/eg3dgrid.c
@@ -171,7 +172,6 @@ set(EGAME_SOURCES
 set(END_SOURCES
     ${SRC_DIR}/enmain.c
     ${SRC_DIR}/enmisc.c
-    ${SRC_DIR}/enworld.c
     ${SRC_DIR}/eninput.c
     ${SRC_DIR}/entext.c
     ${SRC_DIR}/enrand.c

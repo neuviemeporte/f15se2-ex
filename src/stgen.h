@@ -5,7 +5,6 @@
 
 int mystrlen(const char *str);
 void missionGenerate(void);
-void exportWorldToComm(const char *filename);
 char *getItemCoordStr(int16);
 void buildTargetLabel(int idx);
 
