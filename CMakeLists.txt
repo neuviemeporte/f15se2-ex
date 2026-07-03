@@ -18,6 +18,11 @@ option(DOWNLOAD_DEPENDENCIES "Download and build missing third-party dependencie
 option(ASAN "Build with AddressSanitizer" OFF)
 option(UBSAN "Build with UndefinedBehaviorSanitizer" OFF)
 
+# Code coverage (GCC/Clang only). Instruments the game code + tests with gcov so
+# `ctest` produces .gcda data that gcovr turns into a report (see the `coverage`
+# target). Used by CI to upload to Codecov.
+option(COVERAGE "Build with gcov code-coverage instrumentation" OFF)
+
 # When ON, skip the interactive menus and drop straight into a hardcoded
 # mission (egame). Handy for iterating on the flight code without clicking
 # through the front end each run.
@@ -223,6 +228,18 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang"
         add_compile_options(-fsanitize=${SANITIZER_LIST} -fno-omit-frame-pointer -g)
         add_link_options(-fsanitize=${SANITIZER_LIST})
     endif()
+
+    # Coverage instrumentation (directory scope, so the core library and every
+    # test object are instrumented consistently). --coverage implies -g and
+    # disables optimisation-driven inlining that would confuse line mapping.
+    if(COVERAGE)
+        message(STATUS "Building with gcov coverage instrumentation")
+        add_compile_options(--coverage -O0 -g)
+        # GCC emits absolute .gcno paths with this, so gcovr resolves sources
+        # regardless of cwd; Clang doesn't recognise the flag.
+        add_compile_options($<$<CXX_COMPILER_ID:GNU>:-fprofile-abs-path>)
+        add_link_options(--coverage)
+    endif()
 endif()
 
 # The whole game except the launcher main() is a static core library. The
@@ -340,6 +357,8 @@ function(add_behavior_test name)
         ${SRC_DIR}
         ${SRC_DIR}/shared
     )
+    # Absolute path to the committed golden-image references (tests/golden.h).
+    target_compile_definitions(${name} PRIVATE F15_GOLDEN_DIR="${TEST_DIR}/goldens")
     if(T_LINK_CORE)
         target_link_libraries(${name} PRIVATE f15se2_core Threads::Threads)
     else()
@@ -391,6 +410,12 @@ add_behavior_test(geometry_behavior_tests LINK_CORE)
 add_behavior_test(file_io_behavior_tests LINK_CORE)
 add_behavior_test(gameplay_behavior_tests LINK_CORE)
 add_behavior_test(input_behavior_tests LINK_CORE)
+# gfx_impl_behavior_tests was SCRAPPED (deleted DOS MCGA segment/page model). Its
+# replacement targets the current API: gfx_render_behavior_tests drives the real
+# 2D render engine headless (page pixels, clear/switchColor/copyRect, sprite blit
+# transparency+clipping, drawLine clipping, dirtyRect2 spans, font advance, DAC
+# palette upload) and reads pixels back - no draw-capture spy needed.
+add_behavior_test(gfx_render_behavior_tests LINK_CORE)
 # hud_raster_behavior_tests: SCRAPPED - built on the deleted gfx page/segment spy
 #   model; hudComplex now emits via r2d_submitPoint. HUD symbology geometry belongs
 #   in the new 2D-render test set (docs/test-migration.md).
@@ -437,3 +462,34 @@ add_custom_target(source_line_coverage_audit
     COMMAND python3 ${TEST_DIR}/cross_layer_function_inventory.py --build-dir ${CMAKE_BINARY_DIR}
     COMMENT "Running tests and auditing source line coverage and cross-layer function inventory"
 )
+
+#------------------------------------------------------------------------------
+# gcov/gcovr coverage report (requires -DCOVERAGE=ON and gcovr on PATH).
+# `cmake --build build --target coverage` runs the tests and writes:
+#   build/coverage.xml  - Cobertura XML for Codecov / CI
+#   build/coverage.txt  - human-readable per-file summary
+# Only src/ is measured; vendored SDL / OPL / digest and the tests themselves
+# are excluded so the percentage reflects the F-15 rewrite.
+#------------------------------------------------------------------------------
+if(COVERAGE)
+    find_program(GCOVR_EXECUTABLE gcovr)
+    if(GCOVR_EXECUTABLE)
+        add_custom_target(coverage
+            COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+            COMMAND ${GCOVR_EXECUTABLE}
+                    --root ${CMAKE_CURRENT_SOURCE_DIR}
+                    --filter ${SRC_DIR}
+                    --exclude ${TEST_DIR}
+                    --gcov-ignore-parse-errors=negative_hits.warn
+                    --print-summary
+                    --xml-pretty --output ${CMAKE_BINARY_DIR}/coverage.xml
+                    --txt ${CMAKE_BINARY_DIR}/coverage.txt
+                    ${CMAKE_BINARY_DIR}
+            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+            COMMENT "Running tests and generating gcovr coverage report (coverage.xml / coverage.txt)"
+            USES_TERMINAL
+        )
+    else()
+        message(WARNING "COVERAGE=ON but gcovr not found; the `coverage` target is unavailable")
+    endif()
+endif()

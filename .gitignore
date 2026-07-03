@@ -14,3 +14,9 @@ build64/
 CMakeUserPresets.json
 /.cache
 /*.sh
+# Coverage + golden-test scratch artifacts
+coverage.xml
+coverage.txt
+*.gcda
+*.gcno
+*.actual.bmp

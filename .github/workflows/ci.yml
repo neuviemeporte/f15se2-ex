@@ -48,3 +48,37 @@ jobs:
 
       - name: Test
         run: ${{ matrix.test }}
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake gcovr \
+            libx11-dev libxext-dev libwayland-dev wayland-protocols \
+            libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev
+
+      - name: Configure CMake (coverage)
+        run: cmake -S . -B build -DCOVERAGE=ON
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Run tests + generate coverage report
+        run: cmake --build build --target coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: build/coverage.xml
+          # Public repo: tokenless upload is fine. Never fail CI if the upload
+          # is rate-limited or the service is down.
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

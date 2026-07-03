@@ -1,0 +1,23 @@
+# Codecov configuration. The uploaded report (build/coverage.xml) is already
+# filtered to src/ by gcovr, but ignore vendored and test code here too as a
+# belt-and-braces measure in case the filter changes.
+coverage:
+  status:
+    # Informational only for now — the suite is a work in progress, so don't
+    # block PRs on a coverage delta while tests are still being migrated/added.
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
+comment:
+  layout: "reach, diff, files"
+  require_changes: false
+
+ignore:
+  - "tests/**"
+  - "build/**"
+  - "backends/**"
+  - "**/compat64/**"

@@ -1,5 +1,8 @@
 # F-15 Strike Eagle 2 source port
 
+[![CI](https://github.com/neuviemeporte/f15se2-ex/actions/workflows/ci.yml/badge.svg)](https://github.com/neuviemeporte/f15se2-ex/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/neuviemeporte/f15se2-ex/branch/main/graph/badge.svg)](https://codecov.io/gh/neuviemeporte/f15se2-ex)
+
 <p align="center">
   <img src="screenshots/title.png" width="50%" alt="F-15 title screen">
 </p>
