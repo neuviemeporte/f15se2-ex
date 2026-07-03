@@ -43,7 +43,9 @@ int FAR CDECL hudSine(int angle) { return nsine(angle); }
 
 /* pitch -> ladder pixel offset: (|pitch|>>6) * 360, taking the high bytes. */
 int FAR CDECL hudPitchScale(int ap) {
-    return (int)(((unsigned long)(unsigned)ap * 360u) >> 8);
+    /* The original works on the raw 16-bit pitch word; negative host ints must
+     * wrap as unsigned DOS words before scaling. */
+    return (int)(((unsigned long)(uint16)ap * 360u) >> 8);
 }
 
 /* ===== drawClipLineGlobal (clipLineFar) =====

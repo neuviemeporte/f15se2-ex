@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master, main]
+    branches: [master, main, tests]
   pull_request:
-    branches: [master, main]
+    branches: [master, main, tests]
 
 jobs:
   build:
@@ -19,11 +19,13 @@ jobs:
             os: ubuntu-latest
             configure: cmake -S . -B build
             build: cmake --build build -j$(nproc)
+            test: ctest --test-dir build --output-on-failure
 
           - name: Windows MSVC x64
             os: windows-latest
             configure: cmake -S . -B build -G "Visual Studio 18 2026" -A x64
             build: cmake --build build --config Release --parallel
+            test: ctest --test-dir build -C Release --output-on-failure
 
     steps:
       - name: Checkout repository
@@ -43,3 +45,6 @@ jobs:
 
       - name: Build
         run: ${{ matrix.build }}
+
+      - name: Test
+        run: ${{ matrix.test }}

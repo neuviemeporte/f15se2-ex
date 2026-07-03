@@ -13,6 +13,7 @@
 #include "gfx.h"
 #include "inttype.h"
 #include "pointers.h"
+#include <stddef.h>
 
 /* Forward declaration so GfxState can hold SDL backbuffers without pulling the
  * full SDL header. */
@@ -66,6 +67,13 @@ int gfx_paletteGeneration(void);
  * pixels transparent so the GL 3D shows under the 2D layer. 0xFF is unused art
  * (the top palette block is built as black). */
 #define GFX_GL_SHOWTHROUGH_KEY 0xFF
+
+/* Native bridge for slots that originally received caller-DS near pointers.
+ * DOS code passed a 16-bit offset; 64-bit native tests/callers can register the
+ * corresponding host buffer here so gfx_fillRow can copy from live host memory
+ * without casting the offset itself into a process address. */
+void gfx_setNearReadBuffer(uint16 nearPtr, const void *hostPtr, size_t size);
+void gfx_clearNearReadBuffer(void);
 
 /*
  * Reference structures documenting how the overlay accesses caller data.

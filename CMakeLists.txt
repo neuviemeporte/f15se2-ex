@@ -188,84 +188,28 @@ list(APPEND F15SE2_SOURCES ${END_SOURCES})
 #==============================================================================
 # Target
 #==============================================================================
-add_executable(f15se2 ${F15SE2_SOURCES})
-
-set_target_properties(f15se2 PROPERTIES
-    OUTPUT_NAME "f15se2-ex"
-    PREFIX ""
+# The .c files are compiled as C++ (const linkage rules, overloads, etc.).
+# vgapal.c is a standalone tool pulled in only by its own tests.
+set_source_files_properties(
+    ${F15SE2_SOURCES}
+    ${SRC_DIR}/vgapal.c
+    PROPERTIES LANGUAGE CXX
 )
-
-# Compile C as C++ for extra linting.
-set_source_files_properties(${F15SE2_SOURCES} PROPERTIES LANGUAGE CXX)
-
-# Nuked-OPL3 stays plain C (not in the CXX-forced list above).
-target_sources(f15se2 PRIVATE ${nuked_opl3_SOURCE_DIR}/opl3.c ${quick_digest5_SOURCE_DIR}/src/quickdigest5.cpp)
-
-# Keep the new log.h diagnostics live (the Log* macros compile out without DEBUG).
-target_compile_definitions(f15se2 PRIVATE DEBUG)
-
-if(AUTOSTART)
-    target_compile_definitions(f15se2 PRIVATE DEBUG_AUTOSTART)
-endif()
-
-target_include_directories(f15se2 BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-    ${SRC_DIR}/asound
-    ${nuked_opl3_SOURCE_DIR}
-    ${quick_digest5_SOURCE_DIR}/include
-)
-
-# SDL3::SDL3 is exported by both the system package and the FetchContent build,
-# so this works regardless of how SDL3 was provided.
-target_link_libraries(f15se2 PRIVATE SDL3::SDL3)
 
 # OpenGL for the GL 3D backend (r3d_gl.c). The immediate-mode 1.x path needs only
 # the base GL library; SDL3 supplies the GL headers and context management.
 find_package(OpenGL REQUIRED)
-target_link_libraries(f15se2 PRIVATE OpenGL::GL)
 
-#==============================================================================
-# Compiler warnings
-#==============================================================================
-if(
-    CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
-    OR
-    (
-        CMAKE_CXX_COMPILER_ID MATCHES "Clang"
-        AND
-        NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
-    )
-)
+# Some tests use std::thread; link a threads library explicitly so it resolves
+# across toolchains (not all fold pthread into libc).
+find_package(Threads REQUIRED)
 
-    # find same definiton/extern mismatches as the MSVC linker using gcc/LTO
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-      # only available with gcc
-      target_compile_options(f15se2 PRIVATE -flto)
-      # break linking on mismatch errors
-      target_link_options(f15se2 PRIVATE -flto -Werror=lto-type-mismatch)
-    endif()
-
-    target_compile_options(f15se2 PRIVATE
-        -Wall
-
-        -Wno-unused
-        -Wno-unused-variable
-        -Wno-unused-parameter
-        -Wno-unused-function
-        -Wno-unused-but-set-variable
-        -Wno-deprecated-declarations
-        -Wno-deprecated
-
-        $<$<CXX_COMPILER_ID:Clang>:-ferror-limit=1000>
-        $<$<CXX_COMPILER_ID:AppleClang>:-ferror-limit=1000>
-        $<$<CXX_COMPILER_ID:GNU>:-fmax-errors=1000>
-
-        -Wno-narrowing
-    )
-
-    # Sanitizers must be passed to both the compiler and the linker.
+#------------------------------------------------------------------------------
+# Sanitizers (GCC/Clang, opt-in). Applied at directory scope so the executable
+# and the tests (which each compile the game code they exercise) are instrumented
+# consistently.
+#------------------------------------------------------------------------------
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(SANITIZERS "")
     if(ASAN)
         list(APPEND SANITIZERS address)
@@ -276,20 +220,75 @@ if(
     if(SANITIZERS)
         list(JOIN SANITIZERS "," SANITIZER_LIST)
         message(STATUS "Building with sanitizers: ${SANITIZER_LIST}")
-        target_compile_options(f15se2 PRIVATE
-            -fsanitize=${SANITIZER_LIST}
-            -fno-omit-frame-pointer
-            -g                      # DWARF line info so ASan/UBSan reports symbolize to file:line
-        )
-        target_link_options(f15se2 PRIVATE -fsanitize=${SANITIZER_LIST})
+        add_compile_options(-fsanitize=${SANITIZER_LIST} -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=${SANITIZER_LIST})
     endif()
+endif()
 
+# The whole game except the launcher main() is a static core library. The
+# executable is just f15.c linked against it; migrated behavior tests link the
+# same library and exercise the real implementations headless (SDL dummy
+# drivers), so the game code compiles once instead of per-test.
+set(F15SE2_CORE_SOURCES ${F15SE2_SOURCES})
+list(REMOVE_ITEM F15SE2_CORE_SOURCES ${SRC_DIR}/f15.c)
+
+add_library(f15se2_core STATIC
+    ${F15SE2_CORE_SOURCES}
+    ${nuked_opl3_SOURCE_DIR}/opl3.c
+    ${quick_digest5_SOURCE_DIR}/src/quickdigest5.cpp
+)
+target_include_directories(f15se2_core BEFORE PUBLIC
+    ${SRC_DIR}/compat64
+    ${SRC_DIR}
+    ${SRC_DIR}/shared
+)
+target_include_directories(f15se2_core PRIVATE
+    ${SRC_DIR}/asound
+    ${nuked_opl3_SOURCE_DIR}
+    ${quick_digest5_SOURCE_DIR}/include
+)
+# Keep the log.h diagnostics live (the Log* macros compile out without DEBUG).
+target_compile_definitions(f15se2_core PUBLIC DEBUG)
+if(AUTOSTART)
+    target_compile_definitions(f15se2_core PUBLIC DEBUG_AUTOSTART)
+endif()
+target_link_libraries(f15se2_core PUBLIC SDL3::SDL3 OpenGL::GL)
+
+add_executable(f15se2 ${SRC_DIR}/f15.c)
+target_link_libraries(f15se2 PRIVATE f15se2_core)
+
+#==============================================================================
+# Compiler warnings (game code, compiled once into the core library)
+#==============================================================================
+if(
+    CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+    OR
+    (
+        CMAKE_CXX_COMPILER_ID MATCHES "Clang"
+        AND
+        NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
+    )
+)
+    target_compile_options(f15se2_core PRIVATE
+        -Wall
+        -Wno-unused
+        -Wno-unused-variable
+        -Wno-unused-parameter
+        -Wno-unused-function
+        -Wno-unused-but-set-variable
+        -Wno-deprecated-declarations
+        -Wno-deprecated
+        $<$<CXX_COMPILER_ID:Clang>:-ferror-limit=1000>
+        $<$<CXX_COMPILER_ID:AppleClang>:-ferror-limit=1000>
+        $<$<CXX_COMPILER_ID:GNU>:-fmax-errors=1000>
+        -Wno-narrowing
+    )
 elseif(
     MSVC
     OR
     CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
 )
-    target_compile_options(f15se2 PRIVATE
+    target_compile_options(f15se2_core PRIVATE
         /nologo
         /TP
         /W3
@@ -303,7 +302,6 @@ elseif(
         /wd4311  # pointer truncation
         /wd4312  # conversion to pointer of greater size
     )
-
 else()
     message(WARNING "Unknown C++ compiler: ${CMAKE_CXX_COMPILER_ID}")
 endif()
@@ -316,3 +314,126 @@ if(WIN32)
         $<TARGET_FILE_DIR:f15se2>
     )
 endif()
+
+#==============================================================================
+# Behavior tests
+#==============================================================================
+# Two linking models, chosen per test:
+#   * LINK_CORE  - the test links the whole f15se2_core library and exercises
+#                  real implementations (headless via SDL dummy drivers). This
+#                  is the target model: the game compiles once, no inline stubs.
+#                  Migrated/new tests use this.
+#   * SOURCES    - the legacy isolation model: the test compiles only the few
+#                  translation units it exercises and inline-stubs the rest.
+#                  Not-yet-migrated tests still use this.
+#
+#   add_behavior_test(<name> [LINK_CORE] [SOURCES <.c/.cpp ...>] [DEFS <defs...>])
+enable_testing()
+
+set(TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+
+function(add_behavior_test name)
+    cmake_parse_arguments(T "LINK_CORE" "" "SOURCES;DEFS" ${ARGN})
+    add_executable(${name} ${TEST_DIR}/${name}.cpp ${T_SOURCES})
+    target_include_directories(${name} BEFORE PRIVATE
+        ${SRC_DIR}/compat64
+        ${SRC_DIR}
+        ${SRC_DIR}/shared
+    )
+    if(T_LINK_CORE)
+        target_link_libraries(${name} PRIVATE f15se2_core Threads::Threads)
+    else()
+        target_link_libraries(${name} PRIVATE SDL3::SDL3 Threads::Threads)
+    endif()
+    if(T_DEFS)
+        target_compile_definitions(${name} PRIVATE ${T_DEFS})
+    endif()
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
+        target_link_options(${name} PRIVATE -Wl,--gc-sections)
+    endif()
+    add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+# --- Active: build green and pass under `ctest` ---------------------------------
+add_behavior_test(award_behavior_tests SOURCES
+    ${SRC_DIR}/enaward.c ${SRC_DIR}/endata.c)
+add_behavior_test(end_file_behavior_tests LINK_CORE)
+add_behavior_test(end_input_behavior_tests SOURCES
+    ${SRC_DIR}/eninput.c ${SRC_DIR}/endata.c)
+add_behavior_test(sys_behavior_tests SOURCES
+    ${SRC_DIR}/egsys.c ${SRC_DIR}/egdata.c)
+add_behavior_test(farbuf_behavior_tests LINK_CORE)
+add_behavior_test(pic_behavior_tests LINK_CORE)
+add_behavior_test(sphere_behavior_tests LINK_CORE)
+add_behavior_test(load_behavior_tests SOURCES
+    ${SRC_DIR}/eg3dload.c ${SRC_DIR}/egmath.c ${SRC_DIR}/egdata.c
+    ${SRC_DIR}/egfarbuf.c)
+add_behavior_test(shared_timer_behavior_tests LINK_CORE)
+add_behavior_test(shared_runtime_behavior_tests SOURCES
+    ${SRC_DIR}/shared/cleanup.c ${SRC_DIR}/shared/drawstr.c)
+add_behavior_test(eg3drast_behavior_tests LINK_CORE)
+add_behavior_test(tick_behavior_tests SOURCES
+    ${SRC_DIR}/egtick.c ${SRC_DIR}/egdata.c)
+add_behavior_test(start_parse_behavior_tests SOURCES
+    ${SRC_DIR}/stparse.c ${SRC_DIR}/stdata.c)
+
+# SCRAPPED test comments below explain why no test exists for that area (the
+# system it tested was removed) rather than pointing at a live target. See
+# docs/test-migration.md for the remaining test-coverage TODOs.
+add_behavior_test(original_behavior_tests LINK_CORE)
+add_behavior_test(utility_behavior_tests LINK_CORE)
+add_behavior_test(end_runtime_behavior_tests LINK_CORE)
+# end_debrief_behavior_tests: SCRAPPED - all render/menu/IO/timer/input spies;
+#   debrief moved to the debriefPresent redraw model. Scoring/campaign logic and
+#   debrief render belong in the new render/menu test set (docs/test-migration.md).
+add_behavior_test(geometry_behavior_tests LINK_CORE)
+add_behavior_test(file_io_behavior_tests LINK_CORE)
+add_behavior_test(gameplay_behavior_tests LINK_CORE)
+add_behavior_test(input_behavior_tests LINK_CORE)
+# hud_raster_behavior_tests: SCRAPPED - built on the deleted gfx page/segment spy
+#   model; hudComplex now emits via r2d_submitPoint. HUD symbology geometry belongs
+#   in the new 2D-render test set (docs/test-migration.md).
+add_behavior_test(view_behavior_tests LINK_CORE)
+add_behavior_test(egsys_internal_behavior_tests LINK_CORE)
+add_behavior_test(start_runtime_behavior_tests SOURCES
+    ${SRC_DIR}/stinit.c ${SRC_DIR}/stalloc.c ${SRC_DIR}/stsprit.c ${SRC_DIR}/stdata.c)
+add_behavior_test(shared_overlay_behavior_tests LINK_CORE)
+add_behavior_test(shared_misc_behavior_tests)
+add_behavior_test(shared_picimpl_behavior_tests SOURCES ${SRC_DIR}/shared/picimpl.c)
+add_behavior_test(eg_stubs_behavior_tests LINK_CORE)
+# eg_main_behavior_tests: SCRAPPED - all-spy test of deleted behavior (gfxInit,
+#   moveDataFar, DOS text-mode exit). Per-mission reset intent -> docs/test-migration.md.
+add_behavior_test(eg3drast_internal_behavior_tests SOURCES ${SRC_DIR}/egdata.c)
+add_behavior_test(start_behavior_tests LINK_CORE)
+# launcher_runtime_behavior_tests: SCRAPPED - tested the deleted /d1//d2//d3 debug
+#   launcher loop and the old game_init(void) signature. Future intent in docs.
+add_behavior_test(log_behavior_tests LINK_CORE)
+# dosfunc_behavior_tests: SCRAPPED - tested the deleted DOS-exec bridge
+#   (loadprog/dos_sysvars/EXEC param blocks). Only dos_alloc survives; see
+#   docs/test-migration.md "Future tests".
+add_behavior_test(vgapal_behavior_tests SOURCES ${SRC_DIR}/vgapal.c DEFS main=vgapal_program_main)
+add_behavior_test(vgapal_internal_behavior_tests)
+# start_main / start_main_autostart: SCRAPPED - all-spy tests pinning the DOS
+#   intro flow (int86 video-mode set, gfx_getVal MCGA branch) since rewritten to
+#   video_setHiRes/showPic640; block on pilot/mission select. Future intent in docs.
+# gfx_impl_behavior_tests: SCRAPPED - asserted the deleted DOS MCGA segment/page
+#   model (gfx_allocPage/getPageSeg/setPageN/copyRow ... all removed). Drawing is
+#   now gfx_pagePixels + r2d; belongs in the new 2D-render test set (docs/).
+
+
+#------------------------------------------------------------------------------
+# Coverage/inventory audits (opt-in custom targets; not part of `ctest`).
+#------------------------------------------------------------------------------
+add_custom_target(function_coverage_audit
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    COMMAND python3 ${TEST_DIR}/function_coverage_audit.py ${CMAKE_BINARY_DIR}
+    COMMENT "Running tests and auditing source function coverage from unit-test object files"
+)
+add_custom_target(source_line_coverage_audit
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    COMMAND python3 ${TEST_DIR}/function_coverage_audit.py ${CMAKE_BINARY_DIR}
+    COMMAND python3 ${TEST_DIR}/source_line_coverage_audit.py ${CMAKE_BINARY_DIR}
+    COMMAND python3 ${TEST_DIR}/cross_layer_function_inventory.py --build-dir ${CMAKE_BINARY_DIR}
+    COMMENT "Running tests and auditing source line coverage and cross-layer function inventory"
+)

@@ -25,6 +25,12 @@ typedef int32_t int32;
 typedef int16_t int16;
 typedef int8_t int8;
 
+static inline int abs16Compat(int value) {
+    enum { INTTYPE_SIGNED_WORD_MIN = -0x8000 };
+    /* MSC 16-bit abs(-32768) overflows and leaves the value negative. */
+    value = (int16)value;
+    return value == INTTYPE_SIGNED_WORD_MIN ? INTTYPE_SIGNED_WORD_MIN : (value < 0 ? -value : value);
+}
 /*
  * Unaligned multi-byte access for packed asset / save-file buffers (model
  * streams in *.3D*, the HallFame roster record). The

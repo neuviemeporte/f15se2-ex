@@ -146,8 +146,38 @@ void gfx_videoShutdown(void) {
  * in the same address space, so it is just a file-scope global shared directly. */
 static GfxState gfxState;
 
+/* Native substitute for a DOS caller-DS near pointer. The original overlay saw
+ * `srcBuf` as a 16-bit offset in the caller's data segment; in the flat native
+ * process that offset is not a usable host address, so tests/bridge code can map
+ * one near range to the host buffer that owns it. */
+static uint16 gfxNearReadBase;
+static const uint8 *gfxNearReadHost;
+static size_t gfxNearReadSize;
+
 static GfxState FAR *gfx_getState(void) {
     return &gfxState;
+}
+
+void gfx_setNearReadBuffer(uint16 nearPtr, const void *hostPtr, size_t size) {
+    gfxNearReadBase = nearPtr;
+    gfxNearReadHost = (const uint8 *)hostPtr;
+    gfxNearReadSize = size;
+}
+
+void gfx_clearNearReadBuffer(void) {
+    gfxNearReadBase = 0;
+    gfxNearReadHost = NULL;
+    gfxNearReadSize = 0;
+}
+
+static const uint8 *gfx_resolveNearReadPtr(uint16 nearPtr, size_t bytes) {
+    uint16 offset;
+    if (gfxNearReadHost) {
+        offset = (uint16)(nearPtr - gfxNearReadBase);
+        if ((size_t)offset <= gfxNearReadSize && bytes <= gfxNearReadSize - (size_t)offset)
+            return gfxNearReadHost + offset;
+    }
+    return (const uint8 *)(uintptr_t)nearPtr; /* legacy low-memory fallback */
 }
 
 /* ---- Page backbuffers (SDL surface model) ----------------------------------
