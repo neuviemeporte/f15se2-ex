@@ -5,8 +5,10 @@
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#ifndef _WIN32
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 namespace {
 
@@ -107,6 +109,8 @@ int main() {
                 g_log.message == "start: bad",
             "log_error preserves SDL error priority");
 
+#ifndef _WIN32
+    // log_critical exits the process; verify the fatal exit status in a child.
     {
         const pid_t pid = fork();
         require(pid >= 0, "test should be able to fork for log_critical exit behavior");
@@ -122,6 +126,7 @@ int main() {
                     WEXITSTATUS(status) == kCriticalExitStatus,
                 "log_critical preserves the original fatal exit status");
     }
+#endif
 
     SDL_SetLogOutputFunction(nullptr, nullptr);
     SDL_ResetLogPriorities();

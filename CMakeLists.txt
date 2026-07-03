@@ -411,8 +411,10 @@ add_behavior_test(start_parse_behavior_tests SOURCES
 #     ${SRC_DIR}/stgen.c ${SRC_DIR}/strand.c ${SRC_DIR}/stparse.c ${SRC_DIR}/stterr.c ${SRC_DIR}/stmissn.c
 #     ${SRC_DIR}/stpilot.c ${SRC_DIR}/stdata.c ${SRC_DIR}/entext.c ${SRC_DIR}/shared/filepic.c)
 # add_behavior_test(launcher_runtime_behavior_tests SOURCES ${SRC_DIR}/f15.c DEFS main=f15_program_main)
-# add_behavior_test(log_behavior_tests SOURCES ${SRC_DIR}/log.c)
-# add_behavior_test(dosfunc_behavior_tests)
+add_behavior_test(log_behavior_tests LINK_CORE)
+# dosfunc_behavior_tests: SCRAPPED - tested the deleted DOS-exec bridge
+#   (loadprog/dos_sysvars/EXEC param blocks). Only dos_alloc survives; see
+#   docs/test-migration.md "Future tests".
 # add_behavior_test(vgapal_behavior_tests SOURCES ${SRC_DIR}/vgapal.c DEFS main=vgapal_program_main)  # render arch
 # add_behavior_test(vgapal_internal_behavior_tests)                                       # render arch
 # add_behavior_test(start_main_autostart_behavior_tests SOURCES ${SRC_DIR}/stmain.c DEFS DEBUG_AUTOSTART)
