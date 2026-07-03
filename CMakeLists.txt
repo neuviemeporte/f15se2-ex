@@ -385,27 +385,28 @@ add_behavior_test(start_parse_behavior_tests SOURCES
 #     ${SRC_DIR}/shared/drawstr.c ${SRC_DIR}/eg3dload.c ${SRC_DIR}/enbrief.c ${SRC_DIR}/worldxfer.c
 #     ${SRC_DIR}/enmisc.c ${SRC_DIR}/endata.c ${SRC_DIR}/strand.c ${SRC_DIR}/stgen.c ${SRC_DIR}/stterr.c
 #     ${TEST_DIR}/r3d_render_stubs.cpp ${TEST_DIR}/utility_stubs.cpp)
-# add_behavior_test(end_runtime_behavior_tests SOURCES ${SRC_DIR}/enmain.c)              # VGA_BUF_SIZE removed
+add_behavior_test(end_runtime_behavior_tests LINK_CORE)
 # add_behavior_test(end_debrief_behavior_tests SOURCES ${SRC_DIR}/endbrf.c ${SRC_DIR}/endata.c)  # debrief render/data
 # add_behavior_test(geometry_behavior_tests SOURCES       # g_drawPage; projection math may salvage
 #     ${SRC_DIR}/eg3dproj.c ${SRC_DIR}/egtacmap.c ${SRC_DIR}/egui.c ${SRC_DIR}/egtgt2.c ${SRC_DIR}/eg3dvp.c
 #     ${SRC_DIR}/eg3dgrid.c ${SRC_DIR}/eg3dmap.c ${SRC_DIR}/eg3dcam.c ${SRC_DIR}/eg3dmath.c
 #     ${SRC_DIR}/egmath.c ${SRC_DIR}/egdata.c)
-# add_behavior_test(file_io_behavior_tests SOURCES ${SRC_DIR}/shared/file_io.c)          # writeFileAtRaw renamed
+add_behavior_test(file_io_behavior_tests LINK_CORE)
 # add_behavior_test(gameplay_behavior_tests SOURCES       # farPointer; huge, de-generate
 #     ${SRC_DIR}/egthreat.c ${SRC_DIR}/egcombat.c ${SRC_DIR}/egtarget.c ${SRC_DIR}/egframe.c
 #     ${SRC_DIR}/egkeys.c ${SRC_DIR}/egmath.c ${SRC_DIR}/egdata.c ${TEST_DIR}/r3d_render_stubs.cpp)
-# add_behavior_test(input_behavior_tests SOURCES ${SRC_DIR}/eginput.c ${SRC_DIR}/egdata.c)
+add_behavior_test(input_behavior_tests LINK_CORE)
 # add_behavior_test(hud_raster_behavior_tests SOURCES ${SRC_DIR}/eghudr.c ${SRC_DIR}/eghudm.c ${SRC_DIR}/egdata.c)  # render arch
 # add_behavior_test(view_behavior_tests SOURCES ${SRC_DIR}/eg3dview.c ${SRC_DIR}/egdata.c)   # render arch
-# add_behavior_test(egsys_internal_behavior_tests SOURCES ${SRC_DIR}/egdata.c)           # closeFile
+add_behavior_test(egsys_internal_behavior_tests LINK_CORE)
 # add_behavior_test(start_runtime_behavior_tests SOURCES                                  # page1Ptr (gfx page rename)
 #     ${SRC_DIR}/stinit.c ${SRC_DIR}/stalloc.c ${SRC_DIR}/stsprit.c ${SRC_DIR}/stdata.c)
 # add_behavior_test(shared_overlay_behavior_tests SOURCES ${SRC_DIR}/shared/ovlimpl.c)   # joystick reorg
 # add_behavior_test(shared_misc_behavior_tests)                                           # pollJoystick (reorg)
 # add_behavior_test(shared_picimpl_behavior_tests SOURCES ${SRC_DIR}/shared/picimpl.c)   # runtime assertion drift
-# add_behavior_test(eg_stubs_behavior_tests SOURCES ${SRC_DIR}/egstubs.c)                 # loadF15DgtlBin
-# add_behavior_test(eg_main_behavior_tests SOURCES ${SRC_DIR}/egmain.c ${SRC_DIR}/egdata.c ${SRC_DIR}/egfarbuf.c)  # gfxInit
+add_behavior_test(eg_stubs_behavior_tests LINK_CORE)
+# eg_main_behavior_tests: SCRAPPED - all-spy test of deleted behavior (gfxInit,
+#   moveDataFar, DOS text-mode exit). Per-mission reset intent -> docs/test-migration.md.
 # add_behavior_test(eg3drast_internal_behavior_tests SOURCES ${SRC_DIR}/egdata.c)         # installDivZeroHandler
 # add_behavior_test(start_behavior_tests SOURCES          # moveDst; huge
 #     ${SRC_DIR}/stgen.c ${SRC_DIR}/strand.c ${SRC_DIR}/stparse.c ${SRC_DIR}/stterr.c ${SRC_DIR}/stmissn.c

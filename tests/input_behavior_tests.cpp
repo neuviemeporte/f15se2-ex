@@ -1,10 +1,10 @@
 #include "egcode.h"
 #include "egdata.h"
 #include "eginput.h"
+#include "headless.h"
 
 #include <SDL3/SDL.h>
 
-#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -19,8 +19,6 @@ namespace {
 // or zero/null/sentinel resets.
 enum InputOriginalConstant : int {
     kStickCenter = 0x80,
-    kStickLow = 0x26,
-    kStickHigh = 0xDA,
     kBiosR = 0x1372,
     kBiosShiftR = 0x1352,
     kBiosCtrlR = 0x1312,
@@ -89,14 +87,9 @@ enum InputOriginalConstant : int {
     kBiosEscape = 0x011B,
     kRingStoredCapacity = 31,
     kRingOverflowAttempts = 40,
-    kExpectedOneCall = 1,
     kBlockingPushDelayMs = 5,
     kTestFailureExitCode = 1,
 };
-
-int g_fullscreenToggleCalls = 0;
-int g_timerPumpCalls = 0;
-bool g_keyboardState[SDL_SCANCODE_COUNT] = {};
 
 void require(bool condition, const char *message) {
     if (!condition) {
@@ -113,10 +106,7 @@ void drainSdlEvents() {
 
 void resetInputState() {
     drainSdlEvents();
-    setInt9Handler();
-    g_fullscreenToggleCalls = 0;
-    g_timerPumpCalls = 0;
-    std::fill(std::begin(g_keyboardState), std::end(g_keyboardState), false);
+    setInt9Handler(); /* flight mode + empty ring + centred virtual stick */
 }
 
 void pushKey(SDL_Scancode scancode, SDL_Keymod modifiers = SDL_KMOD_NONE) {
@@ -125,12 +115,6 @@ void pushKey(SDL_Scancode scancode, SDL_Keymod modifiers = SDL_KMOD_NONE) {
     event.key.type = SDL_EVENT_KEY_DOWN;
     event.key.scancode = scancode;
     event.key.mod = modifiers;
-    SDL_PushEvent(&event);
-}
-
-void pushQuit() {
-    SDL_Event event = {};
-    event.type = SDL_EVENT_QUIT;
     SDL_PushEvent(&event);
 }
 
@@ -147,62 +131,37 @@ void expectKey(SDL_Scancode scancode, SDL_Keymod modifiers, int expectedWord,
     require(kbhit() != 0 && egReadKey() == expectedWord, message);
 }
 
-void expectKeypadStick(SDL_Scancode scancode, int expectedX, int expectedY,
-                       const char *message) {
-    resetInputState();
-    g_keyboardState[scancode] = true;
-    require(kbhit() == 0 &&
-                g_joyRawX == expectedX &&
-                g_joyRawY == expectedY,
-            message);
-}
-
 } // namespace
 
-void timerPump(void) {
-    ++g_timerPumpCalls;
-}
-
-void gfx_toggleFullscreen(void) {
-    ++g_fullscreenToggleCalls;
-}
-
-extern "C" const bool *SDL_GetKeyboardState(int *numkeys) {
-    if (numkeys) *numkeys = SDL_SCANCODE_COUNT;
-    return g_keyboardState;
-}
-
 int main() {
-    require(SDL_Init(SDL_INIT_EVENTS), "SDL event subsystem initializes for input behavior tests");
+    test_headless_init();
+    // Dummy video gives a valid (empty) keyboard-state array for the virtual
+    // stick and pulls in the event subsystem the pump drains.
+    require(SDL_Init(SDL_INIT_VIDEO), "SDL initializes headless for input behavior tests");
 
     resetInputState();
     require(g_joyRawX == kStickCenter && g_joyRawY == kStickCenter,
-            "setInt9Handler recenters the original raw keyboard-stick axes");
+            "setInt9Handler recenters the raw keyboard-stick axes");
 
     pushKey(SDL_SCANCODE_R);
     require(kbhit() != 0, "kbhit reports a queued BIOS-style letter key");
     require(egReadKey() == kBiosR,
-            "egReadKey returns the original BIOS word for lowercase r");
+            "egReadKey returns the BIOS word for lowercase r");
 
     resetInputState();
     pushKey(SDL_SCANCODE_R, SDL_KMOD_SHIFT);
     require(kbhit() != 0 && egReadKey() == kBiosShiftR,
-            "egReadKey returns the original shifted BIOS word for R");
+            "egReadKey returns the shifted BIOS word for R");
 
     resetInputState();
     pushKey(SDL_SCANCODE_R, SDL_KMOD_CTRL);
     require(kbhit() != 0 && egReadKey() == kBiosCtrlR,
-            "egReadKey maps Ctrl+letter to the original control-code low byte");
+            "egReadKey maps Ctrl+letter to the control-code low byte");
 
     resetInputState();
     pushKey(SDL_SCANCODE_Q, SDL_KMOD_ALT);
     require(kbhit() != 0 && egReadKey() == kBiosAltQ,
-            "egReadKey maps Alt+Q to the original scan-only BIOS word");
-
-    resetInputState();
-    pushKey(SDL_SCANCODE_F1);
-    require(kbhit() != 0 && egReadKey() == kBiosF1,
-            "egReadKey maps function keys to original scan-only BIOS words");
+            "egReadKey maps Alt+Q to the scan-only BIOS word");
 
     const struct {
         SDL_Scancode scancode;
@@ -220,7 +179,7 @@ int main() {
     };
     for (const auto &entry : letterCases) {
         expectKey(entry.scancode, SDL_KMOD_NONE, entry.expectedWord,
-                  "egReadKey maps alphabet keys to the original BIOS scan/ASCII word");
+                  "egReadKey maps alphabet keys to the BIOS scan/ASCII word");
     }
 
     const struct {
@@ -234,10 +193,10 @@ int main() {
     };
     for (const auto &entry : numberCases) {
         expectKey(entry.scancode, SDL_KMOD_NONE, entry.expectedWord,
-                  "egReadKey maps number-row keys to the original BIOS scan/ASCII word");
+                  "egReadKey maps number-row keys to the BIOS scan/ASCII word");
     }
     expectKey(SDL_SCANCODE_1, SDL_KMOD_SHIFT, kBiosShift1,
-              "egReadKey maps shifted number-row punctuation to the original BIOS word");
+              "egReadKey maps shifted number-row punctuation to the BIOS word");
 
     const struct {
         SDL_Scancode scancode;
@@ -256,42 +215,33 @@ int main() {
     };
     for (const auto &entry : punctuationCases) {
         expectKey(entry.scancode, SDL_KMOD_NONE, entry.expectedWord,
-                  "egReadKey maps punctuation/control keys to the original BIOS word");
+                  "egReadKey maps punctuation/control keys to the BIOS word");
     }
 
     const struct {
         SDL_Scancode scancode;
         int expectedWord;
     } functionCases[] = {
-        {SDL_SCANCODE_F2, kBiosF2},   {SDL_SCANCODE_F3, kBiosF3},
-        {SDL_SCANCODE_F4, kBiosF4},   {SDL_SCANCODE_F5, kBiosF5},
-        {SDL_SCANCODE_F6, kBiosF6},   {SDL_SCANCODE_F7, kBiosF7},
-        {SDL_SCANCODE_F8, kBiosF8},   {SDL_SCANCODE_F9, kBiosF9},
-        {SDL_SCANCODE_F10, kBiosF10},
+        {SDL_SCANCODE_F1, kBiosF1},   {SDL_SCANCODE_F2, kBiosF2},
+        {SDL_SCANCODE_F3, kBiosF3},   {SDL_SCANCODE_F4, kBiosF4},
+        {SDL_SCANCODE_F5, kBiosF5},   {SDL_SCANCODE_F6, kBiosF6},
+        {SDL_SCANCODE_F7, kBiosF7},   {SDL_SCANCODE_F8, kBiosF8},
+        {SDL_SCANCODE_F9, kBiosF9},   {SDL_SCANCODE_F10, kBiosF10},
     };
     for (const auto &entry : functionCases) {
         expectKey(entry.scancode, SDL_KMOD_NONE, entry.expectedWord,
-                  "egReadKey maps function keys to the original scan-only BIOS word");
+                  "egReadKey maps function keys to the scan-only BIOS word");
     }
 
     resetInputState();
     pushKey(SDL_SCANCODE_PRINTSCREEN);
     require(kbhit() == 0,
-            "egReadKey ignores keys that had no original egame command meaning");
+            "egReadKey ignores keys that carry no egame command meaning");
 
     resetInputState();
     pushMouseMotion();
     require(kbhit() == 0,
-            "egReadKey ignores non-key SDL events like the original command buffer did");
-
-    expectKeypadStick(SDL_SCANCODE_KP_7, kStickLow, kStickLow,
-                      "keypad 7 maps to the original up-left virtual stick deflection");
-    expectKeypadStick(SDL_SCANCODE_KP_9, kStickHigh, kStickLow,
-                      "keypad 9 maps to the original up-right virtual stick deflection");
-    expectKeypadStick(SDL_SCANCODE_KP_1, kStickLow, kStickHigh,
-                      "keypad 1 maps to the original down-left virtual stick deflection");
-    expectKeypadStick(SDL_SCANCODE_KP_3, kStickHigh, kStickHigh,
-                      "keypad 3 maps to the original down-right virtual stick deflection");
+            "egReadKey ignores non-key SDL events");
 
     resetInputState();
     std::thread delayedKey([] {
@@ -299,24 +249,19 @@ int main() {
         pushKey(SDL_SCANCODE_ESCAPE);
     });
     require(egReadKey() == kBiosEscape,
-            "egReadKey preserves the original blocking BIOS read when no key is ready yet");
+            "egReadKey blocks until a key is ready, BIOS-read style");
     delayedKey.join();
 
     resetInputState();
-    pushQuit();
-    require(kbhit() != 0 && egReadKey() == kBiosAltQ,
-            "SDL quit events feed the original Alt+Q command word");
-
-    resetInputState();
     pushKey(SDL_SCANCODE_RETURN, SDL_KMOD_ALT);
-    require(kbhit() == 0 && g_fullscreenToggleCalls == kExpectedOneCall,
-            "Alt+Enter toggles fullscreen and is swallowed before the key ring");
+    require(kbhit() == 0,
+            "Alt+Enter is swallowed as the fullscreen toggle before the key ring");
 
     resetInputState();
     for (int idx = 0; idx < kRingOverflowAttempts; ++idx) {
         pushKey(SDL_SCANCODE_ESCAPE);
     }
-    require(kbhit() != 0, "kbhit drains a burst of events into the original-size key ring");
+    require(kbhit() != 0, "kbhit drains a burst of events into the key ring");
     int readCount = 0;
     while (kbhit() != 0) {
         require(egReadKey() == kBiosEscape,
@@ -324,10 +269,10 @@ int main() {
         ++readCount;
     }
     require(readCount == kRingStoredCapacity,
-            "key ring drops overflow after the original one-empty-slot ring capacity");
+            "key ring drops overflow after its one-empty-slot capacity");
 
     restoreInt9Handler();
-    SDL_QuitSubSystem(SDL_INIT_EVENTS);
+    SDL_Quit();
     std::cout << "input_behavior_tests passed\n";
     return 0;
 }

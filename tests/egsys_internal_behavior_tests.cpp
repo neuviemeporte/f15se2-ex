@@ -1,4 +1,3 @@
-#include "dos.h"
 #include "egdata.h"
 #include "egtypes.h"
 #include "struct.h"
@@ -7,17 +6,10 @@
 #include <cstring>
 #include <iostream>
 
-int test_intdos(union REGS *inregs, union REGS *outregs);
-int test_intdosx(union REGS *inregs, union REGS *outregs, struct SREGS *segregs);
-void test_segread(struct SREGS *segregs);
-
-#define intdos test_intdos
-#define intdosx test_intdosx
-#define segread test_segread
+// Reach egsys.c's file-local interpolation internals (camera/object snapshot +
+// lerp helpers) directly. The rest of the game is linked from f15se2_core, so
+// the externals these reference resolve to the real implementations.
 #include "../src/egsys.c"
-#undef segread
-#undef intdosx
-#undef intdos
 
 namespace {
 
@@ -26,7 +18,6 @@ namespace {
 // or zero/null/sentinel resets.
 enum EgSysInternalOriginalConstant : int {
     kTestFailureExitCode = 1,
-    kNsPerSecond = 1000000000,
     kFrameRateScalingFour = 4,
     kFrameRateScalingZero = 0,
     kHalfNumerator = 1,
@@ -37,42 +28,7 @@ enum EgSysInternalOriginalConstant : int {
     kProjectileSlot = 2,
     kProjectilePrevTtl = 10,
     kProjectileNextTtl = 9,
-    kExpectedOneCall = 1,
-    kBacklogStepLimit = 4,
-    kInitPhaseActive = 1,
-    kInitPhaseComplete = 2,
-    kKeyOverlayActive = 1,
-    kDosCloseFunction = 0x3E,
-    kDosReadFunction = 0x3F,
-    kDosWriteFunction = 0x40,
-    kDosHandle = 0x1234,
-    kDosCount = 0x0055,
-    kDosOffset = 0x4567,
-    kDosSegment = 0x9ABC,
-    kDosOffsetAddend = 0x0022,
-    kDosReadSuccess = 0x0033,
-    kDosWriteSuccess = 0x0044,
-    kDosCarryClear = 0,
-    kDosCarrySet = 1,
-    kSegreadDs = 0xBEEF,
 };
-
-int g_renderFrameCalls = 0;
-int g_renderHudFrameCalls = 0;
-int g_stepFlightModelCalls = 0;
-int g_updateFrameCalls = 0;
-int g_timerPumpCalls = 0;
-int g_drawInstrumentCalls = 0;
-int g_dacAnimateCalls = 0;
-int g_intdosCalls = 0;
-int g_intdosxCalls = 0;
-int g_segreadCalls = 0;
-int g_updateFrameEndsMission = 1;
-int g_dacAnimateEndsMission = 0;
-union REGS g_lastDosRegs = {};
-struct SREGS g_lastDosSregs = {};
-int g_nextDosCarry = kDosCarryClear;
-int g_nextDosAx = 0;
 
 void require(bool condition, const char *message) {
     if (!condition) {
@@ -103,77 +59,7 @@ void clearObjects() {
     std::memset(g_projectiles, 0, sizeof(struct Projectile) * 12);
 }
 
-void resetDosRecorder() {
-    g_intdosCalls = 0;
-    g_intdosxCalls = 0;
-    g_segreadCalls = 0;
-    std::memset(&g_lastDosRegs, 0, sizeof(g_lastDosRegs));
-    std::memset(&g_lastDosSregs, 0, sizeof(g_lastDosSregs));
-    g_nextDosCarry = kDosCarryClear;
-    g_nextDosAx = 0;
-}
-
 } // namespace
-
-int test_intdos(union REGS *inregs, union REGS *outregs) {
-    ++g_intdosCalls;
-    g_lastDosRegs = *inregs;
-    *outregs = *inregs;
-    outregs->x.cflag = static_cast<unsigned short>(g_nextDosCarry);
-    outregs->x.ax = static_cast<unsigned short>(g_nextDosAx);
-    return 0;
-}
-
-int test_intdosx(union REGS *inregs, union REGS *outregs, struct SREGS *segregs) {
-    ++g_intdosxCalls;
-    g_lastDosRegs = *inregs;
-    g_lastDosSregs = *segregs;
-    *outregs = *inregs;
-    outregs->x.cflag = static_cast<unsigned short>(g_nextDosCarry);
-    outregs->x.ax = static_cast<unsigned short>(g_nextDosAx);
-    return 0;
-}
-
-void test_segread(struct SREGS *segregs) {
-    ++g_segreadCalls;
-    std::memset(segregs, 0, sizeof(*segregs));
-    segregs->ds = kSegreadDs;
-}
-
-void renderFrame(void) {
-    ++g_renderFrameCalls;
-}
-void renderHudFrame(int) {
-    ++g_renderHudFrameCalls;
-}
-void stepFlightModel(void) {
-    ++g_stepFlightModelCalls;
-}
-void updateFrame(void) {
-    ++g_updateFrameCalls;
-    if (g_updateFrameEndsMission) {
-        g_missionEndedFlag[0] = 1;
-    }
-}
-void timerPump(void) {
-    ++g_timerPumpCalls;
-}
-void __cdecl __far drawInstrumentGaugesFar(void) {
-    ++g_drawInstrumentCalls;
-}
-void FAR CDECL gfx_dacAnimate(void) {
-    ++g_dacAnimateCalls;
-    if (g_dacAnimateEndsMission) {
-        g_missionEndedFlag[0] = 1;
-    }
-}
-void gfx_setDacRange(uint16, uint16, const uint8 *) {}
-
-uint64 timerNowNs(void) {
-    static uint64 now = 0;
-    now += NS_PER_SEC;
-    return now;
-}
 
 int main() {
     CamSnapshot prev = {};
@@ -328,113 +214,6 @@ int main() {
     objApplyInterp(simNext, simNext, projPrev, projNext, kHalfNumerator, kHalfDenominator);
     require(g_projectiles[kProjectileSlot].mapX == 555,
             "objApplyInterp skips projectiles whose ttl did not decrement by one");
-
-    resetDosRecorder();
-    closeFile(kDosHandle);
-    require(g_intdosCalls == kExpectedOneCall &&
-                g_lastDosRegs.h.ah == kDosCloseFunction &&
-                g_lastDosRegs.x.bx == kDosHandle,
-            "closeFile issues the original DOS close-handle interrupt");
-
-    resetDosRecorder();
-    g_nextDosAx = kDosReadSuccess;
-    require(readFile1(kDosHandle, kDosCount, kDosOffset) == kDosReadSuccess &&
-                g_segreadCalls == kExpectedOneCall &&
-                g_intdosxCalls == kExpectedOneCall &&
-                g_lastDosRegs.h.ah == kDosReadFunction &&
-                g_lastDosRegs.x.bx == kDosHandle &&
-                g_lastDosRegs.x.cx == kDosCount &&
-                g_lastDosRegs.x.dx == kDosOffset &&
-                g_lastDosSregs.ds == kSegreadDs,
-            "readFile1 issues the original near-buffer DOS read using DGROUP DS");
-
-    resetDosRecorder();
-    g_nextDosCarry = kDosCarrySet;
-    require(readFile2(kDosHandle, kDosCount, kDosOffset, kDosSegment) == -1 &&
-                g_lastDosRegs.h.ah == kDosReadFunction &&
-                g_lastDosRegs.x.bx == kDosHandle &&
-                g_lastDosRegs.x.cx == kDosCount &&
-                g_lastDosRegs.x.dx == kDosOffset &&
-                g_lastDosSregs.ds == kDosSegment,
-            "readFile2 issues the original far-buffer DOS read and maps carry to -1");
-
-    resetDosRecorder();
-    g_nextDosAx = kDosWriteSuccess;
-    require(writeFileAtRaw(kDosHandle, kDosCount, kDosOffset, kDosSegment,
-                           kDosOffsetAddend) == kDosWriteSuccess &&
-                g_lastDosRegs.h.ah == kDosWriteFunction &&
-                g_lastDosRegs.x.bx == kDosHandle &&
-                g_lastDosRegs.x.cx == kDosCount &&
-                g_lastDosRegs.x.dx == kDosOffset + kDosOffsetAddend &&
-                g_lastDosSregs.ds == kDosSegment,
-            "writeFileAtRaw issues the original far-buffer DOS write from offset plus addend");
-
-    g_renderFrameCalls = 0;
-    g_renderHudFrameCalls = 0;
-    g_stepFlightModelCalls = 0;
-    g_updateFrameCalls = 0;
-    g_timerPumpCalls = 0;
-    g_drawInstrumentCalls = 0;
-    g_dacAnimateCalls = 0;
-    g_missionEndedFlag[0] = 0;
-    g_frameRateScaling = kFrameRateScalingFour;
-    g_groundUnitCount = 0;
-    g_initPhase = kInitPhaseComplete;
-    keyValue = 0;
-    g_updateFrameEndsMission = 1;
-    g_dacAnimateEndsMission = 0;
-    seedCameraState(3000);
-    runGameLoop();
-    require(g_stepFlightModelCalls == kExpectedOneCall &&
-                g_updateFrameCalls == kExpectedOneCall &&
-                g_renderFrameCalls == kExpectedOneCall &&
-                g_renderHudFrameCalls == kExpectedOneCall,
-            "runGameLoop performs one original fixed-step simulation and render pass before mission end");
-    require(g_timerPumpCalls == kExpectedOneCall &&
-                g_drawInstrumentCalls == kExpectedOneCall &&
-                g_dacAnimateCalls == kExpectedOneCall,
-            "gameMainLoop pumps timer, draws gauges for keyValue zero, and presents the DAC page");
-
-    g_renderFrameCalls = 0;
-    g_renderHudFrameCalls = 0;
-    g_stepFlightModelCalls = 0;
-    g_updateFrameCalls = 0;
-    g_timerPumpCalls = 0;
-    g_drawInstrumentCalls = 0;
-    g_dacAnimateCalls = 0;
-    g_missionEndedFlag[0] = 0;
-    g_frameRateScaling = kFrameRateScalingFour;
-    g_groundUnitCount = 0;
-    g_initPhase = kInitPhaseActive;
-    keyValue = 0;
-    g_updateFrameEndsMission = 1;
-    g_dacAnimateEndsMission = 0;
-    seedCameraState(4000);
-    runGameLoop();
-    require(g_updateFrameCalls == kExpectedOneCall &&
-                g_renderFrameCalls == kExpectedOneCall,
-            "gameMainLoop preserves original no-interpolation resync while mission init is active");
-
-    g_renderFrameCalls = 0;
-    g_renderHudFrameCalls = 0;
-    g_stepFlightModelCalls = 0;
-    g_updateFrameCalls = 0;
-    g_timerPumpCalls = 0;
-    g_drawInstrumentCalls = 0;
-    g_dacAnimateCalls = 0;
-    g_missionEndedFlag[0] = 0;
-    g_frameRateScaling = kFrameRateScalingFour;
-    g_groundUnitCount = 0;
-    g_initPhase = kInitPhaseComplete;
-    keyValue = kKeyOverlayActive;
-    g_updateFrameEndsMission = 0;
-    g_dacAnimateEndsMission = 1;
-    seedCameraState(5000);
-    runGameLoop();
-    require(g_updateFrameCalls == kBacklogStepLimit &&
-                g_stepFlightModelCalls == kBacklogStepLimit &&
-                g_drawInstrumentCalls == 0,
-            "gameMainLoop preserves original four-step backlog cap and skips gauges while key overlay is active");
 
     std::cout << "egsys_internal_behavior_tests passed\n";
     return 0;

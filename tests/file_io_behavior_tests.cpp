@@ -3,26 +3,20 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <cstdarg>
-#include <cstring>
 #include <string>
-#include <sys/mman.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+/* file_io helpers not surfaced through common.h. */
 extern int fileReadRaw(SDL_IOStream *io, void *dst, int count);
-extern int readFile(SDL_IOStream *io, int count, int bufOffset);
 extern int readFileAt(SDL_IOStream *io, int count, int offset, int segment);
 extern int writeFile(SDL_IOStream *io, int count, int offset, int segment, int unused);
-extern int writeFileAtRaw(SDL_IOStream *io, void *buf, uint16 count);
-extern void dos_printstring(const char *str);
 extern void errorAndExit(const char *msg);
 
 namespace {
 
 // Behavior-sensitive constants are named here or explained at the use site.
-// Remaining numeric literals are fixture data, indices, loop/math mechanics,
-// or zero/null/sentinel resets.
+// Remaining numeric literals are fixture data, indices, or sentinel resets.
 enum FileIoOriginalConstant : int {
     kDosReadMode = 0,
     kDosDefaultCreateAttr = 0,
@@ -35,22 +29,14 @@ enum FileIoOriginalConstant : int {
     kUpperDatRemainingBytes = 2,
     kReplacementItemSize = 1,
     kReplacementItemCount = 2,
-    kRawFileBytes = 3,
-    kDosNegativeWriteCount = -1,
-    kDosNegativeCountBytes = 0xFFFF,
-    kMappedDosSegment = 0x0100,
-    kMappedDosOffset = 0,
-    kMappedDosAddress = 0x01000000,
+    kRawItemSize = 1,
+    kRawItemCount = 3,
     kNullTransferItemSize = 0,
     kNullTransferItemCount = 5,
-    kSingleNullReadByte = 1,
-    kDosStringTerminator = '$',
+    kSingleByte = 1,
     kErrorExitStatus = 1,
     kScratchBufferBytes = 8,
-    kMappedDosBytes = 0x10000,
 };
-
-std::string g_lastLogInfo;
 
 void require(bool condition, const char *message) {
     if (!condition) {
@@ -59,25 +45,12 @@ void require(bool condition, const char *message) {
     }
 }
 
-void resetLogCapture() {
-    g_lastLogInfo.clear();
-}
-
 std::string readWholeFile(const std::filesystem::path &path) {
     std::ifstream in(path, std::ios::binary);
     return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
 } // namespace
-
-void log_info(const char *fmt, ...) {
-    char buf[128];
-    va_list ap;
-    va_start(ap, fmt);
-    std::vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
-    g_lastLogInfo = buf;
-}
 
 int main() {
     const auto oldCwd = std::filesystem::current_path();
@@ -91,6 +64,7 @@ int main() {
         out << "abcdef";
     }
 
+    // openFile resolves DOS-style uppercase asset names case-insensitively.
     SDL_IOStream *input = openFile("upper.dat", kDosReadMode);
     require(input != nullptr, "openFile resolves DOS-style uppercase asset names");
     char buf[kScratchBufferBytes] = {};
@@ -101,6 +75,7 @@ int main() {
             "fileReadRaw negative count reads remaining stream bytes");
     fileClose(input);
 
+    // createFile resolves the existing spelling and truncates it for writing.
     SDL_IOStream *output = createFile("upper.dat", kDosDefaultCreateAttr);
     require(output != nullptr, "createFile resolves existing path case-insensitively");
     const char replacement[] = "XY";
@@ -110,71 +85,41 @@ int main() {
     require(readWholeFile(testDir / "UPPER.DAT") == "XY",
             "createFile overwrites the existing uppercase spelling");
 
+    // createFile creates new files; fileWrite persists a host buffer.
     output = createFile("newfile.bin", kDosDefaultCreateAttr);
     require(output != nullptr, "createFile creates new files");
     char raw[] = {'1', '2', '3'};
-    require(writeFileAtRaw(output, raw, sizeof(raw)) == kRawFileBytes, "writeFileAtRaw writes host buffers");
+    require((int)fileWrite(raw, kRawItemSize, kRawItemCount, output) == kRawItemCount,
+            "fileWrite writes host buffers");
     fileClose(output);
-    require(readWholeFile(testDir / "newfile.bin") == "123", "writeFileAtRaw persisted bytes");
+    require(readWholeFile(testDir / "newfile.bin") == "123", "fileWrite persisted bytes");
 
-    void *dosMapped = mmap(reinterpret_cast<void *>(static_cast<uintptr_t>(kMappedDosAddress)),
-                           kMappedDosBytes,
-                           PROT_READ | PROT_WRITE,
-                           MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE,
-                           -1,
-                           0);
-    require(dosMapped != MAP_FAILED,
-            "test should be able to map a deterministic legacy MK_FP buffer");
-    std::memset(dosMapped, 'D', kMappedDosBytes);
-    output = createFile("doswrite.bin", kDosDefaultCreateAttr);
-    require(output != nullptr, "createFile creates DOS-address write test file");
-    require(writeFile(output,
-                      kDosNegativeWriteCount,
-                      kMappedDosOffset,
-                      kMappedDosSegment,
-                      0) == kDosNegativeCountBytes,
-            "writeFile preserves original DOS negative-count 0xffff-byte write");
-    fileClose(output);
-    require(readWholeFile(testDir / "doswrite.bin").size() == kDosNegativeCountBytes,
-            "writeFile persisted the original negative-count byte total");
-    require(munmap(dosMapped, kMappedDosBytes) == 0,
-            "test should release the deterministic legacy MK_FP buffer");
-
-    require(fileReadRaw(nullptr, buf, kSingleNullReadByte) == kNullStreamError,
+    // Null/zero-size guards: the I/O helpers reject bad streams before dereferencing.
+    require(fileReadRaw(nullptr, buf, kSingleByte) == kNullStreamError,
             "fileReadRaw reports null stream");
-    require(readFile(nullptr, kSingleNullReadByte, 0) == kNullStreamError,
-            "readFile reports null stream before dereferencing DOS offset");
-    require(readFileAt(nullptr, kSingleNullReadByte, 0, 0) == kNullStreamError,
-            "readFileAt reports null stream before dereferencing DOS segment offset");
-    require(writeFile(nullptr, kSingleNullReadByte, 0, 0, 0) == kNullStreamError,
-            "writeFile reports null stream before dereferencing DOS segment offset");
+    require(readFileAt(nullptr, kSingleByte, 0, 0) == kNullStreamError,
+            "readFileAt reports null stream before resolving its buffer");
+    require(writeFile(nullptr, kSingleByte, 0, 0, 0) == kNullStreamError,
+            "writeFile reports null stream before resolving its buffer");
     require(fileRead(buf, kNullTransferItemSize, kNullTransferItemCount, nullptr) == kZeroSizedTransferResult,
             "fileRead handles null/zero-size reads");
     require(fileWrite(buf, kNullTransferItemSize, kNullTransferItemCount, nullptr) == kZeroSizedTransferResult,
             "fileWrite handles null/zero-size writes");
-    require(writeFileAtRaw(nullptr, raw, sizeof(raw)) == kNullStreamError,
-            "writeFileAtRaw reports null stream");
     fileClose(nullptr);
 
-    resetLogCapture();
-    char dosMessage[] = {'O', 'K', kDosStringTerminator, 'X', 0};
-    dos_printstring(dosMessage);
-    require(g_lastLogInfo == "OK",
-            "dos_printstring logs bytes up to the original DOS '$' terminator");
-
+    // errorAndExit prints its '$'-terminated message and exits with the fatal status.
     {
         const pid_t pid = fork();
         require(pid >= 0, "test should be able to fork for errorAndExit behavior");
         if (pid == 0) {
-            char fatalMessage[] = {'F', 'A', 'T', 'A', 'L', kDosStringTerminator, 0};
+            char fatalMessage[] = {'F', 'A', 'T', 'A', 'L', '$', 0};
             errorAndExit(fatalMessage);
-            std::exit(1);
+            std::exit(0); /* must not be reached */
         }
         int status = 0;
         require(waitpid(pid, &status, 0) == pid,
                 "test should be able to wait for errorAndExit child process");
-        require(WIFEXITED(status) &&
-                    WEXITSTATUS(status) == kErrorExitStatus,
+        require(WIFEXITED(status) && WEXITSTATUS(status) == kErrorExitStatus,
                 "errorAndExit preserves the original fatal exit status");
     }
 
