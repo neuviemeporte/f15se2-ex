@@ -354,26 +354,21 @@ endfunction()
 # --- Active: build green and pass under `ctest` ---------------------------------
 add_behavior_test(award_behavior_tests SOURCES
     ${SRC_DIR}/enaward.c ${SRC_DIR}/endata.c)
-add_behavior_test(end_file_behavior_tests SOURCES
-    ${SRC_DIR}/enfile.c ${SRC_DIR}/enrand.c ${SRC_DIR}/endata.c)
+add_behavior_test(end_file_behavior_tests LINK_CORE)
 add_behavior_test(end_input_behavior_tests SOURCES
     ${SRC_DIR}/eninput.c ${SRC_DIR}/endata.c)
 add_behavior_test(sys_behavior_tests SOURCES
     ${SRC_DIR}/egsys.c ${SRC_DIR}/egdata.c)
 add_behavior_test(farbuf_behavior_tests LINK_CORE)
-add_behavior_test(pic_behavior_tests SOURCES
-    ${SRC_DIR}/egpic.c)
-add_behavior_test(sphere_behavior_tests SOURCES
-    ${SRC_DIR}/egsphere.c ${SRC_DIR}/egdata.c)
+add_behavior_test(pic_behavior_tests LINK_CORE)
+add_behavior_test(sphere_behavior_tests LINK_CORE)
 add_behavior_test(load_behavior_tests SOURCES
     ${SRC_DIR}/eg3dload.c ${SRC_DIR}/egmath.c ${SRC_DIR}/egdata.c
     ${SRC_DIR}/egfarbuf.c)
-add_behavior_test(shared_timer_behavior_tests SOURCES
-    ${SRC_DIR}/shared/timer.c)
+add_behavior_test(shared_timer_behavior_tests LINK_CORE)
 add_behavior_test(shared_runtime_behavior_tests SOURCES
     ${SRC_DIR}/shared/cleanup.c ${SRC_DIR}/shared/drawstr.c)
-add_behavior_test(eg3drast_behavior_tests SOURCES
-    ${SRC_DIR}/eg3drast.c ${SRC_DIR}/egdata.c)
+add_behavior_test(eg3drast_behavior_tests LINK_CORE)
 add_behavior_test(tick_behavior_tests SOURCES
     ${SRC_DIR}/egtick.c ${SRC_DIR}/egdata.c)
 add_behavior_test(start_parse_behavior_tests SOURCES
