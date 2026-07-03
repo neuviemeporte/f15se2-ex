@@ -6,12 +6,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
+#include <ctime>
 #include <iostream>
 
+// Internal-access pattern: pull the shared misc translation unit in directly so
+// the test can reach its file-scope helpers. pollJoystick/copyJoystickData moved
+// to joystick.c (SDL gamepad) and are covered by the joystick/overlay tests.
 #include "../src/shared/miscimpl.c"
 
-void pollJoystick(void);
-void far copyJoystickData(uint8 *ptr);
 void doNothing2(const char *msg, int a, int b, int c);
 int loadOverlay(const char *filename);
 int doFcbSearch(void);
@@ -30,12 +32,8 @@ enum SharedMiscOriginalConstant : int {
     kInputAh = 0x00,
     kOverlayLoadSuccess = 0,
     kFcbSearchFailure = -1,
-    kTimeOfDayStubValue = 0,
     kBufferFillByte = 0x5A,
     kBufferFillCount = 3,
-    kCopyUnchanged0 = 0x11,
-    kCopyUnchanged1 = 0x22,
-    kCopyUnchanged2 = 0x33,
     kLogBufferSize = 64,
     kTestFailureExitCode = 1,
 };
@@ -52,20 +50,12 @@ void require(bool condition, const char *message) {
 int main() {
     uint8 inRegs[0xe] = {};
     uint8 outRegs[0xe] = {};
-    uint8 joyData[] = {kCopyUnchanged0, kCopyUnchanged1, kCopyUnchanged2};
     char text[32] = "F-15";
     char fill[5] = {};
 
     installCBreakHandler();
     restoreCbreakHandler();
-    pollJoystick();
     doNothing2("ignored", 0, 0, 0);
-
-    copyJoystickData(joyData);
-    require(joyData[0] == kCopyUnchanged0 &&
-                joyData[1] == kCopyUnchanged1 &&
-                joyData[2] == kCopyUnchanged2,
-            "copyJoystickData preserves the original no-op native rewrite behavior");
 
     inRegs[0] = kInputAl;
     inRegs[1] = kInputAh;
@@ -77,8 +67,20 @@ int main() {
             "loadOverlay preserves the original native rewrite success stub");
     require(doFcbSearch() == kFcbSearchFailure,
             "doFcbSearch preserves the original native rewrite failure stub");
-    require(getTimeOfDay() == kTimeOfDayStubValue,
-            "getTimeOfDay preserves the original native rewrite zero stub");
+    // getTimeOfDay is wall-clock derived (BIOS 18.2 Hz tick low word). A prior
+    // regression stubbed it to a constant 0, which froze the RNG seed and
+    // disabled night missions. Verify it tracks the clock, not a constant.
+    {
+        unsigned long t0 = static_cast<unsigned long>(std::time(nullptr));
+        int actual = getTimeOfDay();
+        unsigned long t1 = static_cast<unsigned long>(std::time(nullptr));
+        int expected0 = static_cast<int>(
+            static_cast<unsigned long>(static_cast<double>(t0) * 18.2065) & 0xFFFF);
+        int expected1 = static_cast<int>(
+            static_cast<unsigned long>(static_cast<double>(t1) * 18.2065) & 0xFFFF);
+        require(actual == expected0 || actual == expected1,
+                "getTimeOfDay derives the BIOS tick count from the wall clock");
+    }
 
     mystrcat(text, "E");
     require(std::strcmp(text, "F-15E") == 0 &&

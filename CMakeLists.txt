@@ -405,9 +405,9 @@ add_behavior_test(input_behavior_tests LINK_CORE)
 add_behavior_test(egsys_internal_behavior_tests LINK_CORE)
 # add_behavior_test(start_runtime_behavior_tests SOURCES                                  # page1Ptr (gfx page rename)
 #     ${SRC_DIR}/stinit.c ${SRC_DIR}/stalloc.c ${SRC_DIR}/stsprit.c ${SRC_DIR}/stdata.c)
-# add_behavior_test(shared_overlay_behavior_tests SOURCES ${SRC_DIR}/shared/ovlimpl.c)   # joystick reorg
-# add_behavior_test(shared_misc_behavior_tests)                                           # pollJoystick (reorg)
-# add_behavior_test(shared_picimpl_behavior_tests SOURCES ${SRC_DIR}/shared/picimpl.c)   # runtime assertion drift
+add_behavior_test(shared_overlay_behavior_tests LINK_CORE)
+add_behavior_test(shared_misc_behavior_tests)
+add_behavior_test(shared_picimpl_behavior_tests SOURCES ${SRC_DIR}/shared/picimpl.c)
 add_behavior_test(eg_stubs_behavior_tests LINK_CORE)
 # eg_main_behavior_tests: SCRAPPED - all-spy test of deleted behavior (gfxInit,
 #   moveDataFar, DOS text-mode exit). Per-mission reset intent -> docs/test-migration.md.

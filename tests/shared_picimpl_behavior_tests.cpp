@@ -221,9 +221,8 @@ int main() {
     SDL_IOStream *showHandle = fakeHandle(1);
     setupOneRowSurface(&g_pageSurface, g_pagePixels);
     showPicFile(showHandle, kShowPage);
-    require(g_setPageCalls == kExpectedOneCall &&
-                g_lastPage == kShowPage,
-            "showPicFile selects the original target page before decoding");
+    require(g_setPageCalls == kExpectedNoCalls,
+            "showPicFile decodes into the current back-buffer page without reselecting (page arg collapsed to a single buffer)");
     require(g_fileReadCalls == kExpectedOneCall &&
                 g_lastReadHandle == showHandle &&
                 g_lastReadCount == kPicReadBlockSize,
