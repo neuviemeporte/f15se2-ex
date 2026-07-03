@@ -1,3 +1,11 @@
+// Software-rasterizer internals (eg3drast.c) behavior tests.
+//
+// The tested primitives (udiv32by16/hsine/q15hi/projectVertexToScreen/clip*/
+// rasterizeEdgeSpan/drawPolygonOutline/drawFlatHorizon/...) are `static` inside
+// eg3drast.c, so this TU #includes the .c directly (SOURCES isolation) — LINK_CORE
+// cannot reach file-local symbols. The inline gfx_*/drawClipLineGlobal stubs are
+// legitimate output observers for the rasterizer, not LINK_CORE collisions. The
+// rasterizer is a live backend; its span/edge/clip/projection math is unchanged.
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -254,6 +262,13 @@ int far drawClipLineGlobal(void) {
     ++g_drawClipLineCalls;
     return 0;
 }
+
+// Render-backend seam link-satisfiers (added since the base commit). Returning
+// "vector inactive" keeps the integer span/edge rasterizer path under test; the
+// native r2d poly / blit-offset calls sit behind r2d_vectorActive() and never run.
+int r2d_vectorActive(void) { return 0; }
+void r2d_submitPoly(const short *, int, int, int, int, int, int) {}
+int FAR CDECL gfx_getBlitOffset() { return 0; }
 
 int main() {
     int16 matrixA[9] = {};
@@ -1612,8 +1627,8 @@ int main() {
                 "projectSceneObject preserves the original store-transform opcode before sorted insertion");
     }
 
-    installDivZeroHandler();
-    installDivZeroVector();
+    // installDivZeroHandler/installDivZeroVector dropped: the DOS INT0 divide-trap
+    // handler was deleted (the manual udiv32by16/sdivFull sentinels replaced it).
 
     std::cout << "eg3drast_internal_behavior_tests passed\n";
     return 0;

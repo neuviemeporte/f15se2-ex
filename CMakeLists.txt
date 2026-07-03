@@ -382,17 +382,13 @@ add_behavior_test(start_parse_behavior_tests SOURCES
 # See docs/test-migration.md. Uncomment each as it is migrated/salvaged (or delete
 # if it tests a removed system). Original curated SOURCES kept for reference.
 #
-# add_behavior_test(original_behavior_tests SOURCES        # g_pageBack (gfx page rename)
-#     ${SRC_DIR}/eg3dmath.c ${SRC_DIR}/egmath.c ${SRC_DIR}/egflight.c ${SRC_DIR}/eghudm.c ${SRC_DIR}/egdata.c)
+add_behavior_test(original_behavior_tests LINK_CORE)
 add_behavior_test(utility_behavior_tests LINK_CORE)
 add_behavior_test(end_runtime_behavior_tests LINK_CORE)
 # end_debrief_behavior_tests: SCRAPPED - all render/menu/IO/timer/input spies;
 #   debrief moved to the debriefPresent redraw model. Scoring/campaign logic and
 #   debrief render belong in the new render/menu test set (docs/test-migration.md).
-# add_behavior_test(geometry_behavior_tests SOURCES       # g_drawPage; projection math may salvage
-#     ${SRC_DIR}/eg3dproj.c ${SRC_DIR}/egtacmap.c ${SRC_DIR}/egui.c ${SRC_DIR}/egtgt2.c ${SRC_DIR}/eg3dvp.c
-#     ${SRC_DIR}/eg3dgrid.c ${SRC_DIR}/eg3dmap.c ${SRC_DIR}/eg3dcam.c ${SRC_DIR}/eg3dmath.c
-#     ${SRC_DIR}/egmath.c ${SRC_DIR}/egdata.c)
+add_behavior_test(geometry_behavior_tests LINK_CORE)
 add_behavior_test(file_io_behavior_tests LINK_CORE)
 add_behavior_test(gameplay_behavior_tests LINK_CORE)
 add_behavior_test(input_behavior_tests LINK_CORE)
@@ -409,7 +405,7 @@ add_behavior_test(shared_picimpl_behavior_tests SOURCES ${SRC_DIR}/shared/picimp
 add_behavior_test(eg_stubs_behavior_tests LINK_CORE)
 # eg_main_behavior_tests: SCRAPPED - all-spy test of deleted behavior (gfxInit,
 #   moveDataFar, DOS text-mode exit). Per-mission reset intent -> docs/test-migration.md.
-# add_behavior_test(eg3drast_internal_behavior_tests SOURCES ${SRC_DIR}/egdata.c)         # installDivZeroHandler
+add_behavior_test(eg3drast_internal_behavior_tests SOURCES ${SRC_DIR}/egdata.c)
 add_behavior_test(start_behavior_tests LINK_CORE)
 # launcher_runtime_behavior_tests: SCRAPPED - tested the deleted /d1//d2//d3 debug
 #   launcher loop and the old game_init(void) signature. Future intent in docs.
