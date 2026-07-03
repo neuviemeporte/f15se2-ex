@@ -96,7 +96,6 @@ Problems with the game that were introduces by the port, and to the best of our 
 1. Pausing the game (`Alt-P`) appears to be busy waiting, CPU/GPU not idle.
 1. Terrain is sometimes visible through "holes" in the cockpit
 1. Some problems with keyboard input, in particular holding down `Backspace` to fire the gun sometimes stops repeating.
-1. The player aircraft sometimes does a weird 180/360 flip in the air under some conditions (rare, not easily reproduced, e.g. overflying a carrier while turning and pulling stick diagonal?)
 
 ## Building
 
