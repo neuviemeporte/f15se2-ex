@@ -378,10 +378,9 @@ add_behavior_test(tick_behavior_tests SOURCES
 add_behavior_test(start_parse_behavior_tests SOURCES
     ${SRC_DIR}/stparse.c ${SRC_DIR}/stdata.c)
 
-# --- Quarantined: diverged from current `main`; being migrated to LINK_CORE. ----
-# See docs/test-migration.md. Uncomment each as it is migrated/salvaged (or delete
-# if it tests a removed system). Original curated SOURCES kept for reference.
-#
+# SCRAPPED test comments below explain why no test exists for that area (the
+# system it tested was removed) rather than pointing at a live target. See
+# docs/test-migration.md for the remaining test-coverage TODOs.
 add_behavior_test(original_behavior_tests LINK_CORE)
 add_behavior_test(utility_behavior_tests LINK_CORE)
 add_behavior_test(end_runtime_behavior_tests LINK_CORE)
