@@ -4271,8 +4271,7 @@ struct PageDesc pageStruct = {
     0x0F,                     /* byte6 */
     {0, 0, 0, 0, 0},          /* pad2 */
     1,                        /* font */
-    {0, 0, 0, 0, 0, 0, 0, 0}, /* pad3 */
-    (int16 *)&pageStruct      /* selfPtr */
+    {0, 0, 0, 0, 0, 0, 0, 0}  /* pad3 */
 };
 int16 *debriefPage = (int16 *)&pageStruct;
 
@@ -4283,8 +4282,7 @@ struct PageDesc pageStruct2 = {
     0x0F,                     /* byte6 */
     {0, 0, 0, 0, 0},          /* pad2 */
     3,                        /* font */
-    {0, 0, 0, 0, 0, 0, 0, 0}, /* pad3 */
-    (int16 *)&pageStruct2     /* selfPtr */
+    {0, 0, 0, 0, 0, 0, 0, 0}  /* pad3 */
 };
 int16 *debriefPage2 = (int16 *)&pageStruct2;
 
@@ -4300,8 +4298,7 @@ struct PageDesc awardPageDesc = {
     0,                        /* byte6 */
     {0, 0, 0, 0, 0},          /* pad2 */
     1,                        /* font (awardFont) */
-    {0, 0, 0, 0, 0, 0, 0, 0}, /* pad3 */
-    (int16 *)&awardPageDesc   /* selfPtr */
+    {0, 0, 0, 0, 0, 0, 0, 0}  /* pad3 */
 };
 
 struct PageDesc awardPageDesc2 = {
@@ -4311,8 +4308,7 @@ struct PageDesc awardPageDesc2 = {
     0,                        /* byte6 */
     {0, 0, 0, 0, 0},          /* pad2 */
     3,                        /* font */
-    {0, 0, 0, 0, 0, 0, 0, 0}, /* pad3 */
-    (int16 *)&awardPageDesc2  /* selfPtr */
+    {0, 0, 0, 0, 0, 0, 0, 0}  /* pad3 */
 };
 
 int16 *awardPage = (int16 *)&awardPageDesc;

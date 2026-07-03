@@ -8,7 +8,7 @@
 #include "shared/common.h"
 
 void waitForKeyOrJoy(void) {
-    int key;
+    int key = 0; /* joystick-button exit leaves key unset; 0 = don't treat as Alt-Q */
     if (commData->setupUseJoy == 1) {
         do {
             if (misc_checkKeyBuf() == 0) {

@@ -84,7 +84,7 @@ struct SpriteParams spriteParams = {
     {0x01, 0x01, 0x00}      /* pad19 */
 };
 
-/* Page descriptors - 24-byte structs passed by pointer to graphics overlay */
+/* Page descriptors - passed by pointer (as int16 *) to the graphics layer */
 struct PageDesc page1Desc = {
     1,                        /* pageNum */
     {0, 0},                   /* pad1 */
@@ -92,8 +92,7 @@ struct PageDesc page1Desc = {
     0x0B,                     /* byte6 */
     {0, 0, 0, 0, 0},          /* pad2 */
     1,                        /* font (fontIndex) */
-    {0, 0, 0, 0, 0, 0, 0, 0}, /* pad3 */
-    (int16 *)&page1Desc       /* selfPtr (page1NumPtr) */
+    {0, 0, 0, 0, 0, 0, 0, 0}  /* pad3 */
 };
 int16 *page1NumPtr = (int16 *)&page1Desc;
 struct PageDesc page2Desc = {
@@ -103,8 +102,7 @@ struct PageDesc page2Desc = {
     0x0B,                     /* byte6 */
     {0, 0, 0, 0, 0},          /* pad2 */
     1,                        /* font */
-    {0, 0, 0, 0, 0, 0, 0, 0}, /* pad3 */
-    (int16 *)&page2Desc       /* selfPtr (page2NumPtr) */
+    {0, 0, 0, 0, 0, 0, 0, 0}  /* pad3 */
 };
 struct R2DImage *g_stBacking;
 struct PageDesc page3Desc = {
@@ -114,8 +112,7 @@ struct PageDesc page3Desc = {
     0x0B,                     /* byte6 */
     {0, 0, 0, 0, 0},          /* pad2 */
     1,                        /* font */
-    {0, 0, 0, 0, 0, 0, 0, 0}, /* pad3 */
-    (int16 *)&page3Desc       /* selfPtr */
+    {0, 0, 0, 0, 0, 0, 0, 0}  /* pad3 */
 };
 struct PageDesc screenDesc = {
     0,                        /* pageNum */
@@ -124,8 +121,7 @@ struct PageDesc screenDesc = {
     0x00,                     /* byte6 */
     {0, 0, 0, 0, 0},          /* pad2 */
     1,                        /* font */
-    {0, 0, 0, 0, 0, 0, 0, 0}, /* pad3 */
-    (int16 *)&screenDesc      /* selfPtr (screenBuf) */
+    {0, 0, 0, 0, 0, 0, 0, 0}  /* pad3 */
 };
 int16 *screenBuf = (int16 *)&screenDesc;
 struct PageDesc pageNumPageDesc = {
@@ -135,8 +131,7 @@ struct PageDesc pageNumPageDesc = {
     0x00,                     /* byte6 */
     {0, 0, 0, 0, 0},          /* pad2 */
     3,                        /* font */
-    {0, 0, 0, 0, 0, 0, 0, 0}, /* pad3 */
-    (int16 *)&pageNumPageDesc /* selfPtr (pageNumPtr) */
+    {0, 0, 0, 0, 0, 0, 0, 0}  /* pad3 */
 };
 int16 *pageNumPtr = (int16 *)&pageNumPageDesc;
 
