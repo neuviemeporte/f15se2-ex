@@ -163,8 +163,7 @@ void updateFrame(void) {
     applyGravityFall();
 
     if (objectToScreen(g_viewX_, g_viewY_, (int16 *)&val, (int16 *)&screenY) != 0) {
-        g_drawPage = gfx_getDisplayPage();
-        gfx_restoreFromImage(g_eg2dBacking, g_drawPage, val - 3, screenY - 3, val - 3, screenY - 3, 6, 6);
+        gfx_restoreFromImage(g_eg2dBacking, 0, val - 3, screenY - 3, val - 3, screenY - 3, 6, 6);
         blitSprite(val - 1, screenY - 1, ((g_ourHead + 0x1000) >> 0xd & 7) * 4 + 164, 4, 4, 4, 0);
         if (((int16)val < 32 || (int16)val > 88 || (int16)screenY < 118 || (int16)screenY > 162) && g_mapZoomLevel > 2) {
             g_mapZoomLevel--;
@@ -577,10 +576,6 @@ void initFrameRandom(void) {
 
 // ==== seg000:0x1971 ====
 void resetSimObjectLocks() {
-    int i;
-    for (i = 0; i < g_groundUnitCount; i++) {
-        g_simObjects[i].terrainColor = -1;
-    }
     g_trackedEnemyIdx = -1;
 }
 
@@ -801,7 +796,7 @@ void moveStuff() {
     moveNearFar(&g_planeScanCount, 2);
     moveNearFar(&g_planeTable, g_planeCount * 16);
     moveNearFar(&g_groundUnitCount, 2);
-    moveNearFar(g_simObjects, g_groundUnitCount * 36);
+    moveNearFar(g_simObjects, g_groundUnitCount * sizeof(struct SimObject));
     moveNearFar(g_shapeTargetCategory, 100);
     moveNearFar(g_tileKillTally, 100);
     moveNearFar(g_stringPool, 750);

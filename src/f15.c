@@ -32,7 +32,6 @@
 
 #include <SDL3/SDL.h>
 
-const uint16 GFX_INIT_ARG = 2;
 const int RET_MENU = 0xc;
 const int RET_DEBRIEFING = 0x23;
 
@@ -40,8 +39,6 @@ struct GameComm commBuffer;
 struct Game gameBuffer;
 
 void game_init(const int16 showIntro) {
-    uint16 gfxBufAddress;
-
     commData = &commBuffer;
     gameData = &gameBuffer;
 
@@ -53,13 +50,15 @@ void game_init(const int16 showIntro) {
     gfx_setMode13();
     r3d_init();
 
-    gfxBufAddress = (uint16)gfx_allocPage((int)GFX_INIT_ARG);
-    commData->gfxInitResult = gfxBufAddress;
+    /* F15.SPR (radar/tac-map/HUD sprite sheet) lives in a sprite-buffer image, not
+     * a page. Allocated once here; START decodes f15.spr into it and EGAME blits
+     * from it via gfxBufPtr (the handle). */
+    commData->gfxInitResult = (int16)gfx_allocSpriteBuf();
 }
 
-/* In-process entry points for the former START.EXE / EGAME.EXE / END.EXE.
- * These used to be separate programs launched via dos_runProgram(); they are
- * now linked into this single executable and called directly. */
+/* In-process entry points for START.EXE / EGAME.EXE / END.EXE — three separate
+ * DOS programs in the original, here linked into this single executable and
+ * called directly. */
 int start_main(void);
 int egame_main(void);
 int end_main(void);

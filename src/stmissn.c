@@ -65,7 +65,7 @@ void waitMdaCgaStatus(int16 iter) {
 }
 
 void drawLine(const int16 *pageNum, int x1, int y1, int x2, int y2, int color) {
-    gfx_setPageN(*pageNum);
+    (void)pageNum; /* single back buffer now */
     gfx_setColor(color);
     lineX1 = x1;
     lineY1 = y1;
@@ -197,9 +197,8 @@ void animateArm(int a, int b) {
     armPosition = b;
     spriteIdx = armSpriteIndex[b];
     if (a == -1) {
-        /* Snapshot the clean briefing into the save-under backing image (Step 5;
-         * was a copy into the page-2 clean backup). The arm-cursor erase below
-         * restores from here. */
+        /* Snapshot the clean briefing into the save-under backing image. The
+         * arm-cursor erase below restores from here. */
         if (!g_stBacking) g_stBacking = gfx_allocImage(SCREEN_WIDTH, SCREEN_HEIGHT);
         gfx_captureToImage(g_stBacking, *page1NumPtr, 0, 0, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     }
@@ -210,8 +209,6 @@ void animateArm(int a, int b) {
         showSprite(*page1NumPtr, armBlitX[spriteIdx], armBlitY[spriteIdx], armSrcX[spriteIdx], armSrcY[spriteIdx], armBlitW[spriteIdx], armBlitH[spriteIdx]);
     }
     {
-        gfx_setPageN(0);
-        gfx_blitToCurrent(page1Ptr);
         gfx_commitPage();
         spriteBlitX = armBlitX[spriteIdx];
         spriteBlitY = armBlitY[spriteIdx];

@@ -40,9 +40,6 @@ extern void FAR CDECL hudRotateLadder(int di);
  * used. */
 extern void FAR CDECL gfx_drawGlyphStr(int16 *desc, const char *str, int slot);
 
-/* cdecl->register marshaling shim (egregsh.asm) — restore curPageSeg by value. */
-extern void FAR CDECL gfx_setCurPageSegReg(uint16 seg);
-
 /* fillSpanRect — solid-rectangle fill of one page (egseg1.asm fillSpanRect /
  * fillRectBoth's primitive). pageDesc[0] = page number, (uint8)pageDesc[2] =
  * fill colour, (x1,y1)-(x2,y2) inclusive. The original feeds MGRAPHIC's span
@@ -50,14 +47,9 @@ extern void FAR CDECL gfx_setCurPageSegReg(uint16 seg);
  * register-called, so we fill the page directly (the plan's "reimplement
  * against the page" path). */
 int __far fillSpanRect(const int16 *pageDesc, int left, int top, int right, int bottom) {
-    uint16 savedSeg = (uint16)gfx_getCurPageSeg();
     uint8 color = (uint8)pageDesc[2];
-    uint16 seg;
     int pitch, y, x;
-    uint8 *px;
-    gfx_setPageN((uint16)pageDesc[0]);
-    seg = (uint16)gfx_getCurPageSeg();
-    px = gfx_pagePixelsForSeg(seg, &pitch);
+    uint8 *px = gfx_pagePixels((int)pageDesc[0], &pitch);
     if (px && right >= left && bottom >= top) {
         for (y = top; y <= bottom; y++) {
             uint8 *p;
@@ -67,7 +59,6 @@ int __far fillSpanRect(const int16 *pageDesc, int left, int top, int right, int 
                 p[x] = color;
         }
     }
-    gfx_setCurPageSegReg(savedSeg);
     return 0;
 }
 
@@ -213,7 +204,7 @@ static void drawInstrumentGauges(void) {
      * lands where the original (which assumed offset 0) put it. */
     gfx_setBlitOffset(0);
 
-    disp = gfx_getDisplayPage() & 0xff;
+    disp = 0; /* single back buffer */
     g_tapeText0[0] = g_tapeText1[0] = g_tapeText2[0] = g_tapeText3[0] = disp;
     g_tapeSprite0[3] = g_tapeSprite1[3] = g_tapeSprite2[3] = g_tapeSprite3[3] = disp;
 

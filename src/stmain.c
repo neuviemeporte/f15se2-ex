@@ -28,7 +28,6 @@ int start_main(void) {
     installCBreakHandler();
     /* gfx/misc/sound are called directly in the merged build — no overlay
      * slot trampolines to populate. */
-    gfx_storeBufPtr(commData->gfxInitResult, 2);
     initGraphics();
     audio_shutdown();
     audio_setup(0, 0);
@@ -144,11 +143,9 @@ doSrand:
     restoreCbreakHandler();
     commData->needSplash = 0;
     gfx_setFadeSteps(8);
-    if (gfx_getVal() == 0) {
-        openShowPic("f15.spr", 2);
-    } else {
-        loadPic("f15.spr", commData->gfxInitResult);
-    }
+    /* Decode the F15.SPR sprite sheet into its sprite-buffer image. gfxInitResult
+     * is the buffer handle from game_init, which egame reads as gfxBufPtr. */
+    loadPic("f15.spr", commData->gfxInitResult);
     exportWorldToComm("temp.wld");
     if (gameData->missionReady > 1) {
         commData->trainingFlag = 1;
@@ -164,11 +161,9 @@ doSrand:
     restoreCbreakHandler();
     commData->needSplash = 0;
     gfx_setFadeSteps(8);
-    if (gfx_getVal() == 0) {
-        openShowPic("f15.spr", 2);
-    } else {
-        loadPic("f15.spr", commData->gfxInitResult);
-    }
+    /* Decode the F15.SPR sprite sheet into its sprite-buffer image. gfxInitResult
+     * is the buffer handle from game_init, which egame reads as gfxBufPtr. */
+    loadPic("f15.spr", commData->gfxInitResult);
     exportWorldToComm("temp.wld");
     if (gameData->missionReady > 1) {
         commData->trainingFlag = 1;

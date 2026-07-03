@@ -29,6 +29,8 @@
 #include "eg3dvp.h"
 #include "struct.h"
 #include "gfx_impl.h"
+#include "gfx.h"
+#include "r2d.h"
 #include "inttype.h"
 #include "pointers.h"
 
@@ -52,7 +54,6 @@ extern int16 g_rotSinYaw, g_rotCosYaw;
 extern int16 g_primCoordPtr, g_primCountPtr, g_primDataBase;
 extern uint8 g_primRunCount, g_faceVtxCount, g_vtxSlotPhase, g_unusedClipFlag, g_edgeRunCount;
 extern int16 g_savedPrimVtxScale;
-extern int16 g_savedDivZeroVecOff, g_savedDivZeroVecSeg;
 /* Scene-pipeline globals (defined in egdata.c). g_camTransX/g_camTransY are the
  * lo/hi words of the object-origin camera-space accumulators; g_objDir the
  * rotated object facing; g_rotInputX a per-point scratch. */
@@ -1171,6 +1172,64 @@ static void renderPrimitiveCommand(unsigned char far **pp) {
                 return;
             }
             gfx_setColor((unsigned char)(colorLut[colorByte] + g_objShade));
+            /* On a GL vector frame the only faces reaching here are the left-MFD
+             * terrain-map tiles (the main/target 3D views render through the r3d
+             * backend, not this span rasterizer). Submit the face as a native-res
+             * filled polygon instead of rasterizing spans into the page. The face
+             * is an UNORDERED set of boundary edges (each an arbitrary-orientation
+             * v_a->v_b) — fine for the span fill, but GL_POLYGON needs the vertices
+             * in loop order, so walk the edge adjacency around the cycle (matching
+             * on the projected endpoints; the map has no near-plane clipping, so the
+             * int coords are exact). blitOffset folds the viewport origin into
+             * absolute 320-space. Software frames fall through to the span fill. */
+            if (r2d_vectorActive()) {
+                struct { short ax, ay, bx, by; uint8 used; } eg[64];
+                short ring[64 * 2];
+                int ne = 0, nv = 0, kk, cnt = g_faceVtxCount;
+                int bo = gfx_getBlitOffset();
+                int vx = (int)((uint16)bo % 320u), vy = (int)((uint16)bo / 320u);
+                unsigned char far *rp = p;
+                for (kk = 0; kk < cnt; kk++) {
+                    struct EdgeRec *rec = EREC(*rp++);
+                    if (rec->flags & 0x80) continue; /* rejected edge */
+                    if (ne < 64) {
+                        eg[ne].ax = (short)(rec->x1 + vx); eg[ne].ay = (short)(rec->y1 + vy);
+                        eg[ne].bx = (short)(rec->x2 + vx); eg[ne].by = (short)(rec->y2 + vy);
+                        eg[ne].used = 0;
+                        ne++;
+                    }
+                }
+                p += cnt + 1; /* vertex indices + the colour byte */
+                if (ne >= 2) {
+                    short curX = eg[0].bx, curY = eg[0].by;
+                    eg[0].used = 1;
+                    ring[0] = eg[0].ax; ring[1] = eg[0].ay;
+                    ring[2] = curX;     ring[3] = curY;
+                    nv = 2;
+                    while (nv < 64) {
+                        int found = -1;
+                        short ox = 0, oy = 0;
+                        for (kk = 0; kk < ne; kk++) {
+                            if (eg[kk].used) continue;
+                            if (eg[kk].ax == curX && eg[kk].ay == curY) { found = kk; ox = eg[kk].bx; oy = eg[kk].by; break; }
+                            if (eg[kk].bx == curX && eg[kk].by == curY) { found = kk; ox = eg[kk].ax; oy = eg[kk].ay; break; }
+                        }
+                        if (found < 0) break;
+                        eg[found].used = 1;
+                        if (ox == ring[0] && oy == ring[1]) break; /* closed the loop */
+                        ring[nv * 2] = ox; ring[nv * 2 + 1] = oy;
+                        nv++;
+                        curX = ox; curY = oy;
+                    }
+                }
+                /* Clip the filled polygon to the MFD viewport rect (the edges were
+                 * left unclipped above); absolute 320-space, half-open on the far
+                 * edge to match the viewport extent. */
+                r2d_submitPoly(ring, nv, colorLut[colorByte] + g_objShade,
+                               vx, vy, vx + g_clipMaxX + 1, vy + g_clipMaxY + 1);
+                *pp = p;
+                return;
+            }
         }
         resetScanlineSpansImpl();
         g_vtxSlotPhase = 0;
@@ -1331,7 +1390,15 @@ static void projectModelEdges(unsigned char far **pp) {
             rec->x2h = HI16(vtxScratch.vproj.x.v[vb]);
             rec->y2 = (int16)vtxScratch.vproj.y.v[vb];
             rec->y2h = HI16(vtxScratch.vproj.y.v[vb]);
-            clipLineSegment(rec);
+            /* On a GL vector frame leave edges UNCLIPPED: the fill path (map tiles)
+             * rebuilds the polygon ring from these endpoints and needs adjacent
+             * edges to share the exact same outside-vertex — rect clipping would
+             * split that shared vertex onto two different boundary points and break
+             * the ring (dropping every edge-crossing tile). The filled polygon is
+             * instead clipped to the MFD by a GL scissor at replay; the line path
+             * re-clips in drawClipLineGlobal, so lines are unaffected. Software
+             * still clips here (it span-fills to the viewport boundary directly). */
+            if (!r2d_vectorActive()) clipLineSegment(rec);
         }
     next:
         rec = (struct EdgeRec *)((char *)rec + 0x1a);
@@ -1743,6 +1810,21 @@ struct SortRec {
 };
 static struct SortRec g_sortRecs[35];
 static int g_sortList[35];
+
+/* Depth-sorted 3D line segments (cannon tracers, explosion sparks), kept in their
+ * own list so they never evict scene objects from the 35-entry object queue;
+ * renderSortedListFar merge-walks the two farthest-first. Each holds the two
+ * endpoints' camera-space triples and a final palette colour. */
+struct LineRec {
+    int16 depthLo, depthHi;
+    long baseXA, camXA, camYA;
+    long baseXB, camXB, camYB;
+    int16 color;
+};
+#define MAX_SORTED_LINES 64
+static struct LineRec g_lineRecs[MAX_SORTED_LINES];
+static int g_lineList[MAX_SORTED_LINES];
+static int g_sortedLineCount;
 
 /* High word of (s<<1) plus the doubled low word's carry bit — the rotatePoint3d
  * `SHL;RCL;SHL;ADC` Q15-with-round idiom. */
@@ -2251,7 +2333,7 @@ void far projectSceneObject(char far *model, int yaw, int pitch, int roll,
 int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
                             int posX, int posY, int posZ,
                             int16 *combined, long *camBase, long *camX, long *camY,
-                            int *shade, int *dirX, int *dirY, int *dirZ) {
+                            int *shade) {
     int i;
     g_objRenderMode = *(unsigned char far *)model;
     g_objTransform[1] = yaw;
@@ -2262,6 +2344,16 @@ int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
     g_objRelX = posX - g_viewPosX;
 
     if (transformAndCullObject(g_objRelY, g_objTransform[0], g_objRelX)) return 1;
+
+    /* storeObjTransform spin: if the active LOD's opcode is 0x60 the model overwrites
+     * one of its own transform slots with the runtime spin angle (rotating radar
+     * dishes / SAM launchers). projectSceneObject does this before building the
+     * orientation matrix; peek the same opcode here so the GL model spins too. */
+    {
+        unsigned char far *p = (unsigned char far *)model + 1; /* past render-mode byte */
+        skipDisplayListByLod(&p);
+        if ((*p & 0x60) == 0x60) g_objTransform[(*p) & 3] = g_spinAngle;
+    }
 
     /* Distance shade — identical to processSceneObject. */
     if (g_dacSupported == 0) {
@@ -2291,25 +2383,25 @@ int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
     *camX = JOIN32(g_camTransXLo, g_camTransXHi);
     *camY = JOIN32(g_camTransYLo, g_camTransYHi);
 
-    /* Object facing direction in camera space — the back-face cull axis, computed
-     * exactly as rotatePoint3d does (so a GPU backend can reproduce the original's
-     * per-face cull). dot(faceNormal, objDir) < threshold => the face is hidden. */
-    {
-        int rX = -g_objRelX, rY = -g_objRelY, rZ = -g_objTransform[0];
-        if (g_objHasRotation == 0) {
-            *dirX = rX;
-            *dirY = rZ;
-            *dirZ = rY;
-        } else {
-            int16 *m = g_objOrientMatrix;
-            transposeOrientationMatrix();
-            *dirX = dirRound(imul16(rY, m[6]) + imul16(rZ, m[3]) + imul16(rX, m[0]));
-            *dirY = dirRound(imul16(rY, m[7]) + imul16(rZ, m[4]) + imul16(rX, m[1]));
-            *dirZ = dirRound(imul16(rY, m[8]) + imul16(rZ, m[5]) + imul16(rX, m[2]));
-            transposeOrientationMatrix();
-        }
-    }
+    /* No object-facing/back-face-cull axis is produced here: back-face culling is a
+     * software-rasterizer concern (the display-list walk's g_vtxSignMask path). The
+     * GPU backend fills double-sided, so a GPU consumer needs only the transform. */
     return 0;
+}
+
+/* Transform one world point (already relativized to the view, args in the
+ * transformAndCullObject order relY/relZ/relX) into scene camera space by the
+ * bare g_viewRotMatrix multiply — the same dot products transformAndCullObject
+ * computes, minus the frustum cull, so a line endpoint that projects off-screen
+ * still yields coords (the line is viewport-clipped, not dropped). Fills the
+ * (screen-X axis, screen-Y axis, depth) triple. Used by the 3D line primitive
+ * (drawWorldLine -> r3d_submitLine) for cannon tracers and explosion sparks. */
+void far r3d_worldPointToCameraFar(int relY, int relZ, int relX,
+                                   long *baseX, long *camX, long *camY) {
+    int16 *m = g_viewRotMatrix;
+    *baseX = (imul16(m[6], relY) + imul16(m[3], relZ) + imul16(m[0], relX)) << 1;
+    *camX = (imul16(m[7], relY) + imul16(m[4], relZ) + imul16(m[1], relX)) << 1;
+    *camY = (imul16(m[8], relY) + imul16(m[5], relZ) + imul16(m[2], relX)) << 1;
 }
 
 /* seg001 0x0CB4 thunk — rotatePoint3dFar: rotate the object origin on the
@@ -2333,36 +2425,157 @@ int far multiplyMatrix3x3Far(const int16 *matA, const int16 *matB, int16 *result
     return 0;
 }
 
-/* ===================================================================== */
-/* seg001 0x0B60 — renderSortedListFar: dispatch the depth-sorted scene     */
-/* objects, farthest first (painter's order), through processSceneObject.   */
-/* ===================================================================== */
-int far renderSortedListFar(void) {
-    int n = g_sortedObjCount;
-    int i;
-    for (i = 0; i < n; i++) {
-        struct SortRec *r = &g_sortRecs[g_sortList[i]];
-        g_modelStreamPtr = r->model;
-        g_objRelX = r->relX;
-        g_objRelY = r->relY;
-        g_objTransform[0] = r->transform[0];
-        g_objTransform[1] = r->transform[1];
-        g_objTransform[2] = r->transform[2];
-        g_objTransform[3] = r->transform[3];
-        g_camBaseX = r->baseX;
-        g_camTransXLo = r->camXLo;
-        g_camTransXHi = r->camXHi;
-        g_camTransYLo = r->camYLo;
-        g_camTransYHi = r->camYHi;
-        processSceneObject();
+/* Draw one depth-sorted scene object (the original renderSortedListFar loop body,
+ * factored so the object list and the 3D line list can be merge-walked). */
+static void drawSortedObject(struct SortRec *r) {
+    g_modelStreamPtr = r->model;
+    g_objRelX = r->relX;
+    g_objRelY = r->relY;
+    g_objTransform[0] = r->transform[0];
+    g_objTransform[1] = r->transform[1];
+    g_objTransform[2] = r->transform[2];
+    g_objTransform[3] = r->transform[3];
+    g_camBaseX = r->baseX;
+    g_camTransXLo = r->camXLo;
+    g_camTransXHi = r->camXHi;
+    g_camTransYLo = r->camYLo;
+    g_camTransYHi = r->camYHi;
+    processSceneObject();
+}
+
+/* Draw one depth-sorted 3D line segment: project both camera-space endpoints
+ * (near-clipping the one behind the eye against the front one, exactly like a
+ * model edge) and rasterize the clipped line — the same drawClipLineGlobal the
+ * model "line" primitive uses. Colour is the raw palette index. */
+static void drawSortedLine(struct LineRec *ln) {
+    struct EdgeRec rec;
+    int dA, dB, x1, y1, x2, y2;
+
+    VCAMX(0) = ln->baseXA;
+    VCAMY(0) = ln->camXA;
+    setVtxDepth(0, ln->camYA);
+    VCAMX(1) = ln->baseXB;
+    VCAMY(1) = ln->camXB;
+    setVtxDepth(1, ln->camYB);
+    dA = vtxScratch.vproj.in[0].div;
+    dB = vtxScratch.vproj.in[1].div;
+    if (dA < 1 && dB < 1) return; /* whole segment behind the near plane */
+
+    rec.flags = 0;
+    if (dA >= 1) {
+        projectVertexToScreen(0);
+        x1 = (int16)vtxScratch.vproj.x.v[0];
+        y1 = (int16)vtxScratch.vproj.y.v[0];
+    } else {
+        clipEdgeNearPlane(&rec, 0, 1); /* clip A against B -> slot 120 -> rec.x1/y1 */
+        x1 = rec.x1;
+        y1 = rec.y1;
     }
-    g_sortedObjCount = 0;
-    return 0;
+    if (dB >= 1) {
+        projectVertexToScreen(1);
+        x2 = (int16)vtxScratch.vproj.x.v[1];
+        y2 = (int16)vtxScratch.vproj.y.v[1];
+    } else {
+        clipEdgeNearPlane(&rec, 1, 0);
+        x2 = rec.x1;
+        y2 = rec.y1;
+    }
+
+    gfx_setColor((unsigned char)ln->color);
+    g_lineX1 = (int16)x1;
+    g_lineY1 = (int16)y1;
+    g_lineX2 = (int16)x2;
+    g_lineY2 = (int16)y2;
+    drawClipLineGlobal();
+}
+
+/* Queue a camera-space 3D line into the depth-sorted line list (farthest first,
+ * same insertion order as insertSortedObject). */
+static void insertSortedLine(long baseXA, long camXA, long camYA,
+                             long baseXB, long camXB, long camYB, int color) {
+    int slot, i, pos, dLo, dHi;
+    long depth;
+    struct LineRec *r;
+
+    if (g_sortedLineCount >= MAX_SORTED_LINES) {
+        slot = g_lineList[0];
+        for (i = 0; i < MAX_SORTED_LINES - 1; i++) g_lineList[i] = g_lineList[i + 1];
+        g_sortedLineCount--;
+    } else {
+        slot = g_sortedLineCount;
+    }
+
+    /* Sort key = midpoint depth, normalized to the object queue's common scale
+     * (the curLod-1 shift drawWorldObject uses for these effects: >>6). */
+    depth = lshr_s((camYA >> 1) + (camYB >> 1), 6);
+    dLo = (int16)depth;
+    dHi = HI16(depth);
+
+    r = &g_lineRecs[slot];
+    r->depthLo = (int16)dLo;
+    r->depthHi = (int16)dHi;
+    r->baseXA = baseXA;
+    r->camXA = camXA;
+    r->camYA = camYA;
+    r->baseXB = baseXB;
+    r->camXB = camXB;
+    r->camYB = camYB;
+    r->color = (int16)color;
+
+    pos = g_sortedLineCount;
+    while (pos > 0) {
+        struct LineRec *e = &g_lineRecs[g_lineList[pos - 1]];
+        if (dHi > e->depthHi) {
+            pos--;
+            continue;
+        }
+        if (dHi < e->depthHi) break;
+        if ((uint16)dLo > (uint16)e->depthLo) {
+            pos--;
+            continue;
+        }
+        break;
+    }
+    for (i = g_sortedLineCount; i > pos; i--) g_lineList[i] = g_lineList[i - 1];
+    g_lineList[pos] = slot;
+    g_sortedLineCount++;
+}
+
+void far r3d_submitLineFar(long baseXA, long camXA, long camYA,
+                           long baseXB, long camXB, long camYB, int color) {
+    insertSortedLine(baseXA, camXA, camYA, baseXB, camXB, camYB, color);
 }
 
 /* ===================================================================== */
-/* Divide-overflow vector install/restore. sdiv32by16/udiv32by16 saturate  */
-/* explicitly, so an INT 0 divide-overflow handler is not needed: no-op.   */
+/* seg001 0x0B60 — renderSortedListFar: dispatch the depth-sorted scene     */
+/* objects farthest first (painter's order); the 3D line list (tracers /    */
+/* explosion sparks) is merge-walked in the same order so lines occlude and  */
+/* are occluded by scene geometry.                                           */
 /* ===================================================================== */
-void installDivZeroHandler(void) {}
-void installDivZeroVector(void) {}
+int far renderSortedListFar(void) {
+    int i = 0, j = 0;
+    int no = g_sortedObjCount, nl = g_sortedLineCount;
+
+    while (i < no || j < nl) {
+        int drawObj;
+        if (j >= nl) {
+            drawObj = 1;
+        } else if (i >= no) {
+            drawObj = 0;
+        } else {
+            struct SortRec *o = &g_sortRecs[g_sortList[i]];
+            struct LineRec *l = &g_lineRecs[g_lineList[j]];
+            if (o->depthHi != l->depthHi)
+                drawObj = o->depthHi > l->depthHi;
+            else
+                drawObj = (uint16)o->depthLo >= (uint16)l->depthLo;
+        }
+        if (drawObj)
+            drawSortedObject(&g_sortRecs[g_sortList[i++]]);
+        else
+            drawSortedLine(&g_lineRecs[g_lineList[j++]]);
+    }
+    g_sortedObjCount = 0;
+    g_sortedLineCount = 0;
+    return 0;
+}

@@ -1,4 +1,4 @@
-/* Display-list -> Mesh decoder (docs/render-3d-backend.md, Step 2).
+/* Display-list -> Mesh decoder.
  *
  * Parses the raw DOS display-list byte stream (the format the software
  * rasterizer walks every frame in eg3drast.c) into the structured geometry in

@@ -8,6 +8,7 @@ void __cdecl setActivePanel(int);
 void refreshActivePanel(int panelId);
 void initTacMapView(void);
 void redrawTacMap(int, int);
+void renderTacMapOverlay(void);
 void zoomIn(void);
 void zoomOut(void);
 int plotMapObject(int mapX, int mapY, int color, int big);

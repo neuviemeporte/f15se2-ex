@@ -14,6 +14,7 @@
 #include "pointers.h"
 #include "log.h"
 #include "gfx.h"
+#include "r2d.h"
 #include "slot.h"
 #include "const.h"
 #include "comm.h"
@@ -839,8 +840,10 @@ void renderFrame() {
         if (!(g_viewTargetObj & 0x40)) {
             if (!(g_viewTargetObj & 0x20)) {
                 if (g_projectiles[g_viewTargetObj].ttl != 0) {
-                    g_viewTargetX = (uint32)(g_projectiles[g_viewTargetObj].mapX) << 5;
-                    g_viewTargetY = (uint32)(g_projectiles[g_viewTargetObj].mapY) << 5;
+                    /* Fine (sub-mapX-unit) interpolated position so the tracking
+                     * camera doesn't lurch in 32-unit steps (the "earthquake"). */
+                    g_viewTargetX = (uint32)g_projInterpX[g_viewTargetObj];
+                    g_viewTargetY = (uint32)g_projInterpY[g_viewTargetObj];
                     g_viewTargetAlt = g_projectiles[g_viewTargetObj].alt;
                 } else {
                     g_projectiles[g_viewTargetObj].worldX = g_ourHead;
@@ -863,11 +866,23 @@ void renderFrame() {
             if (g_autopilotEngaged != 0 && g_directorEventDeadline == -1) camDist = 6;
         }
         if (g_directorMode == 0) camDist = savedCamDist;
-        dx = (g_viewTargetX >> 5) - g_viewX_;
-        dy = (g_viewTargetY >> 5) - g_viewY_;
-        range = rangeApprox(dx, dy);
+        /* Derive the tracking-camera heading and pitch from FINE world coords —
+         * both the fine target position and the fine player position (g_ViewX/Y),
+         * not the coarse map coords (g_viewX_/g_viewY_) which step 32 fine units
+         * at a time and made the whole world "earthquake" around a tracked target.
+         * computeBearing is scale-invariant, so the angles are identical to the
+         * original coarse formula but with ~32x less quantization jitter. range is
+         * computed inline (rangeApprox would saturate its 0x7fff cap on fine
+         * deltas) and kept in the same scale as the altitude delta so the pitch
+         * ratio is unchanged. */
+        dx = (int)(g_viewTargetX - g_ViewX);
+        dy = (int)(g_viewTargetY - g_ViewY);
+        {
+            int adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
+            range = adx > ady ? adx + (ady >> 1) : ady + (adx >> 1);
+        }
         g_viewHeading = computeBearing(dx, -dy);
-        g_viewPitch = -computeBearing((g_viewTargetAlt - g_viewZ) >> 5, range);
+        g_viewPitch = -computeBearing(g_viewTargetAlt - g_viewZ, range);
         g_viewRoll = 0;
         camOffset = cosMul(g_viewPitch, 0x18 << camDist);
         if (g_viewTargetObj & 0x60 || g_directorMode != 0) {
@@ -976,15 +991,23 @@ void renderFrame() {
         g_lineY2 = 94;
         drawClipLineGlobal();
         gfx_nop23();
-        tmp = g_drawPage;
-        /* Blit the rear-view sprites onto the page the frame is composited on
-         * (curPage), not the back-buffer index: the rear view renders into page 0. */
-        g_drawPage = gfx_curPage();
         blitSprite(107, 48, 209, 0, 111, 47, 0);
         blitSprite(65, 95, 125, 54, 195, 2, 0);
-        g_drawPage = tmp;
     }
     g_hudBottomY = (g_activePanelMode == 0x13 || g_mapMode == 1 || g_hudVisible == 0) ? 200 : 97;
+
+    /* Non-retained renderers (GL) rebuild the 2D overlay every present, so the
+     * tac map — cached into g_eg2dBacking for the software page — must be re-emitted
+     * into this frame's native stream, crisp at window resolution. Runs inside the
+     * vector frame (render3DView opened it above). It reloads colorLut to the map
+     * palette; save/restore it so the HUD/gauges drawn after keep the flight
+     * palette render3DView set. The software path leaves the cached map alone. */
+    if (!r2d_overlayRetained()) {
+        uint8 savedLut[16];
+        memcpy(savedLut, colorLut, 16);
+        renderTacMapOverlay();
+        memcpy(colorLut, savedLut, 16);
+    }
 }
 
 void UpdateThrottleState(void) {

@@ -9,7 +9,6 @@
 #include "pointers.h"
 #include <SDL3/SDL.h>
 
-extern void FAR CDECL gfx_setPageN(uint16 pageNum);
 /* Page backbuffers (gfx_impl.c): the decoder writes palette indices into these
  * 320x200 8-bit surfaces instead of the old fake DOS page segments. */
 extern SDL_Surface *gfx_getCurPageSurface(void);
@@ -229,10 +228,9 @@ static void decodeRow(uint8 *outBuf, uint16 count) {
  * 320 palette indices per row; they are copied into the surface row by row
  * (clamped to the surface width), for as many rows as the surface is tall.
  *
- * This replaces the old picDecodeToSegment, which wrote into a fake DOS page
- * segment via MK_FP (and packed EGA bit-planes through the Sequencer ports for
- * the planar title path). Surfaces are linear 8bpp, so neither the segment nor
- * the plane packing is needed — the rows are written straight to dst->pixels. */
+ * Surfaces are linear 8bpp, so the decoded rows are written straight to
+ * dst->pixels — no DOS page-segment addressing (MK_FP) or EGA bit-plane packing
+ * through the Sequencer ports (the planar title path) is needed. */
 /* Read the PIC header word and (re)initialise the LZW/RLE decode state.
  * Matches ASM picReadDataAndMakeDict + picInitRoutine. */
 static void picDecodeInit(SDL_IOStream *handle) {
@@ -321,10 +319,8 @@ static SDL_Surface *picScratchSurface(void) {
 
 void showPicFile(SDL_IOStream *handle, int page) {
     if (!handle) return;
-
-    /* Select the page, then decode straight into its backing surface. The
-     * decoder overwrites every row, so no separate page clear is needed. */
-    gfx_setPageN((uint16)page);
+    (void)page; /* all pages are the single back buffer */
+    /* Decode straight into the back buffer; the decoder overwrites every row. */
     picDecodeToSurface(handle, gfx_getCurPageSurface());
 }
 

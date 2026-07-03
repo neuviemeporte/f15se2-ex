@@ -11,8 +11,8 @@
 extern int16 *bufPtr;
 extern struct PageDesc page1Desc;
 extern int16 *page1NumPtr;
-/* The clean-briefing save-under backing image (Step 5; replaces the page-2 clean
- * backup the arm-cursor save-under restored from). */
+/* The clean-briefing save-under backing image the arm-cursor save-under restores
+ * from. */
 struct R2DImage;
 extern struct R2DImage *g_stBacking;
 extern const char *missTheaNames[];
@@ -116,7 +116,6 @@ extern struct Game far *gameData;
 extern int16 groundUnitCount;
 extern uint8 gridBuf5[];
 extern uint8 gridBuf4[];
-extern int16 page1Ptr;
 extern uint8 gridBuf3[];
 extern struct NearestTerrain *nearestTerrainResult;
 extern uint8 gridBuf2[];

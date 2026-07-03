@@ -23,7 +23,6 @@
 /* Private helpers for this translation unit. */
 void __cdecl drawCockpit();
 void runGameSession();
-void __cdecl gfxInit();
 
 // ==== seg000:0x10 ====
 int egame_main(void) {
@@ -46,8 +45,6 @@ int egame_main(void) {
     } else {
         joyAxes[0] = joyAxes[1] = 0x80;
     }
-    gfxInit();
-    gfx_initOverlay();
     if (gameData->theater < 2) {
         gfx_setFadeSteps(12);
     } else {
@@ -61,11 +58,6 @@ int egame_main(void) {
         restoreJoystickData(commData->joyData);
     }
     restoreCbreakHandler();
-    if (exitCode == 0) {
-        regs.h.ah = 0;
-        regs.h.al = 3;
-        int86(IRQ_VIDEO, &regs, &regs);
-    }
     return exitCode;
 }
 
@@ -76,8 +68,8 @@ void drawCockpit() {
     strcpy(regnStr, scenarioPlh[gameData->theater]);
     loadRegion3D();
     {
-        /* Verify the Step-2 mesh decoder against the just-loaded world models,
-         * once per process (see docs/render-3d-backend.md). */
+        /* Verify the mesh decoder against the just-loaded world models, once
+         * per process. */
         static int meshSelfTestDone = 0;
         if (!meshSelfTestDone) {
             meshSelfTestDone = 1;
@@ -96,11 +88,9 @@ void drawCockpit() {
     } else {
         openBlitClosePic("cockpit.PIC", 1);
     }
-    /* Snapshot the clean lower cockpit into the save-under backing image (Step 5;
-     * was a copy into the offscreen page). The cockpit strip / scope panel /
-     * map-marker save-unders restore their regions from here. (The former page-1->0
-     * seed copy is gone: with the single back buffer the cockpit PIC already landed
-     * in the one buffer.) */
+    /* Snapshot the clean lower cockpit into the save-under backing image. The
+     * cockpit strip / scope panel / map-marker save-unders restore their regions
+     * from here. */
     if (!g_eg2dBacking) g_eg2dBacking = gfx_allocImage(320, 200);
     gfx_captureToImage(g_eg2dBacking, 1, 0, 96, 0, 96, 320, 104);
 }
@@ -126,13 +116,4 @@ void runGameSession() {
     restoreTimerIrqHandler();
     setTimerTickHook(nullptr);
     audio_shutdown();
-}
-
-// ==== seg000:0x29a ====
-void gfxInit() {
-    int var_2;
-    gfx_allocPage(0);
-    var_2 = gfx_allocPage(1);
-    gfx_storeBufPtr(var_2, 1);
-    gfx_storeBufPtr(commData->gfxInitResult, 2);
 }

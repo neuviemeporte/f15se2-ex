@@ -451,6 +451,14 @@ extern const int16 g_maneuverTable[3][8][8] = {
 /* g_projectiles: in-flight projectile/missile table (player rounds + threat
  * shots), 12 entries. g_viewSnapshotRing: 16-entry camera/view replay snapshot ring. */
 struct Projectile g_projectiles[12];
+/* Per-projectile fine (worldX-scale, i.e. mapX<<5) interpolated position, filled
+ * each render frame by objApplyInterp. The sim only carries the coarse uint16
+ * mapX/mapY (1 unit = 32 fine); drawing/tracking a missile from mapX<<5 makes it
+ * jump 32 fine units per step, which the director tracking-camera amplifies into
+ * a world "earthquake". These hold the sub-mapX-unit interpolated position so the
+ * model and the director bearing move smoothly. */
+int32 g_projInterpX[12];
+int32 g_projInterpY[12];
 int16 g_threatScopeRange = 4;
 int16 g_trackedEnemyIdx = -1;
 int16 frameTick = 0;
@@ -606,11 +614,6 @@ char aTooMuchTileData[] = "Too much tile data";
 char aPressKeyWhenReady[] = "  Press a key when ready";
 char aBadGridFileFormat_[] = "Bad Grid file format.";
 
-/* Saved original INT 0 (divide-by-zero) interrupt vector: offset in
- * g_savedDivZeroVecOff, segment in g_savedDivZeroVecSeg. installDivZeroHandler records it before
- * pointing the vector at the in-game stub; installDivZeroVector restores it. */
-int16 g_savedDivZeroVecOff = 0;
-int16 g_savedDivZeroVecSeg = 0;
 
 /* Working state for the egseg1 midpoint-subdivide line clipper. The two
  * endpoints (P1, P2) and the midpoint accumulator each carry X and Y as
@@ -2055,8 +2058,7 @@ int16 g_damageTakenFlag;
 int16 g_threatRefHead;
 int16 g_nearestThreatRange;
 
-/* gameData: far pointer to the shared Game struct, set at startup.
- * g_biosPixelX/g_biosPixelY: tacmap screenX/screenY scratch. */
+/* gameData: far pointer to the shared Game struct, set at startup. */
 int16 g_finalThreatScore;
 int16 g_tileEntryCount;
 int16 g_targetEntityCount;
@@ -2204,9 +2206,6 @@ int16 g_gunHits;
 int16 g_thrust;
 /* regs: shared int86/int86x register union for INT 10h/16h calls. */
 union REGS regs;
-uint8 g_biosPixelPage;
-int16 g_biosPixelX;
-int16 g_biosPixelY;
 int16 g_unusedEventHist1;
 int16 g_wreckAlt;
 uint8 g_shapeTargetCategory[UNIT_STATE_COUNT];
@@ -2251,7 +2250,6 @@ int16 g_currentWeaponType;
 int16 g_scopeClipRight;
 /* matrix3dt_2: per-LOD x per-vertex model-data pointers (parallels matrix3dt). */
 struct TileSceneObject *matrix3dt_2[5][32];
-char g_drawPage;
 int16 g_scopeClipBottom;
 int16 g_pitchInput;
 int16 g_cornerSpeed;

@@ -36,9 +36,12 @@ static bool s_useGL = false; /* OpenGL backend owns the context + present */
  * before their definitions further down. */
 static GfxState FAR *gfx_getState(void);
 static SDL_Palette *gfxPalette; /* shared 256-entry VGA DAC palette */
+static int gfxPaletteGen;       /* bumped on every palette-entry change (cache invalidation) */
 static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake);
 static void gfx_swLine(int x1, int y1, int x2, int y2, int color);
 static void gfx_swPoint(int x, int y, int color);
+static void gfx_swImage(struct R2DImage *img, int srcX, int srcY, int w, int h,
+                        int dstX, int dstY, int key);
 
 /* Bring up the SDL window and renderer. The 320x200 logical surface is stretched
  * to fill the resizable window (SDL_LOGICAL_PRESENTATION_STRETCH). */
@@ -55,6 +58,7 @@ void gfx_videoInit(void) {
      * not active. */
     r2d_registerSoftwarePresent(gfx_presentSurfaceSW);
     r2d_registerSoftwarePrims(gfx_swLine, gfx_swPoint);
+    r2d_registerSoftwareImage(gfx_swImage);
 
     s_useGL = r3dgl_wantGL();
 
@@ -130,12 +134,6 @@ void gfx_videoShutdown(void) {
     if (sdlWindow) SDL_DestroyWindow(sdlWindow);
     SDL_Quit();
 }
-
-/* File-scope object used only for its address: FP_SEG of its far pointer
- * yields f15.exe's DGROUP segment, recorded in GfxState.f15DataSeg so the
- * const tables below (palettes, font tables) can be reached via far pointer
- * regardless of which process's DS is current at call time (Finding A). */
-static int dgroupAnchor;
 
 /* The graphics layer's shared state. In the original game this lived in the
  * MGRAPHIC overlay segment so it survived far-calls from start/egame/end into
@@ -256,6 +254,7 @@ static SDL_Palette *gfx_buildPalette(void) {
     }
     pal = SDL_CreatePalette(256);
     if (pal) SDL_SetPaletteColors(pal, colors, 0, 256);
+    gfxPaletteGen++;
     return pal;
 }
 
@@ -263,6 +262,11 @@ SDL_Palette *gfx_getPalette(void) {
     if (!gfxPalette) gfxPalette = gfx_buildPalette();
     return gfxPalette;
 }
+
+/* Monotonic counter bumped whenever a palette entry changes (gfx_setDacRange /
+ * gfx_dacCycle / rebuild). The GL backend keys its per-image RGBA texture cache on
+ * it so a static sprite sheet re-uploads only when the palette actually moved. */
+int gfx_paletteGeneration(void) { return gfxPaletteGen; }
 
 void gfx_paletteRGB(int idx, uint8 *r, uint8 *g, uint8 *b) {
     SDL_Palette *pal = gfx_getPalette();
@@ -279,16 +283,13 @@ void gfx_paletteRGB(int idx, uint8 *r, uint8 *g, uint8 *b) {
 static SDL_Surface *ensurePage(int page) {
     GfxState FAR *s = gfx_getState();
     if (page < 0 || page >= 16) return NULL;
-    /* Step 5.2: pages 0 (front/visible) and 1 (back/composite) collapse onto one
-     * hidden back buffer. The DOS double buffer is redundant natively — the page
-     * surface is only snapshotted into the window at present time (SDL texture
-     * upload / GL composite), so a single draw surface can't tear, and every
-     * compose-then-present sequence finishes drawing before it presents. All
-     * page-1 references resolve to page 0's surface; the per-frame back->front
-     * copy (gfx_dacAnimate) and the front/back dual writes become self-copies.
-     * This also subsumes the old alternate-view flicker fix (no front/back
-     * divergence can exist). Pre-req: 5.1 moved every non-double-buffer use of
-     * pages 0/1 off the page array (see docs/render-2d-overlay.md). */
+    /* Pages 0 (front/visible) and 1 (back/composite) alias to one hidden back
+     * buffer. The DOS double buffer is redundant natively — the page surface is
+     * only snapshotted into the window at present time (SDL texture upload / GL
+     * composite), so a single draw surface can't tear, and every compose-then-
+     * present sequence finishes drawing before it presents. All page-1 references
+     * resolve to page 0's surface; the per-frame back->front copy (gfx_dacAnimate)
+     * and the front/back dual writes become self-copies. */
     if (page == 1) page = 0;
     if (!s->pageSurfaces[page]) {
         SDL_Surface *surf = SDL_CreateSurface(LOGICAL_WIDTH, LOGICAL_HEIGHT,
@@ -302,26 +303,15 @@ static SDL_Surface *ensurePage(int page) {
 }
 
 struct SDL_Surface *gfx_getPageSurface(int page) { return ensurePage(page); }
-struct SDL_Surface *gfx_getCurPageSurface(void) { return ensurePage(gfx_getState()->curPage); }
-int FAR CDECL gfx_curPage(void) { return gfx_getState()->curPage; }
+/* The single hidden back buffer. Every draw target in the game is page index 0
+ * or 1, which alias to buffer 0, so the "current page" is always it. */
+struct SDL_Surface *gfx_getCurPageSurface(void) { return ensurePage(0); }
 
-/* Map a legacy page *segment* token to its page index (defined below). */
-static int gfx_pageForSeg(uint16 seg);
-
-/* The SDL surface backing a legacy page-segment token (curPageSeg / pageSegs[]).
- * DOS segments are not real memory natively, so MK_FP(seg, off) is replaced by
- * writing into the page's surface pixels. NULL if the seg names no page. */
-static SDL_Surface *gfx_surfaceForSeg(uint16 seg) {
-    int page = gfx_pageForSeg(seg);
-    return (page >= 0) ? ensurePage(page) : NULL;
-}
-
-/* Public: writable pixel base + stride of the page named by a legacy segment
- * token, for the egame HUD primitives (eghudr/eghudm) that drew straight into
- * the page segment. Replaces their MK_FP(seg, off). NULL if seg names no page.
- * The image is always LOGICAL_WIDTH x LOGICAL_HEIGHT. */
-uint8 *gfx_pagePixelsForSeg(uint16 seg, int *pitchOut) {
-    SDL_Surface *surf = gfx_surfaceForSeg(seg);
+/* Public: writable pixel base + stride of a page's surface (the single back
+ * buffer), for the egame HUD primitives (eghudr fillSpanRect) that fill it
+ * directly. The image is always LOGICAL_WIDTH x LOGICAL_HEIGHT. */
+uint8 *gfx_pagePixels(int page, int *pitchOut) {
+    SDL_Surface *surf = ensurePage(page);
     if (!surf) return NULL;
     if (pitchOut) *pitchOut = surf->pitch;
     return (uint8 *)surf->pixels;
@@ -352,6 +342,21 @@ int gfx_allocSpriteBuf(void) {
 struct SDL_Surface *gfx_getSpriteSurface(int handle) {
     if (handle < 1 || handle > MAX_SPRITE_BUFS) return NULL;
     return r2d_imageSurface(s_spriteBufs[handle - 1]);
+}
+
+/* The R2DImage behind a sprite-buffer handle, for the image-submission path
+ * (r2d_submitImage) — the renderer owns realization (page blit or GL quad). */
+static R2DImage *gfx_spriteImage(int handle) {
+    if (handle < 1 || handle > MAX_SPRITE_BUFS) return NULL;
+    return s_spriteBufs[handle - 1];
+}
+
+/* Software realization of an image submission: clipped blit into the back buffer.
+ * Registered with r2d so a submitted sprite rasterizes exactly as gfx_blitSprite
+ * used to. */
+static void gfx_swImage(R2DImage *img, int srcX, int srcY, int w, int h,
+                        int dstX, int dstY, int key) {
+    r2d_blit(r2d_imageSurface(img), srcX, srcY, ensurePage(0), dstX, dstY, w, h, key);
 }
 
 void gfx_freeSpriteBuf(int handle) {
@@ -444,47 +449,14 @@ static void initRowOffsets(void) {
     gfx_getState()->rowOffsetsReady = 1;
 }
 
-/* ---- Slot 0x00: gfx_allocPage ---- */
-int FAR CDECL gfx_allocPage(int n) {
-    uint16 seg;
-    initRowOffsets();
-    if (n < 0 || n >= 16) return 0;
-    /* In the original game, the MGRAPHIC overlay persists across exes and
-     * gfx_setMode13 was already called by start.exe. In our NO_ASM build,
-     * each exe has fresh static state. Bootstrap mode 13h on first use. */
-    if (gfx_getState()->pageSegs[0] == 0) {
-        gfx_setMode13();
-    }
-    /* DOS allocated a fresh 64KB segment per page; natively each page is an SDL
-     * surface addressed by index. Hand out a stable, unique non-zero token per
-     * page (gfx_pageForSeg maps it back) and create the backing surface now. */
-    seg = (uint16)(0xC000 + n);
-    ensurePage(n);
-    /* Don't overwrite page 0 if it's already the VGA framebuffer.
-     * end.exe draws directly to 0xA000; gfx_setPageN(0) must keep
-     * returning 0xA000 so all rendering is immediately visible. */
-    if (n != 0 || gfx_getState()->pageSegs[0] != 0xA000) {
-        gfx_getState()->pageSegs[n] = seg;
-    }
-    return (int)seg;
-}
-
 /* ---- Slot 0x3c: gfx_setMode13 ----
- * Switch to the 320x200 game resolution. Formerly an INT 10h mode-13h set; now
- * the renderer presents the 320x200 logical surface through SDL. This is also
- * the lo-res restore after the (possibly hi-res) title. */
+ * Switch to the 320x200 game resolution (the native equivalent of the DOS INT
+ * 10h mode-13h set): the renderer presents the 320x200 logical surface through
+ * SDL. This is also the lo-res restore after the (possibly hi-res) title. */
 void FAR CDECL gfx_setMode13(void) {
-    GfxState FAR *s; /* Declare at function level for MSC small model */
-
     initRowOffsets();
-
     gfxHiResActive = false;
-
-    s = gfx_getState();
-    s->pageSegs[0] = 0xA000;
-    s->curPageSeg = s->pageSegs[1]; /* default to back buffer */
-    s->curPage = 1;
-    s->modeFlag = 1;
+    gfx_getState()->modeFlag = 1;
 }
 
 /* Title-screen hi-res: switch to the 640x350 title surface. Both backends scale
@@ -512,71 +484,6 @@ void gfx_repaint(void) {
     gfx_presentPage(0);
 }
 
-/* ---- Slot 0x4b: gfx_storeBufPtr ---- */
-void FAR CDECL gfx_storeBufPtr(uint16 seg, int pageIdx) {
-    GfxState FAR *s = gfx_getState();
-    if (pageIdx >= 0 && pageIdx < 16) {
-        s->pageSegs[pageIdx] = seg;
-    }
-    return;
-}
-
-/* ---- Slot 0x3b: gfx_clearPage ----
- * Register-called via the _gfx_clearPage asm shim (regshim.asm): the caller
- * passes the target segment in ES (decodePic sets it directly, showPicFile via
- * _gfx_getPageSeg). The shim pushes ES as `seg`. We record it as curPageSeg so
- * the subsequent fillRow/fillRow2 (which write curPageSeg) land in this buffer,
- * then clear it — matching MGRAPHIC's slot 0x3b (`rep stosw` to ES:0). */
-void FAR CDECL gfx_clearPage(uint16 seg) {
-    GfxState FAR *s = gfx_getState();
-    SDL_Surface *surf;
-    int y;
-    s->curPageSeg = seg;
-    surf = gfx_surfaceForSeg(seg);
-    if (!surf) return;
-    for (y = 0; y < surf->h; y++)
-        SDL_memset((uint8 *)surf->pixels + (size_t)y * surf->pitch, 0, surf->w);
-}
-
-/* ---- Slot 0x0e: gfx_setPageN ---- */
-void FAR CDECL gfx_setPageN(uint16 pageNum) {
-    GfxState FAR *s = gfx_getState();
-    s->curPage = (pageNum < 16) ? (int)pageNum : 0;
-    /* Don't re-init mode if page 0 is VGA framebuffer */
-    if (s->pageSegs[0] == 0xA000) {
-        s->curPageSeg = s->pageSegs[pageNum];
-        return;
-    }
-    initRowOffsets();
-    /* Bootstrap mode 13h for first use */
-    if (s->pageSegs[0] == 0) {
-        gfx_setMode13();
-    }
-    s->curPageSeg = s->pageSegs[pageNum];
-    return;
-}
-
-/* ---- Slot 0x0f: gfx_setCurPageSeg ---- */
-/* Slot 0x0f: register-called via the _gfx_setCurPageSeg shim — AX = segment;
- * curPageSeg = AX. MGRAPHIC's slot 0x0f is `mov [curPageSeg],ax` — a SETTER (the
- * getter is slot 0x10). clearRect saves curPageSeg via 0x10 and restores it here. */
-void FAR CDECL gfx_setCurPageSeg(uint16 seg) {
-    gfx_getState()->curPageSeg = seg;
-}
-
-/* Restore curPageSeg by value (was a cdecl->register shim in compat64/egregsh.c). */
-void FAR CDECL gfx_setCurPageSegReg(uint16 seg) { gfx_setCurPageSeg(seg); }
-
-/* ---- Slot 0x17: gfx_getBufSize ---- */
-int FAR CDECL gfx_getBufSize(void) {
-    return (int)0xFA00; /* baked constant 64000 (cs:0x1d2 in MGRAPHIC) */
-}
-
-/* ---- Slots 0x3a/0x38/0x33/0x35: register-called by the ASM pic renderer ----
- * The overlay slot symbols (gfx_getRowOffset/gfx_getPageSeg/gfx_fillRow/
- * gfx_copyRow) are tiny asm shims in regshim.asm that marshal the register
- * args (DI/SI/BP/BX) into cdecl stack args and call these *_impl bodies. DS is
- * the caller's DGROUP throughout, so `srcBuf` is read as a near pointer. */
 
 /* Slot 0x3a: DI = y -> AX = row byte offset (y*320). */
 int FAR CDECL gfx_getRowOffset(int y) {
@@ -585,16 +492,6 @@ int FAR CDECL gfx_getRowOffset(int y) {
     if (y >= 0 && y < 200)
         return (int)s->rowOffsets[y];
     return (int)((uint16)y * 320);
-}
-
-/* Slot 0x38: SI = page -> select it as current page, return its segment. */
-int FAR CDECL gfx_getPageSeg(uint16 page) {
-    GfxState FAR *s = gfx_getState();
-    if (page < 16) {
-        s->curPageSeg = s->pageSegs[page];
-        s->curPage = (int)page;
-    }
-    return (int)s->curPageSeg;
 }
 
 /* ---- Slot 0x3f: gfx_getModecode ---- */
@@ -616,7 +513,7 @@ void FAR CDECL gfx_setBlitOffset(int offset) {
 
 /* ---- Slot 0x25: gfx_dirtyRect ---- */
 /* eg3drast.c hands us the real span buffer pointer; gfx_dirtyRect2 walks rows
- * [yMin..yMax]. Was the egame-side cdecl spelling in compat64/egregsh.c. */
+ * [yMin..yMax]. */
 void FAR CDECL gfx_dirtyRect(int16 *spanBuf, int yMin, int yMax) {
     gfx_dirtyRect2(spanBuf, (uint16)yMin, (uint16)yMax);
 }
@@ -792,7 +689,7 @@ void gfx_drawStringClipped_impl(int16 *params, const char *string, int mode) {
 /* Slots 0x01/0x02/0x03/0x04/0x06: the clipped glyph variants. Each selects which
  * clip stages run (bit0 = horizontal window, bit1 = vertical window) and shares
  * the gfx_drawStringClipped_impl core. They take the param block + string as real
- * arguments (formerly marshalled from BP/BX by regshim.asm). */
+ * arguments. */
 void FAR CDECL gfx_fillDirty(int16 *params, const char *string) { gfx_drawStringClipped_impl(params, string, 2); }
 void FAR CDECL gfx_blitTransparent(int16 *params, const char *string) { gfx_drawStringClipped_impl(params, string, 1); }
 void FAR CDECL gfx_blitVariant(int16 *params, const char *string) { gfx_drawStringClipped_impl(params, string, 1); }
@@ -800,8 +697,7 @@ void FAR CDECL gfx_copyBlock(int16 *params, const char *string) { gfx_drawString
 void FAR CDECL gfx_drawStringUnclipped(int16 *params, const char *string) { gfx_drawStringClipped_impl(params, string, 3); }
 
 /* Slots 0x01-0x06: the clipped glyph engine. The egame HUD selects the clip mode
- * by slot index; map each to the real glyph function. Was the egame-side cdecl
- * dispatcher in compat64/egregsh.c. */
+ * by slot index; map each to the real glyph function. */
 void FAR CDECL gfx_drawGlyphStr(int16 *desc, const char *str, int slot) {
     switch (slot) {
     case 0x01:
@@ -835,12 +731,11 @@ void FAR CDECL gfx_copyRect(int srcPage, uint16 srcX, uint16 srcY,
              width, height, -1);
 }
 
-/* ---- Off-buffer save/restore images (Step 5) ----
+/* ---- Off-buffer save/restore images ----
  * Bridge page indices to the r2d image API: gfx_captureToImage copies a page
  * region into an owned image (the save-under), gfx_restoreFromImage copies it
- * back. They replace the DOS-era offscreen-page scratch, which was a separate
- * 320x200 surface in the page array; an image is the same surface, just no longer
- * a "page". Coordinates match gfx_copyRect's so call sites map 1:1. */
+ * back. An image is a standalone 320x200 surface, not a page. Coordinates match
+ * gfx_copyRect's so call sites map 1:1. */
 struct R2DImage *gfx_allocImage(int w, int h) { return r2d_registerImage(w, h); }
 void gfx_freeImage(struct R2DImage *img) { r2d_releaseImage(img); }
 
@@ -855,10 +750,18 @@ void gfx_restoreFromImage(struct R2DImage *img, int dstPage, int srcX, int srcY,
     r2d_drawImage(img, srcX, srcY, w, h, ensurePage(dstPage), dstX, dstY, -1);
 }
 
+int gfx_readImagePixel(struct R2DImage *img, int x, int y) {
+    SDL_Surface *surf = r2d_imageSurface(img);
+    if (!surf || x < 0 || y < 0 || x >= surf->w || y >= surf->h) {
+        return -1;
+    }
+    return ((const Uint8 *)surf->pixels)[y * surf->pitch + x];
+}
+
 void gfx_drawSpriteOpaque(int handle, int srcX, int srcY, int dstPage,
                           int dstX, int dstY, int w, int h) {
-    r2d_blit(gfx_getSpriteSurface(handle), srcX, srcY,
-             ensurePage(dstPage), dstX, dstY, w, h, -1);
+    (void)dstPage; /* single back buffer */
+    r2d_submitImage(gfx_spriteImage(handle), srcX, srcY, w, h, dstX, dstY, -1);
 }
 
 /* ---- Slot 0x29: gfx_switchColor ---- */
@@ -968,6 +871,7 @@ void gfx_setDacRange(uint16 startReg, uint16 count, const uint8 *vgaTriples) {
         colors[i].a = 255;
     }
     SDL_SetPaletteColors(gfxPalette, colors, (int)startReg, (int)count);
+    gfxPaletteGen++;
 }
 
 void FAR CDECL gfx_setDac(uint16 palIdx) {
@@ -983,60 +887,24 @@ void FAR CDECL gfx_setColor(int color) {
     return;
 }
 
-/* ---- Slot 0x0c: gfx_initOverlay ----
- * MGRAPHIC: `mov ax,[cs:pageSegTable+2]; mov [cs:curPageSeg],ax` — sets the
- * current draw page to page 1 (the back buffer). Called once at egame startup. */
-void FAR CDECL gfx_initOverlay(void) {
-    GfxState FAR *s = gfx_getState();
-    s->curPageSeg = s->pageSegs[1];
-    s->curPage = 1;
-    return;
-}
-/* Slot 0x0d: register-called via the _gfx_setPage1 shim (regshim.asm) — AX = a
- * page index; curPageSeg = pageSegs[AX]. MGRAPHIC's slot 0x0d takes the index in
- * AX (the name is a misnomer); clearRect uses it to select the page to clear. */
-int FAR CDECL gfx_setPage1(uint16 page) {
-    GfxState FAR *s = gfx_getState();
-    if (page < 16) {
-        s->curPageSeg = s->pageSegs[page];
-        s->curPage = (int)page;
-    }
-    return (int)s->curPageSeg;
-}
-/* Slot 0x10: called via the _gfx_getCurPageSeg shim, which preserves ES (a
- * gfx_getState() call here loads ES, and clearRect needs ES kept across this). */
-int FAR CDECL gfx_getCurPageSeg(void) {
-    GfxState FAR *s = gfx_getState();
-    return (int)s->curPageSeg;
-}
-void FAR CDECL gfx_getCurPage(int page) {
-    GfxState FAR *s = gfx_getState();
-    return;
-}
 /* Slot 0x11 (≡0x49): thunk to the sprite core (MGRAPHIC @0x7ca -> @0x7db). The
  * core is UNCONDITIONALLY transparent — `lodsb; or al,al; jz skip; mov [es:di],al`
  * over width*height — with NO flags test (flags lives at SpriteParams+0x18, past
  * the 8-word block the core reads). egame chooses transparent (0x11) vs opaque
  * (copyRect 0x2a / blitToCurrent 0x30) at the C level, so slot 0x11 must always
- * skip zero bytes. An earlier `flags & 0x10` gate made the HUD gun-sight blit
- * opaque, copying its black background as a square behind the reticle (bug 7). */
+ * skip zero bytes — a flags test here would copy the gun-sight's black background
+ * as a square behind the reticle. */
 int FAR CDECL gfx_blitSprite(struct SpriteParams *p) {
-    SDL_Surface *srcSurf, *dstSurf;
-
     if (!p) return 0;
     if (p->page < 0 || p->page >= 16) return 0;
-    /* bufPtr is the sprite-sheet source. The radar/tac-map/HUD sheet (F15.SPR)
-     * is loaded into a page surface, so bufPtr carries that page-segment token
-     * (e.g. 0xC002 from gfx_allocPage); resolve it like gfx_blitCore does. Fall
-     * back to the 1-based sprite-buffer handle for any decodePic sprite buffer. */
-    srcSurf = gfx_surfaceForSeg((uint16)p->bufPtr);
-    if (!srcSurf) srcSurf = gfx_getSpriteSurface((int)p->bufPtr);
-    dstSurf = gfx_getPageSurface((int)p->page);
-    /* Unconditionally transparent (skip index 0): the gun-sight/symbol sprites
-     * rely on the see-through background (see thunk comment above). */
-    r2d_blit(srcSurf, (int)p->srcX, (int)p->srcY,
-             dstSurf, (int)p->dstX, (int)p->dstY,
-             (int)p->width, (int)p->height, 0);
+    /* bufPtr is a 1-based sprite-buffer handle (F15.SPR via gfxBufPtr, the
+     * theater/menu sheets). Submit the sprite to the renderer; the realization
+     * is the backend's (software page blit / GL quad). Unconditionally
+     * transparent (skip index 0) — the gun-sight/symbol sprites rely on the
+     * see-through background. */
+    r2d_submitImage(gfx_spriteImage((int)p->bufPtr),
+                    (int)p->srcX, (int)p->srcY, (int)p->width, (int)p->height,
+                    (int)p->dstX, (int)p->dstY, 0);
     return 0;
 }
 /* Slot 0x1f: register-called via the _gfx_drawLine shim (regshim.asm).
@@ -1063,7 +931,7 @@ static int gfx_lineOutcode(int x, int y) {
  * submitted line/point (registered with r2d via r2d_registerSoftwarePrims).
  * Endpoints/coords arrive already blitOffset-absolute and clipped to the page;
  * these just write the current page surface. The GL backend instead records the
- * submission and replays it at native resolution (docs Step 4). */
+ * submission and replays it at native resolution. */
 static void gfx_swLine(int x1, int y1, int x2, int y2, int colorArg) {
     SDL_Surface *surf = gfx_getCurPageSurface();
     uint8 *base;
@@ -1162,13 +1030,12 @@ void FAR CDECL gfx_drawLine(uint16 ux1, uint16 uy1, uint16 ux2, uint16 uy2) {
 
     /* Submit the clipped, blitOffset-absolute segment. The software backend
      * Bresenhams it into the current page (gfx_swLine); the GL backend records it
-     * for a crisp native-resolution replay (docs/render-2d-overlay.md, Step 4). */
+     * for a crisp native-resolution replay. */
     r2d_submitLine(x1, y1, x2, y2, color);
 }
-/* drawLineWrapper - draw a line from the lineX1..lineY2 globals.
- * The original clipped the endpoints (Cohen-Sutherland) before passing them to
- * the line slot in registers; gfx_drawLine now does that clipping itself, so
- * this just marshals the globals into its by-value args. */
+/* drawLineWrapper - draw a line from the lineX1..lineY2 globals. gfx_drawLine
+ * does the Cohen-Sutherland clipping itself, so this just marshals the globals
+ * into its by-value args. */
 extern int16 lineX1, lineY1, lineX2, lineY2;
 void drawLineWrapper(void) {
     gfx_drawLine((uint16)lineX1, (uint16)lineY1, (uint16)lineX2, (uint16)lineY2);
@@ -1181,7 +1048,7 @@ void FAR CDECL gfx_setDrawColor(uint16 color) {
 void FAR CDECL gfx_nop23(void) { return; }
 /* Slot 0x25/0x28: fill the per-row dirty spans. minBuf points at the per-row
  * dirtyMinBuf; the matching dirtyMaxBuf sits 0x1b8 bytes after it. For each row
- * y in [yMin..yMax] fill the span [minBuf[y]..maxBuf[y]] of curPageSeg with
+ * y in [yMin..yMax] fill the span [minBuf[y]..maxBuf[y]] of the back buffer with
  * fillColor. This is the actual rectangle clear behind clearRect (MGRAPHIC slot
  * 0x25==0x28). A row whose min==max==0 or ==0x13F is treated as empty and
  * skipped, matching the original's range guard. (The DOS build passed BX = a
@@ -1191,7 +1058,7 @@ void FAR CDECL gfx_dirtyRect2(const int16 *spanMinBuf, uint16 yMin, uint16 yMax)
     const uint16 *minBuf = (const uint16 *)spanMinBuf;
     const uint16 *maxBuf = (const uint16 *)((const char *)spanMinBuf + 0x1b8);
     uint8 fill = s->fillColor;
-    SDL_Surface *surf = gfx_surfaceForSeg(s->curPageSeg);
+    SDL_Surface *surf = ensurePage(0);
     uint8 *pagePx;
     int16 firstRow = (int16)yMin; /* AX */
     int16 lastRow = (int16)yMax;  /* CX */
@@ -1238,26 +1105,6 @@ void FAR CDECL gfx_dirtyRect2(const int16 *spanMinBuf, uint16 yMin, uint16 yMax)
             dst[col] = fill;
     }
 }
-/* Slot 0x2d: getDisplayPage — returns the back-buffer page index (no args).
- * MGRAPHIC's slot 0x2d is `mov al,[cs:0x1a2]; retf` — it returns the stored
- * display-page byte (the page the frame is composited into), NOT a segment.
- * The renderer (render3DView / renderHudFrame / tac map) targets this page,
- * and gfx_dacAnimate (slot 0x2c) presents it to the visible page 0.
- *
- * NOASM-only divergence: MGRAPHIC's span engine selects the fill page from the
- * view descriptor each frame, so the back buffer is always the 3D target. Our
- * span fills (gfx_dirtyRect/gfx_drawLine) instead follow curPageSeg, which the
- * alternate-view cockpit blit (openBlitClosePic(..., *g_pageFront)) leaves on
- * the visible page 0 — so without re-syncing here the F2/F3/F4 world composites
- * onto the visible page and gfx_dacAnimate then stomps it with the stale back
- * buffer (the flicker). render3DView calls this right before the 3D setup, so
- * re-select the display page as the active draw page to keep them in sync. */
-int FAR CDECL gfx_getDisplayPage(void) {
-    GfxState FAR *s = gfx_getState();
-    if (s->displayPage < 16 && s->pageSegs[0] == 0xA000)
-        s->curPageSeg = s->pageSegs[s->displayPage];
-    return (int)s->displayPage;
-}
 
 int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx) {
     /* Returns the pixel advance width of a single character. stringWidth()
@@ -1274,22 +1121,6 @@ int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx) {
     if (!wt || ch < 0x20) return 8;
     return wt[ch - 0x20];
 }
-int FAR CDECL gfx_getAuxBufSize(void) { return 0x1950; }
-int FAR CDECL gfx_getFreeMem(void) {
-    /* Slot 0x32: DOS free-memory probe (INT 21h/AH=48h, BX=0xFFFF -> largest
-     * free block in paragraphs). Stubbed to 0 in NO_ASM; takes no args despite
-     * the old "fontSetup" mislabel. */
-    return 0;
-}
-/* Slot 0x34 (fillRow2): row-decode is done natively in picimpl.c now, so this
- * is an unused stub kept only for legacy linkage. */
-void FAR CDECL gfx_fillRow2(uint16 x, uint16 y) {
-    (void)x;
-    (void)y;
-    return;
-}
-void FAR CDECL gfx_nop36(void) { return; }
-void FAR CDECL gfx_nop37(void) { return; }
 void FAR CDECL gfx_setFadeSteps(int steps) {
     (void)steps;
     return;
@@ -1328,15 +1159,6 @@ int FAR CDECL gfx_getModeFlag(void) {
     GfxState FAR *s = gfx_getState();
     return (int)s->modeFlag;
 }
-int FAR CDECL gfx_getModeFlag2(void) {
-    GfxState FAR *s = gfx_getState();
-    return (int)s->modeFlag;
-}
-/* Slots 0x4e/0x4d: getters (no args). MGRAPHIC's bodies returned overlay state;
- * the merged build has no live source for them yet, so they report 0 — the value
- * start.exe's sprite-load path keys off (gfx_getVal()==0). */
-int FAR CDECL gfx_getVal(void) { return 0; }
-int FAR CDECL gfx_getVal2(void) { return 0; }
 void FAR CDECL gfx_setDacAnimCount(uint16 count) {
     GfxState FAR *s = gfx_getState();
     s->dacCounter = (uint8)count;
@@ -1345,75 +1167,13 @@ void FAR CDECL gfx_setDacAnimCount(uint16 count) {
 void FAR CDECL gfx_commitPage(void) {
     gfx_presentPage(0);
 }
-void FAR CDECL gfx_nop51(void) { return; }
 void FAR CDECL gfx_blitSpriteClipped(int16 *ptr) { gfx_blitSprite((struct SpriteParams *)ptr); }
-void FAR CDECL gfx_blitSpriteClipped2(void) { return; }
 void FAR CDECL gfx_blitSpriteOpaque(int16 *ptr) { gfx_blitSprite((struct SpriteParams *)ptr); }
-void FAR CDECL gfx_blitSpriteOpaque2(void) { return; }
-
-/* Map a legacy page *segment* value back to its page index. gfx_blitToCurrent is
- * called with a raw segment (e.g. page1Ptr from gfx_allocPage) rather than a page
- * index; the same value was recorded in pageSegs[] via gfx_storeBufPtr, so an
- * exact match identifies the source page. Returns the first match (lowest index),
- * or -1 if the segment names no page. */
-static int gfx_pageForSeg(uint16 seg) {
-    GfxState FAR *s = gfx_getState();
-    int i;
-    for (i = 0; i < 16; i++)
-        if (s->pageSegs[i] == seg) return i;
-    return -1;
-}
-
-/* ---- Slot 0x30: gfx_blitToCurrent ---- */
-/* Copy a whole source page onto the current draw page. The original block-copied
- * 64000 bytes between DOS page segments; natively both are SDL surfaces, so copy
- * the 320x200 image row-by-row from the source page into the current page. */
-void FAR CDECL gfx_blitToCurrent(int16 pagePtr) {
-    GfxState FAR *s = gfx_getState();
-    int srcPage = gfx_pageForSeg((uint16)pagePtr);
-    SDL_Surface *src, *dst;
-
-    if (srcPage < 0) return;
-    src = ensurePage(srcPage);
-    dst = ensurePage(s->curPage);
-    if (!src || !dst || src == dst) return;
-
-    r2d_blit(src, 0, 0, dst, 0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT, -1);
-}
-
-/* ---- Slot 0x12/0x4a: gfx_blitCore — transparent sprite core ----
- * Register-called via the _gfx_blitCore shim (regshim.asm): BP = near pointer
- * (caller's DS) to an 8-word param block. MGRAPHIC's slot 0x12 (code @0x7db) is
- * `lodsb; or al,al; jz skip; mov [es:di],al` over width*height, dest segment
- * from pageSegTable[dstPage], no clipping, no blitOffset. The block layout is the
- * first 8 words of struct SpriteParams:
- *   [0] src segment   [1] src col   [2] src row   [3] dst page index
- *   [4] dst col       [5] dst row   [6] width     [7] height
- * Used by egame for the HUD gun-sight / symbol blits (egseg2.asm) — the
- * transparency (skip-zero) is what gives the gun sight its see-through
- * background instead of an opaque black box. */
-void FAR CDECL gfx_blitCore(int16 *blk) {
-    GfxState FAR *s = gfx_getState();
-    if (blk[3] < 0 || blk[3] >= 16) return;
-    /* Transparent (skip index 0) blit from a sprite/page segment to the page
-     * named by pageSegs[blk[3]] — the see-through HUD gun-sight/symbol path. */
-    r2d_blit(gfx_surfaceForSeg((uint16)blk[0]), (int)blk[1], (int)blk[2],
-             gfx_surfaceForSeg(s->pageSegs[blk[3]]), (int)blk[4], (int)blk[5],
-             (int)blk[6], (int)blk[7], 0);
-}
-
-/* ---- Stubs for declared-but-unimplemented slots ---- */
-/* gfx_blitVariant (0x03), gfx_copyBlock (0x04), gfx_drawStringUnclipped (0x06):
- * register-called glyph slots — provided by regshim.asm shims (see above). */
-void FAR CDECL gfx_clipRight(void) { return; }
-void FAR CDECL gfx_clipTop(void) { return; }
-void FAR CDECL gfx_clipLeft(void) { return; }
-void FAR CDECL gfx_clipBottom(void) { return; }
 
 /* ---- Slot 0x0b: gfx_complexRender — HUD pitch-ladder renderer ----
  * MGRAPHIC code @0x615. Register-called (via the _gfx_complexRender shim in
  * regshim.asm) with BX=row, DX=orientation(dl), CX=mode-gate(cl), SI=ladder
- * variant (0 or 2). It writes colour 0x0f into curPageSeg along a column whose
+ * variant (0 or 2). It writes colour 0x0f into the back buffer along a column whose
  * X base + row Y-bounds come from a 12-word geometry table at MGRAPHIC data-seg
  * 0x1c84 (baked below — the disasm's `mov ds,0` is a relocated reference to the
  * overlay's data base, so the table is statically extractable, NOT seg-0 BSS):
@@ -1457,14 +1217,11 @@ void FAR CDECL gfx_complexRender(int bxArg, int dxArg, int cxArg, int siArg) {
 
     wi = siArg / 2; /* si is a byte offset; table is word-indexed */
     if (wi < 0 || wi + 8 > 11) return;
-    /* g_ladderGeom is a real const array in this single-binary build; read it
-     * directly (the old MK_FP(f15DataSeg, ...) far-pointer reconstruction is the
-     * dead 16-bit-DOS path). */
     base = (uint16)g_ladderGeom[wi];
     loY = (uint16)g_ladderGeom[wi + 4];
     hiY = (uint16)g_ladderGeom[wi + 8];
 
-    surf = gfx_surfaceForSeg(s->curPageSeg);
+    surf = ensurePage(0);
     if (!surf) return;
     page = (uint8 *)surf->pixels;
     initRowOffsets();
@@ -1503,47 +1260,22 @@ void FAR CDECL gfx_complexRender(int bxArg, int dxArg, int cxArg, int siArg) {
         bx -= 2;
     }
 }
-void FAR CDECL gfx_spriteVariant1(void) { return; }
-void FAR CDECL gfx_spriteVariant2(void) { return; }
-void FAR CDECL gfx_nop15(void) { return; }
-void FAR CDECL gfx_nop16(void) { return; }
 void FAR CDECL gfx_setBlitOffset2(void) {
     GfxState FAR *s = gfx_getState();
     s->blitOffset = 0;
     return;
 }
-void FAR CDECL gfx_setBlitOffset3(void) {
-    GfxState FAR *s = gfx_getState();
-    s->blitOffset = 0;
-    return;
-}
-void FAR CDECL gfx_setBlitOffsetReg(void) { return; }       /* reg-called stub: blitOffset=AX, no shim yet */
 int FAR CDECL gfx_getPresetOffset2(void) { return 0x1950; } /* baked constant 0x1950 */
 int FAR CDECL gfx_getBlitOffset(void) {
     GfxState FAR *s = gfx_getState();
     return (int)s->blitOffset;
 }
-void FAR CDECL gfx_plotPixel(void) { return; } /* stub: real 0x24 plots one pixel at cached [0x1b6e]/[0x1b70] */
-void FAR CDECL gfx_storePageSeg(void) { return; }
-void FAR CDECL gfx_setPageSeg(void) { return; }
-/* Slot 0x2b: zero-fill the PHYSICAL VGA buffer (0xA000), 64000 bytes — MGRAPHIC
- * sets ES=0xA000 and `rep stosw` 0x7d00 words. Independent of the page table, so
- * it always clears the visible framebuffer. (egame only calls this from a dead
- * path, but start/end use it; implement faithfully.) */
-void FAR CDECL gfx_clearVga(void) {
-    SDL_Surface *front = ensurePage(0);
-    int y;
-    if (!front) return;
-    for (y = 0; y < front->h; y++)
-        SDL_memset((uint8 *)front->pixels + (size_t)y * front->pitch, 0, front->w);
-}
 /* Slot 0x2c: advance the fire colour-cycle and present the frame, once per frame
- * from gameMainLoop (egame_rc.asm). MGRAPHIC copied the back page to the visible
- * page here; under the single back buffer (Step 5.2) compose and present target
- * the one surface, so the copy is gone — just present it. Args (AX/BX) ignored. */
+ * from gameMainLoop (egame_rc.asm). With a single back buffer, compose and
+ * present target the one surface, so there is no back->front copy — just present
+ * it. Args (AX/BX) ignored. */
 void FAR CDECL gfx_dacAnimate(void) {
     GfxState FAR *s = gfx_getState();
-    s->displayPage = 1;
     /* Advance the fire colour-cycle on a fixed FIRE_CYCLE_HZ wall-clock schedule. */
     {
         Uint64 now = SDL_GetTicksNS();
@@ -1607,6 +1339,7 @@ void FAR CDECL gfx_dacCycle(void) {
         SDL_SetPaletteColors(gfxPalette, &col, (int)reg, 1);
         reg = (uint8)(reg + 0x10);
     } while (reg != 0x1d);
+    gfxPaletteGen++;
 
     /* Screen-shake: while the countdown is nonzero, shift the presented frame by
      * the phase high byte (0-3 px), decrementing the countdown and clearing the
@@ -1620,27 +1353,15 @@ void FAR CDECL gfx_dacCycle(void) {
     }
     return;
 }
-void FAR CDECL gfx_setPageBuf(void) { return; }
-int FAR CDECL gfx_getConst1(void) { return 1; } /* baked constant 1 (cs:0x1d8 in MGRAPHIC) */
 
 /* ---- Initialise the shared GfxState ----
- * Called once at startup from game_init(). The slot-dispatch table, OvlHeader
- * and MISC/SOUND stub overlays that used to live here are gone: in the merged
- * single-process build the gfx functions are called directly, so only the
- * state defaults remain. */
+ * Called once at startup from game_init(). In the merged single-process build the
+ * gfx functions are called directly (no slot-dispatch table), so this just sets
+ * the state defaults. */
 void gfx_initState(void) {
     GfxState FAR *s = gfx_getState();
 
     s->modeFlag = 1;
-    s->displayPage = 1;  /* MGRAPHIC cs:0x1a2 default; back buffer = page 1 */
     s->dacPhase = 0x4d2; /* MGRAPHIC data-seg 0x1ccc seed (dacCycle phase) */
-    /* pageSegs[] and rowOffsetsReady are zero by default (file-scope global). */
-
-    /* Record f15's DGROUP segment so the gfx const tables (palettes, font
-     * tables) remain reachable via far pointer regardless of the caller's DS
-     * (Finding A). */
-    {
-        void FAR *anchorFp = (void FAR *)&dgroupAnchor;
-        s->f15DataSeg = FP_SEG(anchorFp);
-    }
+    /* rowOffsetsReady is zero by default (file-scope global). */
 }

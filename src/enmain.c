@@ -22,8 +22,6 @@ void enInitGraphics(void);
 void checkQuitFlag(void);
 
 int end_main(void) {
-    int auxBufSize;
-
     misc_clearKeyFlags();
     clearKeybuf();
     installCBreakHandler();
@@ -36,13 +34,6 @@ int end_main(void) {
         copyJoystickData(commData->joyData);
     }
     loadWorldStrings();
-    auxBufSize = gfx_getAuxBufSize();
-    gfxBufSeg = allocBuffer(auxBufSize);
-    if (hasVgaMode == 1) {
-        vgaBufSeg = allocBuffer(VGA_BUF_SIZE);
-        vgaBufSeg2 = vgaBufSeg;
-        vgaBufOffset = 0;
-    }
     missionResult = 3;
     if (commData->landingType == 2) {
         computeMissionResult();
@@ -75,9 +66,5 @@ void enInitGraphics(void) {
     (void)g;
     (void)h;
     enSeedRandom();
-    gfx_setPageN(0);
-    gfx_allocPage(0);
-    gfx_getCurPage(0);
     gfx_setDac(1);
-    gfx_storeBufPtr(commData->gfxInitResult, 1);
 }

@@ -7,7 +7,7 @@
 
 /* Size of the world-export scratch area that START fills and END reads back.
  * Must hold EGAME's worst-case moveDataFar() write: 1272 fixed bytes + 74
- * planes*16 + 20 ground*36 + the 1536-byte replay log = 4712 bytes. Matches the
+ * planes*16 + 20 ground*sizeof(SimObject) + the 1536-byte replay log. Matches the
  * original COMM block's worldBuf capacity (0x1400 total - 0x7A header = 0x1386);
  * the earlier 0x1194 overflowed the heap on busy missions, corrupting the
  * debrief flight log (garbage sprites, missing lines, intermittent lockups). */

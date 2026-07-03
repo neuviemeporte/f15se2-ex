@@ -18,7 +18,7 @@ void readWorldData(void) {
     loadWorldData(&worldRouteCount, 2);
     loadWorldData(worldObjects, worldObjectCount << 4);
     loadWorldData(&worldSamCount, 2);
-    loadWorldData(worldSamTable, 36 * worldSamCount);
+    loadWorldData(worldSamTable, sizeof(struct SimObject) * worldSamCount);
     loadWorldData(unitTypeTable, 100);
     loadWorldData(worldUnitFlags, 100);
     loadWorldData(worldStringBuf, 750);

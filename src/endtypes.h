@@ -32,9 +32,6 @@
 #define POPUP_HEIGHT 40
 #define POPUP_SAVE_Y 150 /* Y offset for popup save area */
 
-/* VGA double-buffer size in paragraphs */
-#define VGA_BUF_SIZE 15500
-
 /* Normal debrief exit code */
 #define EXIT_DEBRIEF 0x23
 

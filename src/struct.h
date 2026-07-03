@@ -227,11 +227,16 @@ struct SimObject {
     int16 speed;        // +0x1A  velocity magnitude / fuel
     int16 timer;        // +0x1C  countdown
     int16 weaponType;   // +0x1E  AI weapon index (sams[] lookup)
-    int16 terrainColor; // +0x20  readMapPixelColor under object
+    int16 terrainColor; // +0x20  unused; overlays the FlightUnit on-disk reserved bytes (keeps the record 36 bytes wide)
     int16 damage;       // +0x22  damage accumulator (clamp 0..0xff)
 };
 #pragma pack()
+/* This record is the in-flight form of the on-disk .WLD FlightUnit: START loads
+ * FlightUnit records from disk and memcpy's them into the COMM worldBuf, and EGAME
+ * reads that block straight into g_simObjects (egframe.c moveStuff). So the size is
+ * locked to the on-disk record — it must equal FLIGHTUNIT_SIZE, not just be 36. */
 STATIC_ASSERT(sizeof(struct SimObject) == 36);
+STATIC_ASSERT(sizeof(struct SimObject) == FLIGHTUNIT_SIZE);
 
 struct MapTarget {
     uint16 mapX;              // +0x00  map X coord (worldX = mapX << 5)

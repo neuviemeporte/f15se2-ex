@@ -29,7 +29,7 @@ void renderHudFrame(int unused);
 void stepFlightModel(void);
 void updateFrame(void);
 
-/* ---- Fixed-timestep sim + interpolated rendering (see docs/render-sim-decouple.md) ----
+/* ---- Fixed-timestep sim + interpolated rendering ----
  *
  * The original ran one sim step per rendered frame and an adaptive governor held
  * the sim cadence constant by *sleeping* the loop (waitFrameSync / g_frameSyncWait),
@@ -41,9 +41,9 @@ void updateFrame(void);
  * stepRate == g_frameRateScaling (giving the mission clock 1 Hz), so we step at
  * exactly g_frameRateScaling steps/s. The governor's auto-rescale and the sleep
  * are retired (egframe.c/egkeys.c); g_frameRateScaling is pinned at 15 (max
- * precision). ALT+A "ACCEL" (egkeys.c) used to halve g_frameRateScaling; with
- * the decouple it instead multiplies the wall-clock step rate by g_slowMotionMode
- * (see simStepNsNow), so ACCEL is a clean 2x time compression at full precision. */
+ * precision). ALT+A "ACCEL" (egkeys.c) multiplies the wall-clock step rate by
+ * g_slowMotionMode (see simStepNsNow), a clean 2x time compression at full
+ * precision. */
 
 #define NS_PER_SEC 1000000000ULL
 #define SIM_OBJ_MAX 20
@@ -228,10 +228,18 @@ static void objApplyInterp(const SimObjSnap *sp, const SimObjSnap *sn,
         g_simObjects[i].bank.w = (int16)lerpAngle(sp[i].bank, sn[i].bank, num, den);
     }
     for (i = 0; i < PROJ_MAX; i++) {
+        /* Default the fine position to the authoritative (next) coarse position so
+         * a just-fired / non-interpolated slot still has a valid fine value. */
+        g_projInterpX[i] = pn[i].mapX << 5;
+        g_projInterpY[i] = pn[i].mapY << 5;
         if (pp[i].ttl <= 0 || pn[i].ttl != pp[i].ttl - 1)
             continue;
         g_projectiles[i].mapX = (uint16)lerpLinear(pp[i].mapX, pn[i].mapX, num, den);
         g_projectiles[i].mapY = (uint16)lerpLinear(pp[i].mapY, pn[i].mapY, num, den);
+        /* Fine (mapX<<5-scale) interpolated position — keeps the sub-mapX-unit
+         * precision the coarse fields above discard, for the model + director cam. */
+        g_projInterpX[i] = lerpLinear(pp[i].mapX << 5, pn[i].mapX << 5, num, den);
+        g_projInterpY[i] = lerpLinear(pp[i].mapY << 5, pn[i].mapY << 5, num, den);
         /* alt's low bit is the track-state flag (radar draws gray when clear),
          * not real altitude — interpolate the altitude but keep the authoritative
          * flag bit so "lost track" stays gray. */
@@ -256,6 +264,8 @@ static void objRestore(const SimObjSnap *sn, const ProjSnap *pn) {
     for (i = 0; i < PROJ_MAX; i++) {
         g_projectiles[i].mapX = (uint16)pn[i].mapX;
         g_projectiles[i].mapY = (uint16)pn[i].mapY;
+        g_projInterpX[i] = pn[i].mapX << 5;
+        g_projInterpY[i] = pn[i].mapY << 5;
         g_projectiles[i].alt = (int16)pn[i].alt;
         g_projectiles[i].worldX = pn[i].head;
         g_projectiles[i].worldY = pn[i].pitch;

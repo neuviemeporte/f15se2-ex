@@ -43,7 +43,6 @@ void clearStatusPanel(void) {
 void renderHudFrame(int unused) {
     int climbMarkerY, angleFixed, waypointMarkerX, circleX, angle, circleY, prevX, speedBarLen, prevY, markerX, deltaX, markerY, deltaY;
     char seekerShift;
-    g_drawPage = gfx_getDisplayPage();
     // probably x,y
     deltaX = waypoints[waypointIndex].mapX - g_viewX_;
     deltaY = waypoints[waypointIndex].mapY - g_viewY_;
@@ -138,7 +137,7 @@ void renderHudFrame(int unused) {
             goto somewhere;
         }
     somewhere:
-        drawTacticalMap(g_drawPage);
+        drawTacticalMap(0);
     }
     if (g_hudMsgTimer != 0 && ((keyValue == 0 && g_halfScaleRender == 0) || (g_directorMode != 0))) {
         drawStringActivePage(tempString, -(((int16)strlen(tempString) >> 1) - 40) * 4, 24, 0xf);
@@ -206,13 +205,13 @@ void initTacMapView(void) {
 }
 
 // ==== seg000:0x95c9 ====
-void redrawTacMap(int centerX, int centerY) {
-    int16 screenX, screenY, idx, c, savedPage;
 
-    g_mapMode = 0;
-    if (g_hudVisible == 0) {
-        return;
-    }
+/* Recompute the map centre and render the terrain + plane/waypoint markers into
+ * the left-MFD region. Shared by redrawTacMap (which then caches the region to
+ * g_eg2dBacking) and renderTacMapOverlay (the per-frame GL vector path). */
+static void renderTacMapContent(int centerX, int centerY) {
+    int16 screenX, screenY, idx;
+
     drawPanelText(1, "Map", 0);
     idx = 72 << (9 - g_mapZoomLevel);
     g_mapCenterX = clampRange(sinMul(g_ourHead, 0x4000 >> g_mapZoomLevel) + centerX, idx, 0x7fff - idx);
@@ -226,8 +225,6 @@ void redrawTacMap(int centerX, int centerY) {
     } else {
         gfx_setFadeSteps(16);
     }
-    savedPage = g_drawPage;
-    g_drawPage = gfx_getDisplayPage();
     for (idx = 1; idx < g_planeCount; idx++) {
         if (g_planeTable.planes[idx].active != 0 && !(g_planeTable.planes[idx].flags & 0x80) &&
             objectToScreen(g_planeTable.planes[idx].mapX, g_planeTable.planes[idx].mapY, &screenX, &screenY)) {
@@ -244,14 +241,36 @@ void redrawTacMap(int centerX, int centerY) {
             blitSprite(screenX - 1, screenY - 1, 0xa8, 0, 4, 4, 0);
         }
     }
-    g_drawPage = savedPage;
-    if ((char)gfx_getDisplayPage() == 0) {
-        cacheScopePanel();
-    } else {
-        gfx_captureToImage(g_eg2dBacking, *g_pageFront, 24, 112, 24, 112, 72, 56);
+}
+
+void redrawTacMap(int centerX, int centerY) {
+    g_mapMode = 0;
+    if (g_hudVisible == 0) {
+        return;
     }
+    renderTacMapContent(centerX, centerY);
+    gfx_captureToImage(g_eg2dBacking, *g_pageFront, 24, 112, 24, 112, 72, 56);
     restoreScopePanel();
     resetSimObjectLocks();
+}
+
+/* Per-frame tac-map render for renderers that do NOT retain the 2D overlay
+ * (the GL backend rebuilds its native vector/quad stream every present). The
+ * software backend keeps the cached-into-backing model instead (redrawTacMap +
+ * the per-frame marker patch in updateFrame); this path re-emits the whole map —
+ * terrain fills/lines as native polygons/vectors, all markers as textured quads —
+ * into the current frame's stream, so it stays crisp at the window resolution
+ * without touching g_eg2dBacking. Called from renderFrame inside the vector
+ * frame; the player marker is drawn here (no restore-from-backing patch). */
+void renderTacMapOverlay(void) {
+    int16 sx, sy;
+    if (g_hudVisible == 0 || g_mapMode != 0) {
+        return;
+    }
+    renderTacMapContent(g_viewX_, g_viewY_);
+    if (objectToScreen(g_viewX_, g_viewY_, &sx, &sy)) {
+        blitSprite(sx - 1, sy - 1, ((g_ourHead + 0x1000) >> 0xd & 7) * 4 + 164, 4, 4, 4, 0);
+    }
 }
 
 // ==== seg000:0x9875 ====
@@ -429,18 +448,7 @@ void drawClippedLineRegion(int x1, int y1, int x2, int y2, int clipLeft, int cli
     g_lineY2 = y2 - clipTop;
     drawClipLineGlobal();
     gfx_nop23();
-    if (drawBothPages != 0) {
-        g_drawPage = gfx_getDisplayPage();
-        gfx_setPageN(g_drawPage == 0);
-        gfx_setColor(g_pageFront[2]);
-        g_lineX1 = x1 - clipLeft;
-        g_lineY1 = y1 - clipTop;
-        g_lineX2 = x2 - clipLeft;
-        g_lineY2 = y2 - clipTop;
-        drawClipLineGlobal();
-        gfx_setPageN(g_drawPage != 0);
-        gfx_nop23();
-    }
+    (void)drawBothPages; /* single back buffer, so there is no second page */
     g_clipMaxX = 319;
     g_clipMaxY = 199;
     gfx_setBlitOffset(0);
@@ -548,13 +556,15 @@ void drawNumber(int value, int x, int y, int color) {
 }
 
 // ==== seg000:0xa1b1 ====
+/* Recover the tac-scope terrain colour under a moving blip so callers can erase
+ * the blip by re-plotting it (see plotMapObject/targetLock). The DOS original read
+ * the live VGA page via INT 10h AH=0Dh; we sample g_eg2dBacking, the clean cached
+ * scope image (redrawTacMap captures it before per-frame blips are drawn), whose
+ * 320x200 pixels sit at their screen coords over the scope-clip region (24..96,
+ * 112..168). Backend-agnostic: on GL this erase-plot is never presented, but the
+ * sample stays valid. */
 int readScreenPixel(int screenX, int screenY) {
-    regs.h.ah = 0x0D;
-    g_biosPixelX = screenX;
-    g_biosPixelY = screenY;
-    g_biosPixelPage = 0;
-    int86(0x10, &regs, &regs);
-    return regs.h.al;
+    return gfx_readImagePixel(g_eg2dBacking, screenX, screenY);
 }
 
 // ==== seg000:0xa1e4 ====

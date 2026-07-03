@@ -67,6 +67,8 @@ extern struct Particle g_particles[8];
 extern int16 g_smokeParticleSlot;
 extern const int16 g_maneuverTable[3][8][8];
 extern struct Projectile g_projectiles[];
+extern int32 g_projInterpX[];
+extern int32 g_projInterpY[];
 extern int16 g_threatScopeRange;
 extern int16 g_trackedEnemyIdx;
 extern int16 frameTick;
@@ -164,9 +166,9 @@ extern int16 g_lastViewKey;
 extern const int16 ammoNumX[];
 extern int16 g_tacmapIndicators[];
 extern int16 *g_pageFront;
-/* The clean-cockpit save-under backing image (Step 5; replaces the offscreen
- * scratch page). A full-screen r2d image holding the static lower cockpit so the
- * cockpit strip / scope panel / map-marker save-unders can restore from it. */
+/* The clean-cockpit save-under backing image: a full-screen r2d image holding the
+ * static lower cockpit so the cockpit strip / scope panel / map-marker save-unders
+ * can restore from it. */
 struct R2DImage;
 extern struct R2DImage *g_eg2dBacking;
 extern int16 g_mapZoomLevel;
@@ -319,9 +321,6 @@ extern int16 g_scopeArcEnd;
 extern char tempString[80];
 extern int16 g_gunHits;
 extern union REGS regs;
-extern uint8 g_biosPixelPage;
-extern int16 g_biosPixelX;
-extern int16 g_biosPixelY;
 extern int16 g_unusedEventHist1;
 extern int16 g_wreckAlt;
 extern uint8 g_shapeTargetCategory[UNIT_STATE_COUNT];
@@ -362,7 +361,6 @@ extern char g_stringPool[];
 extern int16 g_currentWeaponType;
 extern int16 g_scopeClipRight;
 extern struct TileSceneObject *matrix3dt_2[5][32];
-extern char g_drawPage;
 extern int16 g_scopeClipBottom;
 extern int16 g_pitchInput;
 extern int16 g_cornerSpeed;
