@@ -77,7 +77,7 @@ void updateHallfame() {
     screenBuf[2] = COLOR_WHITE;
     drawStringCentered(screenBuf, "Original Disk in drive.  Roster will not be saved.", 0, 100, 320);
     drawStringCentered(screenBuf, "Press a key to continue.", 0, 150, 320);
-    screenBuf[2] = COLOR_GRAY;
+    screenBuf[2] = COLOR_LIGHTGRAY;
     gfx_flipPage();
     misc_getKey();
     gfx_waitRetrace();
@@ -105,11 +105,11 @@ void printPilot(int pilotIdx) {
     xPos = (pilotIdx < PILOTS_PER_COLUMN) ? PILOT_COL_LEFT : PILOT_COL_RIGHT;
     yPos = ((pilotIdx & (PILOTS_PER_COLUMN - 1)) * PILOT_ROW_HEIGHT) + PILOT_TOP_MARGIN;
     clearRect(screenBuf, xPos, yPos - 1, xPos + PILOT_ENTRY_WIDTH, yPos + 32);
-    screenDesc.color = (pilotIdx == selectedPilotIdx) ? COLOR_WHITE : COLOR_GRAY;
+    screenDesc.color = (pilotIdx == selectedPilotIdx) ? COLOR_WHITE : COLOR_LIGHTGRAY;
     mystrcpy(todayMissStrBuf, ranks[pilot->rank & 0xf]);
     mystrcat(todayMissStrBuf, pilot->name);
     drawStringCentered(screenBuf, todayMissStrBuf, xPos, yPos, 144);
-    screenDesc.color = COLOR_RED;
+    screenDesc.color = COLOR_LIGHTRED;
     screenDesc.font = 4;
     my_ltoa(pilot->total_score, todayMissStrBuf);
     mystrcat(todayMissStrBuf, " (");
@@ -181,10 +181,10 @@ void processPilotInput() {
             xPos = (prevIdx < PILOTS_PER_COLUMN) ? PILOT_COL_LEFT : PILOT_COL_RIGHT;
             yPos = ((prevIdx & (PILOTS_PER_COLUMN - 1)) * PILOT_ROW_HEIGHT) + PILOT_TOP_MARGIN;
             // looks like ChangeColor() from library.h?
-            gfx_switchColor(screenBuf, xPos, yPos, xPos + PILOT_ENTRY_WIDTH, yPos + PILOT_NAME_HEIGHT, COLOR_WHITE, COLOR_GRAY);
+            gfx_switchColor(screenBuf, xPos, yPos, xPos + PILOT_ENTRY_WIDTH, yPos + PILOT_NAME_HEIGHT, COLOR_WHITE, COLOR_LIGHTGRAY);
             xPos = (selectedPilotIdx < PILOTS_PER_COLUMN) ? PILOT_COL_LEFT : PILOT_COL_RIGHT;
             yPos = ((selectedPilotIdx & (PILOTS_PER_COLUMN - 1)) * PILOT_ROW_HEIGHT) + PILOT_TOP_MARGIN;
-            gfx_switchColor(screenBuf, xPos, yPos, xPos + PILOT_ENTRY_WIDTH, yPos + PILOT_NAME_HEIGHT, COLOR_GRAY, COLOR_WHITE);
+            gfx_switchColor(screenBuf, xPos, yPos, xPos + PILOT_ENTRY_WIDTH, yPos + PILOT_NAME_HEIGHT, COLOR_LIGHTGRAY, COLOR_WHITE);
         }
 }
 

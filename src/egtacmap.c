@@ -43,7 +43,6 @@ void clearStatusPanel(void) {
 void renderHudFrame(int unused) {
     int climbMarkerY, angleFixed, waypointMarkerX, circleX, angle, circleY, prevX, speedBarLen, prevY, markerX, deltaX, markerY, deltaY;
     char seekerShift;
-    g_drawPage = gfx_getDisplayPage();
     // probably x,y
     deltaX = waypoints[waypointIndex].mapX - g_viewX_;
     deltaY = waypoints[waypointIndex].mapY - g_viewY_;
@@ -52,38 +51,37 @@ void renderHudFrame(int unused) {
         if (g_damageTakenFlag != 0) {
             g_damageTakenFlag = 0;
             if (!(keyValue & 0x80)) {
-                setDrawColor(0xd);
+                setDrawColor(COLOR_FLAMING);
                 fillRectBoth(0, 0, 319, 96);
                 gfx_setDacAnimCount(60);
             }
         }
         g_hudDrawnFlag = 1;
         if (keyValue == 0 && g_halfScaleRender == 0) {
-            if (!commData->setupUseJoy) {
-                setDrawColor(0);
-                drawViewportLine(277, 83, 293, 83);
-                drawViewportLine(293, 83, 293, 95);
-                drawViewportLine(293, 95, 277, 95);
-                drawViewportLine(277, 95, 277, 83);
-                drawViewportLine(285, 89, 285, 89);
-                setDrawColor(0xf);
-                markerX = ((int16)(joyAxes[0] - 120) >> 4) + 285;
-                markerY = ((int16)((joyAxes[1] * 3) - 360) >> 6) + 89;
-                drawViewportLine(markerX - 1, markerY, markerX + 1, markerY);
-                drawViewportLine(markerX, markerY + 1, markerX, markerY - 1);
-            }
+            // draw stick position indicator
+            setDrawColor(COLOR_BLACK);
+            drawViewportLine(277, 83, 293, 83);
+            drawViewportLine(293, 83, 293, 95);
+            drawViewportLine(293, 95, 277, 95);
+            drawViewportLine(277, 95, 277, 83);
+            drawViewportLine(285, 89, 285, 89);
+            setDrawColor(COLOR_WHITE);
+            markerX = ((int16)(joyAxes[0] - 120) >> 4) + 285;
+            markerY = ((int16)((joyAxes[1] * 3) - 360) >> 6) + 89;
+            drawViewportLine(markerX - 1, markerY, markerX + 1, markerY);
+            drawViewportLine(markerX, markerY + 1, markerX, markerY - 1);
             if (g_playerPlaneFlags & 0x200) {
-                setDrawColor(0xf);
+                setDrawColor(COLOR_WHITE);
                 drawViewportLine(156, 89, 164, 89);
                 drawViewportLine(160, 86, 160, 92);
             }
-            setDrawColor(g_nightMode != 0 ? 4 : 0);
+            setDrawColor(g_nightMode != 0 ? COLOR_RED : COLOR_BLACK);
             speedBarLen = clampRange((((g_cornerSpeed - g_knots) * 2) / 5) + 29, 0, 61);
             if (speedBarLen) drawViewportLine(72, 85 - speedBarLen, 72, 85);
             drawViewportLine(247, 56, 247, clampRange(-((g_climbRate >> 4) - 56), 20, 85));
             if ((g_playerPlaneFlags & 1) == 0 && (frameTick & 1) != 0 && gameData->unk4 != 0 && g_climbRate < 0) {
                 climbMarkerY = (((g_planeTable.planes[g_closestThreatIndex].flags & 0x200 ? 0x100 : 0x80) / gameData->unk4) >> 4) + 56;
-                setDrawColor(0xf);
+                setDrawColor(COLOR_WHITE);
                 drawViewportLine(242, climbMarkerY - 2, 244, climbMarkerY);
                 drawViewportLine(242, climbMarkerY + 2, 244, climbMarkerY);
             }
@@ -92,7 +90,7 @@ void renderHudFrame(int unused) {
                 drawStringActivePage("stall warning", 132, 30, 0xf);
             }
             if (g_currentWeaponType == 0 || g_currentWeaponType == 2) {
-                setDrawColor(7);
+                setDrawColor(COLOR_LIGHTGRAY);
                 g_flightPathMarkerY = (g_rollPitchTrim >> 6) + 56;
                 if (g_flightPathMarkerY > 10 && g_flightPathMarkerY < 111) {
                     blitSprite(154, g_flightPathMarkerY - 4, 0x94, 21, 11, 7, 0xf);
@@ -107,7 +105,7 @@ void renderHudFrame(int unused) {
                 }
                 // 7 = air to air? Only Sidewinder and Amraam have it
                 if (sams[missiles[missleSpec[missileSpecIndex].weaponIdx].specIndex].weaponClass == 7) {
-                    setDrawColor(7);
+                    setDrawColor(COLOR_LIGHTGRAY);
                     for (angle = 0; angle <= 0x100; angle += 0x10) {
                         angleFixed = angle << 8;
                         circleX = sinMul(angleFixed, 40) + 159;
@@ -132,14 +130,14 @@ void renderHudFrame(int unused) {
                 drawStringBothPages("AUTOPILOT", 236, 90, 0xf);
             }
             waypointMarkerX = clampRange((((int16)(g_waypointBearing - g_ourHead) >> 6) / 3) + 159, 89, 229);
-            setDrawColor(0x0b);
+            setDrawColor(COLOR_LIGHTCYAN);
             drawViewportLine(waypointMarkerX - 2, 15, waypointMarkerX, 17);
             drawViewportLine(waypointMarkerX, 17, waypointMarkerX + 2, 15);
             drawViewportLine(waypointMarkerX - 2, 15, waypointMarkerX + 2, 15);
             goto somewhere;
         }
     somewhere:
-        drawTacticalMap(g_drawPage);
+        drawTacticalMap(0);
     }
     if (g_hudMsgTimer != 0 && ((keyValue == 0 && g_halfScaleRender == 0) || (g_directorMode != 0))) {
         drawStringActivePage(tempString, -(((int16)strlen(tempString) >> 1) - 40) * 4, 24, 0xf);
@@ -207,13 +205,13 @@ void initTacMapView(void) {
 }
 
 // ==== seg000:0x95c9 ====
-void redrawTacMap(int centerX, int centerY) {
-    int16 screenX, screenY, idx, c, savedPage;
 
-    g_mapMode = 0;
-    if (g_hudVisible == 0) {
-        return;
-    }
+/* Recompute the map centre and render the terrain + plane/waypoint markers into
+ * the left-MFD region. Shared by redrawTacMap (which then caches the region to
+ * g_eg2dBacking) and renderTacMapOverlay (the per-frame GL vector path). */
+static void renderTacMapContent(int centerX, int centerY) {
+    int16 screenX, screenY, idx;
+
     drawPanelText(1, "Map", 0);
     idx = 72 << (9 - g_mapZoomLevel);
     g_mapCenterX = clampRange(sinMul(g_ourHead, 0x4000 >> g_mapZoomLevel) + centerX, idx, 0x7fff - idx);
@@ -227,8 +225,6 @@ void redrawTacMap(int centerX, int centerY) {
     } else {
         gfx_setFadeSteps(16);
     }
-    savedPage = g_drawPage;
-    g_drawPage = gfx_getDisplayPage();
     for (idx = 1; idx < g_planeCount; idx++) {
         if (g_planeTable.planes[idx].active != 0 && !(g_planeTable.planes[idx].flags & 0x80) &&
             objectToScreen(g_planeTable.planes[idx].mapX, g_planeTable.planes[idx].mapY, &screenX, &screenY)) {
@@ -245,14 +241,36 @@ void redrawTacMap(int centerX, int centerY) {
             blitSprite(screenX - 1, screenY - 1, 0xa8, 0, 4, 4, 0);
         }
     }
-    g_drawPage = savedPage;
-    if ((char)gfx_getDisplayPage() == 0) {
-        cacheScopePanel();
-    } else {
-        gfx_copyRect(*g_pageBack, 24, 112, *g_pageOffscreen, 24, 112, 72, 56);
+}
+
+void redrawTacMap(int centerX, int centerY) {
+    g_mapMode = 0;
+    if (g_hudVisible == 0) {
+        return;
     }
+    renderTacMapContent(centerX, centerY);
+    gfx_captureToImage(g_eg2dBacking, *g_pageFront, 24, 112, 24, 112, 72, 56);
     restoreScopePanel();
     resetSimObjectLocks();
+}
+
+/* Per-frame tac-map render for renderers that do NOT retain the 2D overlay
+ * (the GL backend rebuilds its native vector/quad stream every present). The
+ * software backend keeps the cached-into-backing model instead (redrawTacMap +
+ * the per-frame marker patch in updateFrame); this path re-emits the whole map —
+ * terrain fills/lines as native polygons/vectors, all markers as textured quads —
+ * into the current frame's stream, so it stays crisp at the window resolution
+ * without touching g_eg2dBacking. Called from renderFrame inside the vector
+ * frame; the player marker is drawn here (no restore-from-backing patch). */
+void renderTacMapOverlay(void) {
+    int16 sx, sy;
+    if (g_hudVisible == 0 || g_mapMode != 0) {
+        return;
+    }
+    renderTacMapContent(g_viewX_, g_viewY_);
+    if (objectToScreen(g_viewX_, g_viewY_, &sx, &sy)) {
+        blitSprite(sx - 1, sy - 1, ((g_ourHead + 0x1000) >> 0xd & 7) * 4 + 164, 4, 4, 4, 0);
+    }
 }
 
 // ==== seg000:0x9875 ====
@@ -430,18 +448,7 @@ void drawClippedLineRegion(int x1, int y1, int x2, int y2, int clipLeft, int cli
     g_lineY2 = y2 - clipTop;
     drawClipLineGlobal();
     gfx_nop23();
-    if (drawBothPages != 0) {
-        g_drawPage = gfx_getDisplayPage();
-        gfx_setPageN(g_drawPage == 0);
-        gfx_setColor(g_pageFront[2]);
-        g_lineX1 = x1 - clipLeft;
-        g_lineY1 = y1 - clipTop;
-        g_lineX2 = x2 - clipLeft;
-        g_lineY2 = y2 - clipTop;
-        drawClipLineGlobal();
-        gfx_setPageN(g_drawPage != 0);
-        gfx_nop23();
-    }
+    (void)drawBothPages; /* single back buffer, so there is no second page */
     g_clipMaxX = 319;
     g_clipMaxY = 199;
     gfx_setBlitOffset(0);
@@ -470,13 +477,11 @@ void drawHudViewLine(int x1, int y1, int x2, int y2) {
 // ==== seg000:0x9e44 ====
 void setDrawColor(int color) {
     g_pageFront[2] = color;
-    g_pageBack[2] = color;
 }
 
 // ==== seg000:0x9e5d ====
 void fillRectBoth(int x1, int y1, int x2, int y2) {
     fillSpanRect(g_pageFront, x1, y1, x2, y2);
-    fillSpanRect(g_pageBack, x1, y1, x2, y2);
 }
 
 // ==== seg000:0x9e94 ====
@@ -496,7 +501,6 @@ void switchIndicatorColor(int indicatorIdx, int color) {
     if (g_hudVisible == 0) goto done;
     if (*(g_tacmapIndicators + indicatorIdx * 5 + 7) != color) {
         gfx_switchColor(g_pageFront, *(g_tacmapIndicators + indicatorIdx * 5 + 3), *(g_tacmapIndicators + indicatorIdx * 5 + 4), *(g_tacmapIndicators + indicatorIdx * 5 + 5), *(g_tacmapIndicators + indicatorIdx * 5 + 6), *(g_tacmapIndicators + indicatorIdx * 5 + 7), color);
-        gfx_switchColor(g_pageBack, *(g_tacmapIndicators + indicatorIdx * 5 + 3), *(g_tacmapIndicators + indicatorIdx * 5 + 4), *(g_tacmapIndicators + indicatorIdx * 5 + 5), *(g_tacmapIndicators + indicatorIdx * 5 + 6), *(g_tacmapIndicators + indicatorIdx * 5 + 7), color);
         *(g_tacmapIndicators + indicatorIdx * 5 + 7) = color;
     }
 done:;
@@ -525,16 +529,11 @@ void fillPanelBox(int panelId, int color) {
 // ==== seg000:0xa0cb ====
 void drawStringBothPages(const char *text, int screenX, int screenY, int color) {
     egDrawStringCentered(g_pageFront, text, screenX, screenY, color);
-    egDrawStringCentered(g_pageBack, text, screenX, screenY, color);
 }
 
 // ==== seg000:0xa0fe ====
 void drawStringActivePage(const char *text, int screenX, int screenY, int color) {
-    if (g_drawPage == 0) {
-        egDrawStringCentered(g_pageFront, text, screenX, screenY, color);
-    } else {
-        egDrawStringCentered(g_pageBack, text, screenX, screenY, color);
-    }
+    egDrawStringCentered(g_pageFront, text, screenX, screenY, color);
 }
 
 // ==== seg000:0xa13a ====
@@ -557,13 +556,15 @@ void drawNumber(int value, int x, int y, int color) {
 }
 
 // ==== seg000:0xa1b1 ====
+/* Recover the tac-scope terrain colour under a moving blip so callers can erase
+ * the blip by re-plotting it (see plotMapObject/targetLock). The DOS original read
+ * the live VGA page via INT 10h AH=0Dh; we sample g_eg2dBacking, the clean cached
+ * scope image (redrawTacMap captures it before per-frame blips are drawn), whose
+ * 320x200 pixels sit at their screen coords over the scope-clip region (24..96,
+ * 112..168). Backend-agnostic: on GL this erase-plot is never presented, but the
+ * sample stays valid. */
 int readScreenPixel(int screenX, int screenY) {
-    regs.h.ah = 0x0D;
-    g_biosPixelX = screenX;
-    g_biosPixelY = screenY;
-    g_biosPixelPage = 0;
-    int86(0x10, &regs, &regs);
-    return regs.h.al;
+    return gfx_readImagePixel(g_eg2dBacking, screenX, screenY);
 }
 
 // ==== seg000:0xa1e4 ====

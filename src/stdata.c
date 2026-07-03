@@ -18,25 +18,6 @@ char placeholder_3d3[] = "xx.3d3";
 /* UI strings */
 extern const char aTheater_0[] = "THEATER";
 
-/* === Group 3 (0x0830-0x0a98): Rank, roster, overlay strings === */
-
-/* Overlay loader variables */
-int ovlSeg1 = 0;
-int ovlParCnt = 0;
-int ovlParBlock = 0;
-int ovlSeg2 = 0;
-char ovlInsaneFlag = 0;
-
-/* Overlay error strings */
-extern const char aAlloc1M[] = "Allocated 1Mb of space????$";
-extern const char aDosLied[] = "MS-DOS lied to us about how much memory was available$";
-extern const char aFileNFound[] = "Filename not found$";
-extern const char aEnoughMem[] = "Not enough memory to load file$";
-extern const char aOvlFail[] = "Overlay load failed for some reason$";
-extern const char aOvlOvrrun[] = "Overlay has overrun allocated memory$";
-extern const char aOvlShrink[] = "Unable to shrink overlay memory allocation$";
-extern const char aOvlRel[] = "Error releasing overlay memory$";
-
 /* === Group 4 (0x12b6-0x130c): File I/O error strings === */
 extern const char aFileNotFound[] = ":File not found$";
 extern const char aNoFileBuffersAvailable[] = ":No file buffers available$";
@@ -90,7 +71,6 @@ uint8 timerCounter = 0;
 uint8 timerCounter2 = 0;
 uint8 timerCounter3 = 0;
 uint8 timerCounter4 = 0;
-uint8 far *moveDst = 0;
 
 /* Sprite blit params struct */
 struct SpriteParams spriteParams = {
@@ -126,7 +106,7 @@ struct PageDesc page2Desc = {
     {0, 0, 0, 0, 0, 0, 0, 0}, /* pad3 */
     (int16 *)&page2Desc       /* selfPtr (page2NumPtr) */
 };
-int16 *page2NumPtr = (int16 *)&page2Desc;
+struct R2DImage *g_stBacking;
 struct PageDesc page3Desc = {
     3,                        /* pageNum */
     {0, 0},                   /* pad1 */
@@ -207,9 +187,6 @@ int16 clipMaxY = 111;
 
 /* Ctrl-Break handler state */
 uint8 cbreakHit = 0;
-int16 origCBreakSeg = 0;
-int16 origCBreakOfs = 0;
-int16 errorCodeStr = 0;
 
 /* Page descriptor for buffer page 0 (color=0x0F, font=0x0100) */
 int16 bufPageDesc[7] = {0, 0, 0x0F, 0, 0, 0, 0x0100};
@@ -560,7 +537,6 @@ char terrainGrid[256];
 struct FlightUnit flightUnits[0x13];
 int16 groundUnitCount;
 uint8 wldReadBuf1[2];
-int16 page1Ptr;
 uint8 gridBuf1[17];
 uint8 gridBuf2[0x100];
 uint8 gridBuf3[0x200];

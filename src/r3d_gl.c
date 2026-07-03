@@ -1,11 +1,12 @@
-/* OpenGL 1.x 3D backend (see docs/render-3d-backend.md, Step 3) — the GPU path.
+/* OpenGL 1.x 3D backend — the GPU path.
  *
  * Implements the R3DBackend 3D vtable against the *decoded* meshes (r3dmesh.c)
- * and owns the GL context + the interim 2D-overlay composite. The 3D main view
+ * and owns the GL context + the 2D-overlay composite. The 3D main view
  * renders through GL at native window resolution with a real depth buffer and
  * double-sided fill (no back-face cull — cheap on a GPU, fixes over-optimized
- * models). The MFD/target sub-view (renderScene == 0) is delegated to the
- * software backend, which draws it into the page as before.
+ * models). The target-model MFD sub-view (renderScene == 0) also renders through
+ * GL, into a scissored sub-viewport over a backdrop snapshotted from the page (the
+ * game fills that MFD region with a two-tone horizon before submitting the model).
  *
  * Transform faithfulness: rather than re-derive the camera math in float (and
  * risk a matrix-convention bug), each object reuses the exact integer
@@ -24,6 +25,7 @@
 
 #include "r3d.h"
 #include "r3d_gl.h"
+#include "r2d.h"
 #include "r3dmesh.h"
 #include "gfx_impl.h"
 #include "eg3dmap.h"
@@ -40,6 +42,19 @@ static SDL_Window *s_win;
 static SDL_GLContext s_ctx;
 static int s_active;
 
+/* glFogCoordf (core GL 1.4) lets us drive fog from an explicit per-vertex distance
+ * instead of GL's eye-space distance. We must: the "eye" coords we submit are
+ * projection numerators (camX/camY are ~65536x the scale of the depth z we pass), so
+ * GL's built-in radial eye-distance fog is dominated by those bogus lateral values
+ * and comes out wrong (and heading-dependent). Loaded at context init. */
+#ifndef GL_FOG_COORD_SRC
+#define GL_FOG_COORD_SRC 0x8450
+#endif
+#ifndef GL_FOG_COORD
+#define GL_FOG_COORD 0x8451
+#endif
+static void (*s_glFogCoordf)(GLfloat);
+
 int r3dgl_wantGL(void) {
     /* Bring a GL window/context up unless software is explicitly forced — auto,
      * "gl", and unknown names all prefer GL (an unknown name falls back to the
@@ -51,10 +66,21 @@ int r3dgl_wantGL(void) {
     return !want || SDL_strcasecmp(want, "software") != 0;
 }
 
-void r3dgl_setGLAttributes(void) {
+/* MSAA multisampling for the GL framebuffer. 4x is effectively free on any desktop
+ * GPU and noticeably cleans up the flat-shaded polygon edges and the native-res
+ * vector HUD. gfx_impl.c retries with 0 if the context won't come up with it. */
+static const int GL_MSAA_SAMPLES = 4;
+
+int r3dgl_msaaSamples(void) { return GL_MSAA_SAMPLES; }
+
+void r3dgl_setGLAttributes(int msaaSamples) {
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, msaaSamples > 0 ? 1 : 0);
+    SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, msaaSamples > 0 ? msaaSamples : 0);
 }
+
+static void gl_imageDestroyed(R2DImage *img); /* drop an image's cached texture on release */
 
 int r3dgl_initContext(SDL_Window *win) {
     s_win = win;
@@ -65,14 +91,18 @@ int r3dgl_initContext(SDL_Window *win) {
     }
     SDL_GL_MakeCurrent(win, s_ctx);
     SDL_GL_SetSwapInterval(1);
+    s_glFogCoordf = (void (*)(GLfloat))SDL_GL_GetProcAddress("glFogCoordf");
+    if (GL_MSAA_SAMPLES > 0) glEnable(GL_MULTISAMPLE); /* no-op if the format has 0 samples */
     {
-        GLint depthBits = 0;
+        GLint depthBits = 0, samples = 0;
         glGetIntegerv(GL_DEPTH_BITS, &depthBits);
-        LogInfo(("GL: %s / %s, depth bits=%d",
+        glGetIntegerv(GL_SAMPLES, &samples);
+        LogInfo(("GL: %s / %s, depth bits=%d, MSAA samples=%d",
                  (const char *)glGetString(GL_RENDERER),
-                 (const char *)glGetString(GL_VERSION), (int)depthBits));
+                 (const char *)glGetString(GL_VERSION), (int)depthBits, (int)samples));
     }
     s_active = 1;
+    r2d_registerImageDestroy(gl_imageDestroyed);
     return 1;
 }
 
@@ -103,23 +133,26 @@ static void fillPools(MeshVtxPools *pools) {
 
 /* ---- scene state -------------------------------------------------------- */
 
-static int s_delegating;     /* current scene routed to the software backend */
-static int s_sceneRendered;  /* a GL 3D main view was drawn this frame (live under the present) */
+static int s_sceneRendered;  /* a GL 3D view was drawn this frame (live under the present) */
+static int s_wide = -1;      /* widescreen 3D (Hor+): -1 = not yet read from F15_WIDESCREEN */
 static float s_proj[16];     /* column-major GL projection for the active scene */
 static float s_pixelScale;   /* letterbox scale: window pixels per 320-space pixel (point size) */
 static float s_vpW, s_vpH;   /* active 3D viewport size in window pixels (screen-span tests) */
 
-/* Deferred submission for painter's-order rendering. The game's surfaces are
- * paper-thin and frequently coplanar, which no z-buffer can resolve, so — like the
- * DOS original — we render with the depth test OFF and rely on draw order: objects
- * farthest-first by the LOD-normalized origin depth (insertSortedObject's key),
- * back-face culled, faces in display-list order. */
+/* Deferred submission for the hybrid depth ordering (see gl_endScene). A real
+ * z-buffer (GL_LEQUAL) resolves genuine occlusion painter's order alone got wrong
+ * (a plane behind a building does not show through); the objects are still
+ * collected and drawn in the original's painter's order — farthest-first by the
+ * LOD-normalized origin depth (insertSortedObject's key), faces in display-list
+ * order — so that surfaces a z-buffer cannot separate (paper-thin
+ * coplanar faces: jet fire on the engine, surf on the sea, deck markings) keep the
+ * original look, the later draw winning at equal depth. */
 typedef struct {
     char *model;
     int16 combined[9];
     long camBase, camX, camY; /* camera-space origin axes (screen-X, screen-Y, depth) */
     int shade, colorBase, curLod;
-    int dirX, dirY, dirZ; /* object facing, for the per-face back-face cull */
+    int posZ;             /* object world altitude (0 = ground/sea), for wire ground test */
     int sortHi, sortLo;   /* normalized origin depth (sort key, farthest = largest) */
     int immediate;        /* flat ground/sea (posZ==0, no sort flag): drawn first/behind */
     int seq;              /* submission index; preserves walk order among immediate objects */
@@ -128,6 +161,65 @@ typedef struct {
 static GlSub s_subs[GL_MAX_SUBS];
 static int s_nSub;
 static int s_subOverflow;
+
+/* World-space 3D line segments (cannon tracers, explosion sparks) submitted this
+ * frame; drawn as camera-facing ribbons (z-tested + fogged) at the end of the
+ * scene. Endpoints are the scene camera-space (screen-X axis, screen-Y axis,
+ * depth) triples; color is a final palette index. */
+typedef struct {
+    long baseXA, camXA, camYA;
+    long baseXB, camXB, camYB;
+    int color;
+} GlLine;
+#define GL_MAX_LINES 256
+static GlLine s_lines[GL_MAX_LINES];
+static int s_nLine;
+static int s_lineOverflow;
+
+/* INDEX8 -> RGBA8888 conversion scratch, shared by the page composite, the sprite
+ * textures and the sub-view backdrop snapshot. */
+static uint8 *s_rgba;
+static int s_rgbaCap;
+static uint8 *ensureRgbaScratch(int need) {
+    if (need > s_rgbaCap) {
+        SDL_free(s_rgba);
+        s_rgba = (uint8 *)SDL_malloc(need);
+        s_rgbaCap = s_rgba ? need : 0;
+    }
+    return s_rgba;
+}
+
+/* Upload an INDEX8 sub-rect of a surface as an RGBA texture through `tex` (created
+ * on first use), resolving indices via the live palette. Nearest + clamp. */
+static void uploadIndexedRegion(GLuint *tex, SDL_Surface *surf, SDL_Palette *pal,
+                                int rx, int ry, int rw, int rh) {
+    const uint8 *base;
+    uint8 *rgba;
+    int x, y, pitch;
+    if (!surf || !pal || rw <= 0 || rh <= 0) return;
+    rgba = ensureRgbaScratch(rw * rh * 4);
+    if (!rgba) return;
+    base = (const uint8 *)surf->pixels;
+    pitch = surf->pitch;
+    for (y = 0; y < rh; y++) {
+        const uint8 *row = base + (size_t)(ry + y) * pitch + rx;
+        uint8 *out = rgba + (size_t)y * rw * 4;
+        for (x = 0; x < rw; x++) {
+            SDL_Color c = pal->colors[row[x]];
+            out[x * 4 + 0] = c.r;
+            out[x * 4 + 1] = c.g;
+            out[x * 4 + 2] = c.b;
+            out[x * 4 + 3] = 255;
+        }
+    }
+    if (!*tex) glGenTextures(1, tex);
+    glBindTexture(GL_TEXTURE_2D, *tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rw, rh, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+}
 
 /* Map a final palette index to GL colour. */
 static void glColorIndex(int idx) {
@@ -141,6 +233,28 @@ static int glEdgeRunColor(int depthHi) {
     int bx = depthHi > 5000 ? 8 : depthHi > 2500 ? 7 : 0xf;
     return colorLut[bx];
 }
+
+/* 3D wire ribbon half-width as a function of the wire's world length (`len`, which
+ * is proportional to true world length with one global constant — the rotation
+ * matrices are Q15 and LOD scale is divided out before len, so it is the same for
+ * a banking plane and flat terrain). Width must grow SUBLINEARLY with length: a
+ * 40cm antenna has to be relatively fat to be visible, while a km-long road must
+ * stay thin (width-per-length spans ~60x across antenna->road). A constant or
+ * affine law can't bend that way; a power law can. Anchored on the two measured
+ * features — antenna (len~2k -> ~250) and road (len~47M -> ~100k) — POW lands ~0.6,
+ * SCALE ~2.5, and the same curve also hits masts/beams (~7k) and ridges (~24k).
+ * POW < 1 is the sublinear knee; SCALE sets overall thickness. */
+static const float WIRE_HW_SCALE = 2.5f;
+static const float WIRE_HW_POW   = 0.6f;
+
+/* A wire whose two endpoints sit at (nearly) the same WORLD altitude is a ground
+ * feature — a road, a runway marking, an outline on a ship deck. Those must lie
+ * FLAT on the ground (extruded within the horizontal plane) instead of facing the
+ * camera, or they billboard upright like a row of fences as the camera banks.
+ * A steeper wire (antenna, mast, building edge) keeps the camera-facing ribbon so
+ * it reads as a line from any angle. WIRE_FLAT_VERT is the cutoff on |dot(lineDir,
+ * worldUp)|: 0 = perfectly horizontal, 1 = vertical; below the cutoff we lay flat. */
+static const float WIRE_FLAT_VERT = 0.00030f;  /* lay flat when within ~17deg of horizontal */
 
 /* Peek a shape's finest-LOD sort flag (the 0x40 bit on the body's first opcode).
  * projectSceneObject draws an object immediately (behind the sorted queue) only
@@ -156,6 +270,103 @@ static int peekSortFlag(const uint8 *model, const uint8 *limit) {
     if ((p[0] & 0x60) == 0x60) p++; /* storeObjTransform byte precedes the opcode */
     if (p >= limit) return 0;
     return (p[0] & 0x40) ? 1 : 0;
+}
+
+/* A model is "flat" (a ground decal: sea, surf, road, runway/deck marking) when its
+ * geometry has no real vertical relief — it is planar, so it sits coplanar with the
+ * ground and the z-buffer cannot order it, but draw order can. A model with relief
+ * (a cargo ship and its bridge, a building) is NOT flat: it must be z-buffered so its
+ * own near faces occlude its far ones.
+ *
+ * Test: a ground decal is genuinely PLANAR — one model-space axis collapses to ~0
+ * (the world data models the sea, terrain tiles, roads and deck markings with a span
+ * of exactly 0 on their vertical axis). A solid has real extent on all three: the
+ * cargo ship measures 384x36x24, so its thinnest axis (24) sits well above any planar
+ * shape. Flat iff the thinnest axis span is at/near zero — a small absolute slack
+ * tolerates minor modelling noise while staying far below the ship's 24. (A ratio
+ * test fails here: the ship is ~16x longer than tall, so any ratio loose enough to
+ * pass real sheets also catches it.) */
+static const int GL_FLAT_SPAN = 8;
+
+/* Relief is a static property of the model, but a frame has many instances of a few
+ * models (terrain tiles), so cache the verdict per model pointer; reset each frame
+ * (the world data can reload between regions). */
+static const char *s_flatPtr[256];
+static uint8 s_flatVal[256];
+static int s_flatN;
+
+static int modelIsFlat(const char *model) {
+    int i, minx, maxx, miny, maxy, minz, maxz, sx, sy, sz, smin, flat;
+    MeshVtxPools pools;
+    MeshLod *l;
+    for (i = 0; i < s_flatN; i++)
+        if (s_flatPtr[i] == model) return s_flatVal[i];
+
+    fillPools(&pools);
+    flat = 0; /* undecodable / non-model -> treat as solid (z-buffer it; the safe side) */
+    if (r3dmesh_decode((const uint8 *)model,
+                       (const uint8 *)g_world3dData + WORLD3D_DATA_SIZE,
+                       &pools, colorLut, &s_mesh) >= 0) {
+        l = &s_mesh.lods[0];
+        if (l->form == MESH_FORM_MODEL && l->nVerts > 0) {
+            minx = maxx = l->verts[0].x;
+            miny = maxy = l->verts[0].y;
+            minz = maxz = l->verts[0].z;
+            for (i = 1; i < l->nVerts; i++) {
+                int X = l->verts[i].x, Y = l->verts[i].y, Z = l->verts[i].z;
+                if (X < minx) minx = X;
+                if (X > maxx) maxx = X;
+                if (Y < miny) miny = Y;
+                if (Y > maxy) maxy = Y;
+                if (Z < minz) minz = Z;
+                if (Z > maxz) maxz = Z;
+            }
+            sx = maxx - minx; sy = maxy - miny; sz = maxz - minz;
+            smin = sx; if (sy < smin) smin = sy; if (sz < smin) smin = sz;
+            flat = (smin <= GL_FLAT_SPAN);
+        }
+    }
+    if (s_flatN < 256) { s_flatPtr[s_flatN] = model; s_flatVal[s_flatN++] = (uint8)flat; }
+    return flat;
+}
+
+/* Atmospheric haze. The original colours each object by distance through 8 discrete
+ * palette bands (g_objShade = (v<<4)+0x80, added to colorLut[colorByte]): the near
+ * band 0x80 is the saturated true colour, and with distance every hue brightens and
+ * desaturates toward a light grey — but in coarse, visible steps. GL_FOG reproduces
+ * the same effect per-pixel and smooth: draw with the near/saturated base colour
+ * (colorLut[c] + GL_NEAR_SHADE) and let fog blend it toward the live horizon colour
+ * with distance, sampled from the palette each frame (so night/region repalettes follow
+ * automatically). We fog toward the GROUND side of the horizon (ground ramp base, 0x70),
+ * not the sky side (0x60): most fogged geometry is terrain and must melt into the earth
+ * band of the horizon sphere. By day the two meet at the same haze grey, but at dusk/
+ * night the sky side carries the sunset glow while the earth is dark — fogging to 0x60
+ * would wrongly brighten distant ground.
+ *
+ * Fog distance is supplied explicitly per vertex (fogVertex below) as the forward
+ * depth z we already emit — the LOD-normalized eye depth (vd_), which the z-buffer
+ * also uses and which equals true distance across LODs (so it is heading-independent).
+ * We can NOT let GL derive the distance from the submitted "eye" position: camX/camY
+ * are projection numerators ~65536x the scale of that z, so GL's radial eye-distance
+ * fog is swamped by them and comes out wrong (and heading-dependent). Range is in
+ * those vd_ forward-depth units (1..fGate, the projection's near..far). */
+static const int GL_NEAR_SHADE = 0x80;  /* the v=0 saturated band: the un-hazed colour */
+static const int GL_HORIZON_IDX = 0x70; /* ground-at-horizon (earth side); see above */
+/* Falloff curve. GL_LINEAR ramps straight from FOG_NEAR_DIST (clear) to FOG_FAR_DIST
+ * (full haze). GL_EXP / GL_EXP2 ignore near/far and use FOG_DENSITY instead, giving an
+ * exponential curve — clearer up close, thickening with distance (EXP2 is the steeper,
+ * more "atmospheric" of the two). Switch FOG_MODE to taste; tune the matching knob. */
+static const GLint FOG_MODE = GL_EXP;
+static const float FOG_NEAR_DIST = 0.0f;    /* GL_LINEAR: haze onset, vd_ forward-depth units */
+static const float FOG_FAR_DIST = 6000.0f;  /* GL_LINEAR: fully hazed (horizon) at this depth */
+static const float FOG_DENSITY = 0.0003f;   /* GL_EXP/EXP2: higher = haze closes in sooner */
+//static const float FOG_DENSITY = 0.0003f;   /* GL_EXP/EXP2: higher = haze closes in sooner */
+
+/* Emit one vertex with its fog distance = its forward depth z (planar), bypassing GL's
+ * eye-distance derivation. Falls back to a plain vertex if glFogCoordf is unavailable. */
+static void fogVertex(float x, float y, float z) {
+    if (s_glFogCoordf) s_glFogCoordf(z);
+    glVertex3f(x, y, z);
 }
 
 static const char *gl_name(void) { return "opengl1"; }
@@ -219,14 +430,17 @@ static float fmulQ15(float a, float b) { return a * b * (1.0f / 32768.0f); }
  * a flat GL quad filled from that ramp, drawn in an ortho viewport with depth off
  * so the 3D objects always composite in front (matching the original's draw-first,
  * no-Z background). Runs only at detail >= 3; below that a flat clear stands in. */
-static void glDrawSphere(int Wv, int Hv) {
+static void glDrawSphere(float oLeft, float oRight, float oBottom, float oTop) {
     float rearX[17], rearY[17], foreX[17], foreY[17], facePts[8];
     int ringIx;
     float ringRad, radiusScale, i, j;
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(0, Wv, Hv, 0, -1, 1); /* y-down, viewport-local */
+    /* y-down, in 320-space virtual coords. In widescreen the extents run past
+     * 0..Wv / 0..Hv so the horizon spans the full window with the same central
+     * mapping as the 3D objects; in 4:3 they are exactly the viewport-local box. */
+    glOrtho(oLeft, oRight, oBottom, oTop, -1, 1);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     glDisable(GL_DEPTH_TEST);
@@ -290,34 +504,156 @@ static void glDrawSphere(int Wv, int Hv) {
     glShadeModel(GL_FLAT);
 }
 
-/* Fit the 320x200 logical image into the window preserving its aspect: a single
- * uniform scale plus a centring offset (pillarbox/letterbox bars on the unused
- * axis). Both the GL 3D viewport and the 2D present quad map through this, so the
- * 3D stays aligned with the HUD and nothing stretches on non-1.6 displays (e.g.
- * 21:9). Matches the software path's SDL_LOGICAL_PRESENTATION_LETTERBOX. */
-static void computeLetterbox(int win_w, int win_h, float *scale, int *ox, int *oy) {
-    float sw = (float)win_w / LOGICAL_WIDTH;
-    float sh = (float)win_h / LOGICAL_HEIGHT;
-    float s = sw < sh ? sw : sh;
-    *scale = s;
-    *ox = (int)((win_w - LOGICAL_WIDTH * s) * 0.5f);
-    *oy = (int)((win_h - LOGICAL_HEIGHT * s) * 0.5f);
+static GLuint s_backdropTex; /* per-frame snapshot of the sub-view MFD page region */
+
+/* Common per-model GL state for a 3D scene (main view and target sub-view): the
+ * perspective projection, double-sided flat fill, and the hybrid depth setup
+ * (z-buffer + GL_LEQUAL + polygon offset — see gl_endScene). */
+static void beginModelPass(void) {
+    glMatrixMode(GL_PROJECTION);
+    glLoadMatrixf(s_proj);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glDisable(GL_CULL_FACE); /* double-sided per docs */
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_BLEND);
+    glShadeModel(GL_FLAT);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glEnable(GL_POLYGON_OFFSET_LINE);
+    glEnable(GL_POLYGON_OFFSET_POINT);
+}
+
+/* Target-model MFD sub-view (renderScene == 0). The game fills the MFD region of
+ * the page with its two-tone horizon before submitting the model; the software
+ * rasterizer drew the model straight over that page background. GL renders under
+ * the page, so we snapshot that region as the GL backdrop, punch the page region
+ * show-through, then render the model over the backdrop in a scissored viewport.
+ * Only depth is cleared (scissored) so the main 3D already in the framebuffer is
+ * preserved; the model's blips/labels still draw into the page (over the model). */
+static void gl_beginSubScene(const R3DScene *s) {
+    int win_w, win_h, vpTop, vpBot, vpLeft, vpRight, Wv, Hv, lbx, lby, gx, gy, gw, gh;
+    float scale, fGate;
+    SDL_Surface *page;
+    SDL_Palette *pal;
+
+    r3d_setObjCullWiden(1, 1, 1, 1); /* the MFD is inside the pillarboxed 4:3 UI box */
+    setup3DTransform(s->viewport, s->angleX, s->angleY, s->angleZ,
+                     s->posX, s->posY, s->posZ, 0);
+
+    vpTop = s->viewport[7];
+    vpBot = s->viewport[8];
+    vpLeft = s->viewport[9];
+    vpRight = s->viewport[10];
+    Wv = vpRight - vpLeft + 1;
+    Hv = vpBot - vpTop + 1;
+    if (Wv < 1) Wv = 1;
+    if (Hv < 1) Hv = 1;
+
+    fGate = (float)(*(int16 *)(colorLut + 0x20));
+    if (fGate < 2.0f) fGate = 8192.0f;
+    buildProjection(Wv, Hv, g_viewCenterX, g_viewCenterY, fGate);
+    /* The target view magnifies the model by dividing the perspective depth by
+     * 2^g_extraScaleShift (projectVertexToScreen); reproduce that as a matching
+     * boost to the projection's x/y focal terms. g_halfScaleRender halves it. */
+    {
+        float sc = 1.0f;
+        if (g_extraScaleShift) sc *= (float)(1 << g_extraScaleShift);
+        if (g_halfScaleRender) sc *= 0.5f;
+        s_proj[0] *= sc;
+        s_proj[5] *= sc;
+    }
+
+    SDL_GetWindowSizeInPixels(s_win, &win_w, &win_h);
+    {
+        R2DMapping m;
+        r2d_computeMapping(LOGICAL_WIDTH, LOGICAL_HEIGHT, win_w, win_h, &m);
+        scale = m.scale;
+        lbx = m.offX;
+        lby = m.offY;
+    }
+    s_pixelScale = scale;
+    gx = lbx + (int)(vpLeft * scale);
+    gw = (int)(Wv * scale);
+    gh = (int)(Hv * scale);
+    gy = win_h - (lby + (int)(vpTop * scale)) - gh;
+
+    /* Snapshot the page's MFD region as the backdrop, THEN punch it show-through. */
+    page = gfx_getCurPageSurface();
+    pal = gfx_getPalette();
+    uploadIndexedRegion(&s_backdropTex, page, pal, vpLeft, vpTop, Wv, Hv);
+    if (page) {
+        SDL_Rect rc = {vpLeft, vpTop, Wv, Hv};
+        SDL_FillSurfaceRect(page, &rc, GFX_GL_SHOWTHROUGH_KEY);
+    }
+
+    glViewport(gx, gy, gw, gh);
+    glScissor(gx, gy, gw, gh);
+    glEnable(GL_SCISSOR_TEST);
+    s_vpW = (float)gw;
+    s_vpH = (float)gh;
+
+    /* Backdrop quad fills the viewport (ortho, depth off); clear only this region's
+     * depth so the model z-buffers against a clean slate over the main-view depth. */
+    glDepthMask(GL_TRUE);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    if (s_backdropTex) {
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+        glOrtho(0, gw, gh, 0, -1, 1);
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_BLEND);
+        glColor3ub(255, 255, 255);
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, s_backdropTex);
+        glBegin(GL_QUADS);
+        glTexCoord2f(0, 0); glVertex2f(0, 0);
+        glTexCoord2f(1, 0); glVertex2f((float)gw, 0);
+        glTexCoord2f(1, 1); glVertex2f((float)gw, (float)gh);
+        glTexCoord2f(0, 1); glVertex2f(0, (float)gh);
+        glEnd();
+        glDisable(GL_TEXTURE_2D);
+    }
+
+    beginModelPass();
+    s_nSub = 0;
+    s_subOverflow = 0;
+    s_nLine = 0;
+    s_lineOverflow = 0;
+    s_flatN = 0;
+    s_sceneRendered = 1; /* live 3D is now in the framebuffer; the present must not clear it */
 }
 
 static void gl_beginScene(const R3DScene *s) {
     int win_w, win_h, vpTop, vpBot, vpLeft, vpRight, Wv, Hv, lbx, lby;
-    float scale, fGate;
+    float scale, fGate, sphOrtho[4];
     int16 skyIdx;
     SDL_Surface *page;
 
-    /* The tiny MFD/target sub-view stays on the software rasterizer (it draws
-     * into the page and composites as plain 2D); GL takes only the main view. */
+    /* The target-model MFD sub-view has its own scissored GL path (backdrop from
+     * the page + model), separate from the main view's full sky/fog setup. */
     if (s->renderScene == 0) {
-        s_delegating = 1;
-        r3d_softwareBackend.beginScene(s);
+        gl_beginSubScene(s);
         return;
     }
-    s_delegating = 0;
+    /* This is a flight 3D frame: its HUD/MFD line & point submissions record for
+     * native-resolution replay (the 2D-only screens never reach here, so they
+     * keep rasterizing into the page). */
+    r2d_vectorBeginFrame();
+
+    if (s_wide < 0) {
+        /* Widescreen 3D (Hor+): on by default; F15_WIDESCREEN=0 forces 4:3. The
+         * stock UI stays a centred, pillarboxed 320x200 image (it never widens);
+         * only the 3D fills the extra width (docs/render-2d-overlay.md). */
+        const char *e = SDL_getenv("F15_WIDESCREEN");
+        s_wide = (e && (e[0] == '0' || e[0] == 'n' || e[0] == 'N')) ? 0 : 1;
+        LogInfo(("r3d_gl: widescreen 3D %s", s_wide ? "on" : "off"));
+    }
 
     /* Reuse the software scene setup minus the sphere / shared-vertex precompute
      * (renderScene = 0 here): view matrix + position + viewport + spin advance +
@@ -340,7 +676,15 @@ static void gl_beginScene(const R3DScene *s) {
     buildProjection(Wv, Hv, g_viewCenterX, g_viewCenterY, fGate);
 
     SDL_GetWindowSizeInPixels(s_win, &win_w, &win_h);
-    computeLetterbox(win_w, win_h, &scale, &lbx, &lby);
+    /* The 320x200 UI box maps to the window through the shared r2d letterbox so
+     * the 3D viewport stays aligned with the pillarboxed HUD. */
+    {
+        R2DMapping m;
+        r2d_computeMapping(LOGICAL_WIDTH, LOGICAL_HEIGHT, win_w, win_h, &m);
+        scale = m.scale;
+        lbx = m.offX;
+        lby = m.offY;
+    }
     s_pixelScale = scale;
 
     /* Clear the whole window (including the letterbox bars) to black; the 3D
@@ -352,16 +696,51 @@ static void gl_beginScene(const R3DScene *s) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     /* GL viewport origin is bottom-left; the 320-space rect is top-down. The
-     * uniform letterbox scale keeps the same proportions as 640x400 at any size. */
+     * uniform letterbox scale keeps the same proportions as 640x400 at any size.
+     * gx/gw/gy/gh is the centred 4:3 sub-rect the letterboxed UI quad occupies. */
     {
         int gx = lbx + (int)(vpLeft * scale);
         int gw = (int)(Wv * scale);
         int gh = (int)(Hv * scale);
         int gy = win_h - (lby + (int)(vpTop * scale)) - gh;
-        glViewport(gx, gy, gw, gh);
-        glScissor(gx, gy, gw, gh);
-        s_vpW = (float)gw;
-        s_vpH = (float)gh;
+        if (s_wide) {
+            /* Render the 3D across the WHOLE window and remap the projection so the
+             * central 320-space region still lands on exactly the gx/gw/gy/gh pixels
+             * (px = C0 + C1*camX/depth preserved, extended linearly outside). The
+             * keyed windscreen of the centred UI quad therefore stays aligned with
+             * the 3D behind it, while the side gaps — uncovered by the UI quad in
+             * present — reveal more world. At 4:3 (gw==win_w, gh==win_h) the remap
+             * is the identity, so nothing changes. */
+            float ax = s_proj[0], az = s_proj[8], by = s_proj[5], bz = s_proj[9];
+            float C0 = (float)gx + 0.5f * gw * (1.0f + az);
+            float D0 = (float)gy + 0.5f * gh * (1.0f + bz);
+            s_proj[0] = ax * gw / win_w;
+            s_proj[8] = 2.0f * C0 / win_w - 1.0f;
+            s_proj[5] = by * gh / win_h;
+            s_proj[9] = 2.0f * D0 / win_h - 1.0f;
+            glViewport(0, 0, win_w, win_h);
+            glScissor(0, 0, win_w, win_h);
+            s_vpW = (float)win_w;
+            s_vpH = (float)win_h;
+            /* Widen the object frustum cull to the same view cone the projection
+             * now covers, so peripheral buildings/terrain models in the side gaps
+             * are fetched instead of culled at the 4:3 boundary. */
+            r3d_setObjCullWiden(win_w, gw, win_h, gh);
+            /* Sphere ortho spanning the full window with the same central mapping:
+             * window x=gx -> virtual 0, x=gx+gw -> virtual Wv (scale px/virtual). */
+            sphOrtho[0] = -(float)gx / scale;                                  /* left  */
+            sphOrtho[1] = sphOrtho[0] + (float)win_w / scale;                  /* right */
+            sphOrtho[3] = -((float)lby + (float)vpTop * scale) / scale;        /* top   */
+            sphOrtho[2] = ((float)win_h - ((float)lby + (float)vpTop * scale)) / scale; /* bottom */
+        } else {
+            glViewport(gx, gy, gw, gh);
+            glScissor(gx, gy, gw, gh);
+            s_vpW = (float)gw;
+            s_vpH = (float)gh;
+            r3d_setObjCullWiden(1, 1, 1, 1); /* 4:3: original cull */
+            sphOrtho[0] = 0.0f; sphOrtho[1] = (float)Wv;
+            sphOrtho[2] = (float)Hv; sphOrtho[3] = 0.0f;
+        }
     }
     glEnable(GL_SCISSOR_TEST);
 
@@ -387,16 +766,55 @@ static void gl_beginScene(const R3DScene *s) {
     glDepthMask(GL_TRUE);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    /* Sky/ground background sphere (detail >= 3) drawn first (farthest), then the
-     * 3D projection is restored for the objects. Painter's order with the depth
-     * test OFF — objects are sorted + drawn back-to-front in gl_endScene. */
-    if ((char)g_detailLevel >= 3) glDrawSphere(Wv, Hv);
+    /* Sky/ground background sphere (detail >= 3) drawn first (farthest) with the
+     * depth test off so it stays behind everything; the 3D projection is then
+     * restored for the objects. */
+    if ((char)g_detailLevel >= 3)
+        glDrawSphere(sphOrtho[0], sphOrtho[1], sphOrtho[2], sphOrtho[3]);
     glMatrixMode(GL_PROJECTION);
     glLoadMatrixf(s_proj);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
-    glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
+
+    /* Hybrid depth ordering (see gl_endScene): a real z-buffer resolves genuine
+     * occlusion (a plane behind a building does not show through), while objects
+     * are still drawn in the original's painter's order so coplanar surfaces a
+     * z-buffer can't separate keep the original look. GL_LEQUAL lets the later-drawn
+     * coplanar surface win at equal depth; a per-draw polygon offset (gl_endScene)
+     * turns draw order into a depth tiebreak so they never z-fight. The depth buffer
+     * was cleared above; the sphere left it untouched (depth writes off). */
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glEnable(GL_POLYGON_OFFSET_LINE);
+    glEnable(GL_POLYGON_OFFSET_POINT);
+
+    /* Distance haze (the GL equivalent of the software path's stepped g_objShade
+     * bands). Enabled after the sky sphere so the background gradient itself isn't
+     * fogged; disabled in gl_endScene.
+     * Fog colour = live horizon colour so geometry fades into the horizon line. The
+     * distance is the per-vertex forward depth supplied by fogVertex (GL_FOG_COORD),
+     * not GL's eye-distance — see fogVertex. */
+    {
+        uint8 fr, fg, fb;
+        GLfloat fogColor[4];
+        gfx_paletteRGB(GL_HORIZON_IDX, &fr, &fg, &fb);
+        fogColor[0] = fr / 255.0f;
+        fogColor[1] = fg / 255.0f;
+        fogColor[2] = fb / 255.0f;
+        fogColor[3] = 1.0f;
+        glFogi(GL_FOG_MODE, FOG_MODE);
+        glFogfv(GL_FOG_COLOR, fogColor);
+        if (FOG_MODE == GL_LINEAR) {
+            glFogf(GL_FOG_START, FOG_NEAR_DIST);
+            glFogf(GL_FOG_END, FOG_FAR_DIST);
+        } else {
+            glFogf(GL_FOG_DENSITY, FOG_DENSITY);
+        }
+        if (s_glFogCoordf) glFogi(GL_FOG_COORD_SRC, GL_FOG_COORD); /* use fogVertex's z */
+        glEnable(GL_FOG);
+    }
 
     /* Make the page's viewport region show-through so the 2D composite reveals
      * the GL 3D under it; the HUD/cockpit then draw over it (non-key, opaque). */
@@ -407,6 +825,9 @@ static void gl_beginScene(const R3DScene *s) {
     }
     s_nSub = 0;
     s_subOverflow = 0;
+    s_nLine = 0;
+    s_lineOverflow = 0;
+    s_flatN = 0; /* model-flatness cache is per-frame (world data may reload) */
     s_sceneRendered = 1;
 }
 
@@ -414,12 +835,8 @@ static void gl_submit(const R3DSubmit *o) {
     GlSub *r;
     int16 combined[9];
     long camBase, camTransX, camTransY, depth;
-    int shade, dirX, dirY, dirZ, shift, i;
+    int shade, shift, i;
 
-    if (s_delegating) {
-        r3d_softwareBackend.submit(o);
-        return;
-    }
     if (s_nSub >= GL_MAX_SUBS) {
         s_subOverflow++;
         return;
@@ -427,8 +844,7 @@ static void gl_submit(const R3DSubmit *o) {
 
     if (r3d_objTransformFar((char far *)o->mesh, o->yaw, o->pitch, o->roll,
                             o->posX, o->posY, o->posZ,
-                            combined, &camBase, &camTransX, &camTransY, &shade,
-                            &dirX, &dirY, &dirZ))
+                            combined, &camBase, &camTransX, &camTransY, &shade))
         return; /* frustum-culled */
 
     r = &s_subs[s_nSub];
@@ -440,16 +856,19 @@ static void gl_submit(const R3DSubmit *o) {
     r->shade = shade;
     r->colorBase = g_objColorBase;
     r->curLod = g_curLod;
-    r->dirX = dirX;
-    r->dirY = dirY;
-    r->dirZ = dirZ;
+    r->posZ = o->posZ;
 
-    /* Immediate (drawn first/behind the sorted queue) iff flat at world Z=0 with no
-     * sort flag, exactly as projectSceneObject classifies it. This keeps flat
-     * ground/sea behind elevated objects instead of a near tile overpainting them. */
+    /* Immediate = the no-z-buffer ground class (drawn first, painter's): a flat,
+     * Z=0, unsorted shape. Unlike projectSceneObject (which keys only on Z=0 + sort
+     * flag), we also require the model to be geometrically FLAT, so a 3D object that
+     * merely SITS at sea level — a cargo ship with a tall bridge — is NOT lumped in
+     * with the sea and instead gets z-buffered (pass 2), fixing its self-occlusion.
+     * The lowest-LOD ground tile (colorBase 0x400) is always flat (its non-ground
+     * faces are junk that would otherwise read as relief). */
     r->immediate = (o->posZ == 0 &&
                     !peekSortFlag((const uint8 *)o->mesh,
-                                  (const uint8 *)g_world3dData + WORLD3D_DATA_SIZE));
+                                  (const uint8 *)g_world3dData + WORLD3D_DATA_SIZE) &&
+                    (g_objColorBase == 0x400 || modelIsFlat((const char *)o->mesh)));
     r->seq = s_nSub;
     s_nSub++;
 
@@ -464,12 +883,65 @@ static void gl_submit(const R3DSubmit *o) {
     if (g_curLod == 2 && g_objRenderMode == 5) r->sortHi += 0x20;
 }
 
+static void gl_submitLine(const R3DLine *o) {
+    GlLine *l;
+    if (s_nLine >= GL_MAX_LINES) {
+        s_lineOverflow++;
+        return;
+    }
+    l = &s_lines[s_nLine++];
+    l->baseXA = o->baseXA;
+    l->camXA = o->camXA;
+    l->camYA = o->camYA;
+    l->baseXB = o->baseXB;
+    l->camXB = o->camXB;
+    l->camYB = o->camYB;
+    l->color = o->color;
+}
+
 /* Distance-scaled single-pixel decoration. The original drew these as a fixed 1px
  * dot at any range; here the point shrinks with camera depth (and, with smooth-point
  * coverage, the far sub-pixel ones fade out) so the scattered ground decorations read
  * as receding into the distance — the depth cue they exist to give. Pixel drift from
  * the integer path is accepted (Q1). REF_DEPTH (a depthHi of 2500) maps to one logical
  * pixel and aligns with the edge-run colour-shade bands. */
+/* Per-PRIMITIVE forward depth bias (glPolygonOffset units), applied in draw order
+ * via a frame-global running counter (s_paintSeq, bumped by paintBias before every
+ * face/line/point). Each successive primitive is nudged one step toward the camera,
+ * so any two surfaces the z-buffer sees as coplanar — whether in different objects
+ * (overlapping terrain tiles, sea vs deck) OR within one model (markings, fire on
+ * the engine) — are ordered by draw order: the later one wins under GL_LEQUAL
+ * instead of z-fighting. The step must exceed the depth-buffer jitter between
+ * coplanar faces (which is several LSB out at distance, where far depth resolution
+ * is poor) yet stay far below the gap between genuinely separated objects, so the
+ * z-test still drives real occlusion. Raise if coplanar faces still shimmer; lower
+ * if a clearly-nearer surface is punched through by a later, farther draw. */
+static const float GL_PAINT_BIAS = 20.0f;
+static int s_paintSeq; /* primitives drawn so far this frame (reset in gl_endScene) */
+
+/* Bias the next primitive one draw-step toward the camera. Call OUTSIDE glBegin/End,
+ * before each primitive, so draw order breaks coplanar depth ties. */
+static void paintBias(void) {
+    glPolygonOffset(0.0f, -(float)(s_paintSeq++) * GL_PAINT_BIAS);
+}
+
+/* Round anti-aliased points come from GL_POINT_SMOOTH's coverage-blended alpha. The
+ * GL spec routes point AA through the multisample resolve instead when MULTISAMPLE is
+ * on, which rasterizes the point as a hard SQUARE and drops the soft rim fade — so we
+ * suspend multisampling for the point draw and restore it after (polygons/lines keep
+ * their MSAA edges). Restore mirrors the init gate (GL_MSAA_SAMPLES > 0). */
+static void beginSmoothPoints(void) {
+    glDisable(GL_MULTISAMPLE);
+    glEnable(GL_POINT_SMOOTH);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+}
+static void endSmoothPoints(void) {
+    glDisable(GL_BLEND);
+    glDisable(GL_POINT_SMOOTH);
+    if (GL_MSAA_SAMPLES > 0) glEnable(GL_MULTISAMPLE);
+}
+
 #define GL_POINT_REF_DEPTH 5000.0f /* depthHi at which the point is one logical pixel */
 #define GL_POINT_NEAR_CAP 3.0f     /* max size, in logical pixels, for the nearest points */
 #define GL_POINT_MIN_SIZE 0.5f     /* smallest size; smooth coverage fades it below 1px */
@@ -480,22 +952,23 @@ static void drawDepthPoint(float x, float y, long depth32, int colorIdx) {
     sz = s_pixelScale * (GL_POINT_REF_DEPTH / (float)depthHi);
     if (sz > GL_POINT_NEAR_CAP * s_pixelScale) sz = GL_POINT_NEAR_CAP * s_pixelScale;
     if (sz < GL_POINT_MIN_SIZE) sz = GL_POINT_MIN_SIZE;
+    paintBias();
     glPointSize(sz);
     glColorIndex(colorIdx);
     glBegin(GL_POINTS);
-    glVertex3f(x, y, (float)depth32 / 65536.0f);
+    fogVertex(x, y, (float)depth32 / 65536.0f);
     glEnd();
 }
 
-/* Decode + transform + draw one object (painter's order; depth test already off).
- * Re-decodes the mesh (cheap; avoids caching across region reloads). */
+/* Decode + transform + draw one object (painter's order; z-buffer on, GL_LEQUAL,
+ * per-draw polygon offset set by the caller). Re-decodes the mesh (cheap; avoids
+ * caching across region reloads). */
 static void drawSub(const GlSub *r) {
     MeshVtxPools pools;
     MeshLod *l;
     int i, shift;
     float cm[9], scaleDiv;
     static float vx_[R3DMESH_MAX_VERTS], vy_[R3DMESH_MAX_VERTS], vd_[R3DMESH_MAX_VERTS];
-    static uint8 backFacing[R3DMESH_MAX_NORMALS];
 
     fillPools(&pools);
     if (r3dmesh_decode((const uint8 *)r->model,
@@ -510,13 +983,10 @@ static void drawSub(const GlSub *r) {
      * so no scaleDiv is needed. Sized by distance (drawDepthPoint). */
     if (l->form == MESH_FORM_POINT) {
         if ((int)(r->camY >> 16) < 1) return; /* g_camTransYHi < 1 cull */
-        glEnable(GL_POINT_SMOOTH);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        beginSmoothPoints();
         drawDepthPoint((float)r->camBase, (float)r->camX, r->camY,
-                       colorLut[l->pointColor] + r->shade);
-        glDisable(GL_BLEND);
-        glDisable(GL_POINT_SMOOTH);
+                       colorLut[l->pointColor] + GL_NEAR_SHADE);
+        endSmoothPoints();
         return;
     }
 
@@ -524,9 +994,7 @@ static void drawSub(const GlSub *r) {
      * vertex transformed by the object matrix (the on-the-fly path's emitModelVertex).
      * No LOD scale (emitModelVertex applies none), so depth feeds glEdgeRunColor raw. */
     if (l->form == MESH_FORM_EDGERUN) {
-        glEnable(GL_POINT_SMOOTH);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        beginSmoothPoints();
         for (i = 0; i < 9; i++) cm[i] = (float)r->combined[i];
         for (i = 0; i < l->nRunRefs; i++) {
             int ref = l->runRefs[i];
@@ -548,20 +1016,11 @@ static void drawSub(const GlSub *r) {
             if ((int)(depthRaw >> 16) < 1) continue; /* dHi >= 1 */
             drawDepthPoint(camX, camY, depthRaw, glEdgeRunColor((int)(depthRaw >> 16)));
         }
-        glDisable(GL_BLEND);
-        glDisable(GL_POINT_SMOOTH);
+        endSmoothPoints();
         return;
     }
 
     if (l->form != MESH_FORM_MODEL) return;
-
-    /* Back-face cull matching the original (rotatePoint3d): a face is hidden when
-     * its gating normal faces away, dot(normal, objDir) < threshold. */
-    for (i = 0; i < l->nNormals; i++) {
-        MeshNormal *nrm = &l->normals[i];
-        long dot = (long)nrm->nx * r->dirX + (long)nrm->ny * r->dirZ + (long)nrm->nz * r->dirY;
-        backFacing[i] = (dot < (long)nrm->threshold) ? 1 : 0;
-    }
 
     /* The LOD coordinate scale (8 - 2*curLod) cancels in the x/y projection ratio
      * (camX/depth); applied here only to keep depths consistent for the perspective
@@ -621,13 +1080,10 @@ static void drawSub(const GlSub *r) {
             }
             if (colorByte < 0 && l->nLines) colorByte = l->lines[0].colorByte;
             if (colorByte >= 0) {
-                glEnable(GL_POINT_SMOOTH);
-                glEnable(GL_BLEND);
-                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                beginSmoothPoints();
                 drawDepthPoint((float)r->camBase, (float)r->camX, r->camY,
-                               colorLut[colorByte] + r->shade);
-                glDisable(GL_BLEND);
-                glDisable(GL_POINT_SMOOTH);
+                               colorLut[colorByte] + GL_NEAR_SHADE);
+                endSmoothPoints();
             }
             return;
         }
@@ -641,8 +1097,6 @@ static void drawSub(const GlSub *r) {
         int ring[R3DMESH_MAX_FACE_EDGES + 1];
         int n, k, cur, prev, deg;
         if (f->nEdges < 3) continue;
-        /* Back-face cull (original's per-face normal sign test). */
-        if (f->cullNormal < l->nNormals && backFacing[f->cullNormal]) continue;
         /* Colour filters from renderPrimitiveCommand: 0xff is transparent, and the
          * lowest-LOD flat ground tile (colorBase == 0x400) draws only its
          * colorByte==1 ground face — the rest of that tile's faces are junk. */
@@ -678,25 +1132,155 @@ static void drawSub(const GlSub *r) {
         }
         if (n < 3) continue;
 
-        glColorIndex(colorLut[f->colorByte] + r->shade);
+        paintBias();
+        glColorIndex(colorLut[f->colorByte] + GL_NEAR_SHADE);
         glBegin(GL_POLYGON);
-        for (k = 0; k < n; k++) glVertex3f(vx_[ring[k]], vy_[ring[k]], vd_[ring[k]]);
+        for (k = 0; k < n; k++) fogVertex(vx_[ring[k]], vy_[ring[k]], vd_[ring[k]]);
         glEnd();
     }
 
-    /* Wire primitives. */
+    /* Wire primitives (roads, beams, mountain highlights, antennas) as world-space
+     * ribbons. Each line becomes a thin quad offset by +/- a world-space half-width;
+     * being real geometry it tapers with perspective, clips on the near plane (no
+     * explosion when an endpoint goes behind the eye) and shows no screen-aligned
+     * cap as it rotates. Work in true camera space (z = vd_ * 65536, same scale as
+     * x/y) so lengths and perpendiculars are Euclidean; divide z out only on emit.
+     *
+     * Two extrusion modes (see WIRE_FLAT_VERT): a near-horizontal wire is a GROUND
+     * feature and is extruded within the horizontal plane (perpendicular to world-
+     * up) so it stays pinned flat to the ground; a steeper wire is extruded camera-
+     * facing (perpendicular to the line and the view ray) so it always reads as a
+     * line. World-up in camera space is the matrix column the model Z axis maps
+     * through, i.e. (g_viewRotMatrix[3..5]) in this (camX,camY,depth) basis. */
     if (l->nLines) {
-        glBegin(GL_LINES);
+        float ux = (float)g_viewRotMatrix[3];
+        float uy = (float)g_viewRotMatrix[4];
+        float uz = (float)g_viewRotMatrix[5];
+        float ul = SDL_sqrtf(ux * ux + uy * uy + uz * uz);
+        if (ul > 1e-3f) { ux /= ul; uy /= ul; uz /= ul; }
         for (i = 0; i < l->nLines; i++) {
             MeshEdge *e = &l->edges[l->lines[i].edge];
-            glColorIndex(colorLut[l->lines[i].colorByte] + r->shade);
-            if (e->va < l->nVerts && e->vb < l->nVerts) {
-                glVertex3f(vx_[e->va], vy_[e->va], vd_[e->va]);
-                glVertex3f(vx_[e->vb], vy_[e->vb], vd_[e->vb]);
+            float ax, ay, az, bx, by, bz, lx, ly, lz, len;
+            if (e->va >= l->nVerts || e->vb >= l->nVerts) continue;
+            ax = vx_[e->va]; ay = vy_[e->va]; az = vd_[e->va] * 65536.0f;
+            bx = vx_[e->vb]; by = vy_[e->vb]; bz = vd_[e->vb] * 65536.0f;
+            lx = bx - ax; ly = by - ay; lz = bz - az;
+            len = SDL_sqrtf(lx * lx + ly * ly + lz * lz);
+            if (len < 1.0f) continue;
+            float dx, dy, dz, vert;
+            dx = lx / len; dy = ly / len; dz = lz / len;
+            vert = ux * dx + uy * dy + uz * dz;
+            if (vert < 0.0f) vert = -vert; /* 0 = horizontal, 1 = vertical */
+
+            /* One width law for every wire (extrusion below is what differs). */
+            float hw = WIRE_HW_SCALE * SDL_powf(len, WIRE_HW_POW);
+
+            glColorIndex(colorLut[l->lines[i].colorByte] + GL_NEAR_SHADE);
+            /* Lay flat only for a near-horizontal wire on a ground-level object
+             * (|posZ| small). The object's world altitude is the clean signal — a
+             * road tile sits at ~0, a flying plane carries its altitude — so a level
+             * antenna up in the air keeps the camera-facing ribbon. */
+            if (vert < WIRE_FLAT_VERT && r->posZ < 1.0f) {
+                /* GROUND: one horizontal offset for both ends = normalize(cross(up,
+                 * lineDir)) * hw — a flat parallelogram lying on the ground. */
+                float gx = uy * dz - uz * dy;
+                float gy = uz * dx - ux * dz;
+                float gz = ux * dy - uy * dx;
+                float gl = SDL_sqrtf(gx * gx + gy * gy + gz * gz);
+                if (gl < 1e-3f) continue;
+                gx = gx / gl * hw; gy = gy / gl * hw; gz = gz / gl * hw;
+                /* Per-line bias so two crossing wires on the same model (both coplanar
+                 * with the ground/deck) are ordered by draw order, not left to z-fight. */
+                paintBias();
+                glBegin(GL_QUADS);
+                fogVertex(ax + gx, ay + gy, (az + gz) / 65536.0f);
+                fogVertex(bx + gx, by + gy, (bz + gz) / 65536.0f);
+                fogVertex(bx - gx, by - gy, (bz - gz) / 65536.0f);
+                fogVertex(ax - gx, ay - gy, (az - gz) / 65536.0f);
+                glEnd();
+            } else {
+                /* CAMERA-FACING: per-end normalize(cross(lineDir, ray)) * hw. */
+                float pax, pay, paz, pbx, pby, pbz, pl;
+                pax = ly * az - lz * ay; pay = lz * ax - lx * az; paz = lx * ay - ly * ax;
+                pl = SDL_sqrtf(pax * pax + pay * pay + paz * paz);
+                if (pl < 1e-3f) continue;
+                pax = pax / pl * hw; pay = pay / pl * hw; paz = paz / pl * hw;
+                pbx = ly * bz - lz * by; pby = lz * bx - lx * bz; pbz = lx * by - ly * bx;
+                pl = SDL_sqrtf(pbx * pbx + pby * pby + pbz * pbz);
+                if (pl < 1e-3f) continue;
+                pbx = pbx / pl * hw; pby = pby / pl * hw; pbz = pbz / pl * hw;
+                /* keep the two ends' offsets consistent so the quad doesn't twist */
+                if (pax * pbx + pay * pby + paz * pbz < 0.0f) { pbx = -pbx; pby = -pby; pbz = -pbz; }
+                paintBias(); /* per-line bias: overlapping wires order by draw order */
+                glBegin(GL_QUADS);
+                fogVertex(ax + pax, ay + pay, (az + paz) / 65536.0f);
+                fogVertex(bx + pbx, by + pby, (bz + pbz) / 65536.0f);
+                fogVertex(bx - pbx, by - pby, (bz - pbz) / 65536.0f);
+                fogVertex(ax - pax, ay - pay, (az - paz) / 65536.0f);
+                glEnd();
             }
         }
-        glEnd();
     }
+}
+
+/* Effect-line ribbon half-width as a fraction of camera depth, so a tracer /
+ * explosion spark keeps a roughly constant thin screen width (the offset is added
+ * in camera space and divided by depth on projection). Tune to taste. */
+static const float GL_EFFECT_HW_FRAC = 0.0016f;
+
+/* The LOD coordinate scale drawWorldObject/gl_submit apply to these effects
+ * (g_curLod == 1 -> 1 << (8 - 2*1)). drawSub divides every model vertex by the
+ * same scaleDiv; it cancels in the x/y projection ratio but sets the absolute
+ * magnitude the fog distance (vd_) is read in, so a loose line must divide too or
+ * it hazes ~64x too hard. */
+static const float GL_EFFECT_SCALEDIV = 64.0f;
+
+/* Draw one world-space 3D line (tracer / explosion spark) as a camera-facing
+ * ribbon quad, the same construction as a model wire (drawSub): work in true
+ * camera space (z = depth, same scale as x/y) so the perpendicular is Euclidean
+ * and the near plane clips it, divide z out on emit. z-tested + fogged by the
+ * caller's GL state, so it occludes and hazes like scene geometry. */
+static void drawGlLine(const GlLine *ln) {
+    const float sd = GL_EFFECT_SCALEDIV;
+    float ax = (float)ln->baseXA / sd, ay = (float)ln->camXA / sd, az = (float)ln->camYA / sd;
+    float bx = (float)ln->baseXB / sd, by = (float)ln->camXB / sd, bz = (float)ln->camYB / sd;
+    float lx = bx - ax, ly = by - ay, lz = bz - az;
+    float len = SDL_sqrtf(lx * lx + ly * ly + lz * lz);
+    float avgDepth, hw, pax, pay, paz, pbx, pby, pbz, pl;
+    if (len < 1.0f) return;
+    avgDepth = 0.5f * (az + bz);
+    if (avgDepth < 1.0f) avgDepth = 1.0f;
+    hw = avgDepth * GL_EFFECT_HW_FRAC;
+
+    /* per-end normalize(cross(lineDir, ray)) * hw (ray = endpoint position) */
+    pax = ly * az - lz * ay;
+    pay = lz * ax - lx * az;
+    paz = lx * ay - ly * ax;
+    pl = SDL_sqrtf(pax * pax + pay * pay + paz * paz);
+    if (pl < 1e-3f) return;
+    pax = pax / pl * hw;
+    pay = pay / pl * hw;
+    paz = paz / pl * hw;
+    pbx = ly * bz - lz * by;
+    pby = lz * bx - lx * bz;
+    pbz = lx * by - ly * bx;
+    pl = SDL_sqrtf(pbx * pbx + pby * pby + pbz * pbz);
+    if (pl < 1e-3f) return;
+    pbx = pbx / pl * hw;
+    pby = pby / pl * hw;
+    pbz = pbz / pl * hw;
+    if (pax * pbx + pay * pby + paz * pbz < 0.0f) {
+        pbx = -pbx;
+        pby = -pby;
+        pbz = -pbz;
+    }
+    glColorIndex(ln->color);
+    glBegin(GL_QUADS);
+    fogVertex(ax + pax, ay + pay, (az + paz) / 65536.0f);
+    fogVertex(bx + pbx, by + pby, (bz + pbz) / 65536.0f);
+    fogVertex(bx - pbx, by - pby, (bz - pbz) / 65536.0f);
+    fogVertex(ax - pax, ay - pay, (az - paz) / 65536.0f);
+    glEnd();
 }
 
 /* Painter's order, reproducing projectSceneObject + renderSortedListFar: the
@@ -713,18 +1297,44 @@ static int subCmp(const void *a, const void *b) {
 static void gl_endScene(void) {
     int i;
 
-    if (s_delegating) {
-        r3d_softwareBackend.endScene();
-        s_delegating = 0;
-        return;
-    }
-
     if (s_subOverflow)
         LogWarn(("r3d_gl: %d submissions dropped (cap %d)", s_subOverflow, GL_MAX_SUBS));
-    /* Draw back-to-front (no depth test) — the original's painter's algorithm, the
-     * only thing that resolves the game's coplanar paper-thin surfaces. */
     qsort(s_subs, s_nSub, sizeof(GlSub), subCmp);
-    for (i = 0; i < s_nSub; i++) drawSub(&s_subs[i]);
+
+    /* Pass 1 — the ground plane class (flat ground/sea/roads/surf at world Z=0, the
+     * "immediate" set): pure painter's, depth test OFF and depth writes OFF, drawn
+     * first as the background in walk order. These are huge, distant, and densely
+     * coplanar (surf on sea, markings on a road, outlines on a deck) — the case no
+     * z-buffer + offset could resolve without a bias so large it punched through
+     * small elevated models. With the test off, draw order alone orders them, exactly
+     * like the original. They write no depth, so they never wrongly occlude pass 2. */
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    for (i = 0; i < s_nSub; i++)
+        if (s_subs[i].immediate) drawSub(&s_subs[i]);
+    /* Pass 2 — elevated objects (planes, missiles, buildings, terrain with relief):
+     * z-buffered (GL_LEQUAL, set in gl_beginScene) so genuine occlusion is correct —
+     * a plane behind a building does not show through. The per-primitive paint bias
+     * lives only here, breaking these objects' own coplanar ties by draw order; the
+     * counter resets so pass 1's primitives don't inflate it into a punch-through. */
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    s_paintSeq = 0;
+
+    for (i = 0; i < s_nSub; i++)
+        if (!s_subs[i].immediate) drawSub(&s_subs[i]);
+
+    /* 3D effect lines (tracers / explosion sparks): z-tested against the scene
+     * just drawn and fogged like it, so they occlude and haze. Drawn after the
+     * objects with no polygon offset (they are thin free-standing ribbons, not
+     * coplanar decals). */
+    if (s_lineOverflow)
+        LogWarn(("r3d_gl: %d effect lines dropped (cap %d)", s_lineOverflow, GL_MAX_LINES));
+    glPolygonOffset(0.0f, 0.0f);
+    for (i = 0; i < s_nLine; i++) drawGlLine(&s_lines[i]);
+    s_nLine = 0;
+
+    glDisable(GL_FOG);
     s_nSub = 0;
     glDisable(GL_SCISSOR_TEST);
 }
@@ -737,19 +1347,73 @@ const R3DBackend r3d_glBackend = {
     gl_releaseMesh,
     gl_beginScene,
     gl_submit,
+    gl_submitLine,
     gl_endScene,
 };
 
 /* ---- 2D overlay composite + present ------------------------------------ */
 
-static uint8 *s_rgba;       /* INDEX8 -> RGBA8888 scratch for the page texture */
-static int s_rgbaCap;
+/* Set the nearest-filter + clamp parameters shared by the page and sprite
+ * textures (indexed art must not bleed or filter). */
+static void setOverlayTexParams(void) {
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+}
+
+static void gl_imageDestroyed(R2DImage *img) {
+    GLuint tex = (GLuint)r2d_imageCacheTex(img);
+    if (tex) {
+        glDeleteTextures(1, &tex);
+        r2d_imageSetCache(img, 0, -1);
+    }
+}
+
+/* The cached RGBA texture for a submitted sprite's whole backing sheet, rebuilt
+ * only when the palette generation moved since it was uploaded. Index 0 becomes
+ * the transparent texel (alpha 0) — the sprite transparency key is always 0; an
+ * opaque draw (key<0) disables blend at draw time so alpha is ignored. */
+static GLuint imageTexture(R2DImage *img, SDL_Palette *pal, int palGen) {
+    GLuint tex = (GLuint)r2d_imageCacheTex(img);
+    SDL_Surface *surf = r2d_imageSurface(img);
+    const uint8 *src;
+    uint8 *rgba;
+    int sw, sh, pitch, x, y;
+
+    if (!surf) return 0;
+    if (tex && r2d_imageCacheGen(img) == palGen) return tex;
+    sw = surf->w;
+    sh = surf->h;
+    rgba = ensureRgbaScratch(sw * sh * 4);
+    if (!rgba) return 0;
+    src = (const uint8 *)surf->pixels;
+    pitch = surf->pitch;
+    for (y = 0; y < sh; y++) {
+        const uint8 *row = src + y * pitch;
+        uint8 *out = rgba + y * sw * 4;
+        for (x = 0; x < sw; x++) {
+            uint8 idx = row[x];
+            SDL_Color c = pal->colors[idx];
+            out[x * 4 + 0] = c.r;
+            out[x * 4 + 1] = c.g;
+            out[x * 4 + 2] = c.b;
+            out[x * 4 + 3] = (idx == 0) ? 0 : 255;
+        }
+    }
+    if (!tex) glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    setOverlayTexParams();
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, sw, sh, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    r2d_imageSetCache(img, (unsigned int)tex, palGen);
+    return tex;
+}
 
 void r3dgl_present(SDL_Surface *page, int shakeOffset) {
     int win_w, win_h, w, h, x, y, lbx, lby, qw, qh;
     SDL_Palette *pal;
     const uint8 *src;
-    int pitch, need;
+    int pitch;
     GLuint tex;
     float shake, scale;
 
@@ -759,13 +1423,7 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
     pal = gfx_getPalette();
     if (!pal) return;
 
-    need = w * h * 4;
-    if (need > s_rgbaCap) {
-        SDL_free(s_rgba);
-        s_rgba = (uint8 *)SDL_malloc(need);
-        s_rgbaCap = s_rgba ? need : 0;
-    }
-    if (!s_rgba) return;
+    if (!ensureRgbaScratch(w * h * 4)) return;
 
     src = (const uint8 *)page->pixels;
     pitch = page->pitch;
@@ -783,15 +1441,18 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
     }
 
     SDL_GetWindowSizeInPixels(s_win, &win_w, &win_h);
-    /* Letterbox the page into the window preserving its own aspect — matches the
-     * 3D viewport's letterbox so the overlay stays aligned and unstretched. */
+    /* Letterbox the page into the window through the shared r2d mapping (deriving
+     * the virtual size from the page itself, so the 320x200 overlay and the
+     * 640x350 hi-res title both map correctly) — matches the 3D viewport's
+     * letterbox so the overlay stays aligned and unstretched. */
     {
-        float sw = (float)win_w / w, sh = (float)win_h / h;
-        scale = sw < sh ? sw : sh;
+        R2DMapping m;
+        r2d_computeMapping(w, h, win_w, win_h, &m);
+        scale = m.scale;
         qw = (int)(w * scale);
         qh = (int)(h * scale);
-        lbx = (win_w - qw) / 2;
-        lby = (win_h - qh) / 2;
+        lbx = m.offX;
+        lby = m.offY;
     }
     glViewport(0, 0, win_w, win_h);
     glDisable(GL_SCISSOR_TEST);
@@ -822,10 +1483,7 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
     glEnable(GL_TEXTURE_2D);
     glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    setOverlayTexParams();
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, s_rgba);
 
     glEnable(GL_BLEND);
@@ -846,6 +1504,126 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
     glDeleteTextures(1, &tex);
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_BLEND);
+
+    /* Native 2D overlay layer: replay the HUD/MFD lines, points and sprites
+     * recorded this frame at the window's native resolution, mapped through the
+     * same page letterbox (scale/lbx/lby) so they stay aligned with the UI box.
+     * Walked in submission order (a sprite drawn after a line lands over it);
+     * runs of the same kind batch into one GL primitive. Lines/points are crisp
+     * native-res vectors, sprites are textured quads from the per-image cache. */
+    {
+        int n, i;
+        const R2DOverlayPrim *prims = r2d_overlayPrims(&n);
+        const short *polyV = r2d_overlayPolyVerts();
+        SDL_Palette *vpal = gfx_getPalette();
+        int palGen = gfx_paletteGeneration();
+        float lw = scale < 1.0f ? 1.0f : scale;
+        for (i = 0; i < n && vpal; ) {
+            unsigned char kind = prims[i].kind;
+            int j = i;
+            while (j < n && prims[j].kind == kind) j++;
+            if (kind == R2D_PRIM_LINE) {
+                glLineWidth(lw);
+                glBegin(GL_LINES);
+                for (; i < j; i++) {
+                    const R2DOverlayPrim *p = &prims[i];
+                    SDL_Color c = vpal->colors[p->color];
+                    glColor3ub(c.r, c.g, c.b);
+                    glVertex2f((float)lbx + ((float)p->x1 + 0.5f) * scale - shake,
+                               (float)lby + ((float)p->y1 + 0.5f) * scale);
+                    glVertex2f((float)lbx + ((float)p->x2 + 0.5f) * scale - shake,
+                               (float)lby + ((float)p->y2 + 0.5f) * scale);
+                }
+                glEnd();
+            } else if (kind == R2D_PRIM_POINT) {
+                /* Points (pitch-ladder marks) as scale x scale cells so they keep
+                 * their pixel footprint at native size. */
+                glBegin(GL_QUADS);
+                for (; i < j; i++) {
+                    const R2DOverlayPrim *p = &prims[i];
+                    SDL_Color c = vpal->colors[p->color];
+                    float x0 = (float)lbx + (float)p->x1 * scale - shake;
+                    float y0 = (float)lby + (float)p->y1 * scale;
+                    float x1q = x0 + scale, y1q = y0 + scale;
+                    glColor3ub(c.r, c.g, c.b);
+                    glVertex2f(x0, y0);
+                    glVertex2f(x1q, y0);
+                    glVertex2f(x1q, y1q);
+                    glVertex2f(x0, y1q);
+                }
+                glEnd();
+            } else if (kind == R2D_PRIM_POLY) {
+                /* Filled tile faces (left-MFD terrain map) as native-res convex
+                 * polygons; one GL_POLYGON per prim (a shared glBegin would fuse
+                 * separate faces into one loop). Vertices are 320-space pairs in
+                 * the poly pool, submitted UNCLIPPED and scissored to the MFD rect
+                 * (prim x1,y1,x2,y2) so faces crossing the border fill correctly. */
+                glEnable(GL_SCISSOR_TEST);
+                for (; i < j; i++) {
+                    const R2DOverlayPrim *p = &prims[i];
+                    SDL_Color c = vpal->colors[p->color];
+                    const short *v = polyV + (int)p->srcX * 2;
+                    int k, nv = p->srcY;
+                    float sx0 = (float)lbx + (float)p->x1 * scale - shake;
+                    float sx1 = (float)lbx + (float)p->x2 * scale - shake;
+                    float sy1w = (float)lby + (float)p->y1 * scale;
+                    float sy2w = (float)lby + (float)p->y2 * scale;
+                    glScissor((int)sx0, (int)((float)win_h - sy2w),
+                              (int)(sx1 - sx0), (int)(sy2w - sy1w));
+                    glColor3ub(c.r, c.g, c.b);
+                    glBegin(GL_POLYGON);
+                    for (k = 0; k < nv; k++)
+                        glVertex2f((float)lbx + ((float)v[k * 2] + 0.5f) * scale - shake,
+                                   (float)lby + ((float)v[k * 2 + 1] + 0.5f) * scale);
+                    glEnd();
+                }
+                glDisable(GL_SCISSOR_TEST);
+            } else { /* R2D_PRIM_IMAGE */
+                glEnable(GL_TEXTURE_2D);
+                glColor3ub(255, 255, 255); /* MODULATE: white so the texture passes through */
+                for (; i < j; i++) {
+                    const R2DOverlayPrim *p = &prims[i];
+                    SDL_Surface *surf = r2d_imageSurface(p->img);
+                    GLuint itex;
+                    float u0, v0, u1, v1, x0, y0, x1q, y1q;
+                    if (!surf) continue;
+                    itex = imageTexture(p->img, vpal, palGen);
+                    if (!itex) continue;
+                    /* key<0 opaque (blend off, index 0 drawn as its palette colour);
+                     * key>=0 transparent on index 0 (baked alpha). Sprites use 0/-1. */
+                    if (p->key < 0) {
+                        glDisable(GL_BLEND);
+                    } else {
+                        glEnable(GL_BLEND);
+                        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                    }
+                    glBindTexture(GL_TEXTURE_2D, itex);
+                    /* Full-frame texcoords; the surface is a sprite sheet and
+                     * srcX/srcY select one frame. Pixel-snapping the quad (below)
+                     * keeps every fragment centre strictly inside the frame, so
+                     * NEAREST never rounds across a boundary into the neighbouring
+                     * frame — no atlas bleed, and no thinned edge rows. */
+                    u0 = (float)p->srcX / (float)surf->w;
+                    v0 = (float)p->srcY / (float)surf->h;
+                    u1 = (float)(p->srcX + p->imgW) / (float)surf->w;
+                    v1 = (float)(p->srcY + p->imgH) / (float)surf->h;
+                    x0 = SDL_floorf((float)lbx + (float)p->x1 * scale - shake + 0.5f);
+                    y0 = SDL_floorf((float)lby + (float)p->y1 * scale + 0.5f);
+                    x1q = x0 + SDL_floorf((float)p->imgW * scale + 0.5f);
+                    y1q = y0 + SDL_floorf((float)p->imgH * scale + 0.5f);
+                    glBegin(GL_QUADS);
+                    glTexCoord2f(u0, v0); glVertex2f(x0, y0);
+                    glTexCoord2f(u1, v0); glVertex2f(x1q, y0);
+                    glTexCoord2f(u1, v1); glVertex2f(x1q, y1q);
+                    glTexCoord2f(u0, v1); glVertex2f(x0, y1q);
+                    glEnd();
+                }
+                glDisable(GL_TEXTURE_2D);
+                glDisable(GL_BLEND);
+            }
+        }
+        r2d_vectorMarkPresented();
+    }
 
     SDL_GL_SwapWindow(s_win);
 }

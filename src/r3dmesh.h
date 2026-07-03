@@ -2,7 +2,7 @@
 #define R3DMESH_H
 
 /*
- * Display-list -> structured Mesh decoder (docs/render-3d-backend.md, Step 2).
+ * Display-list -> structured Mesh decoder.
  *
  * A "model" in the original is a raw DOS display-list byte stream inside
  * g_world3dData, re-decoded every frame by the software rasterizer. A GPU

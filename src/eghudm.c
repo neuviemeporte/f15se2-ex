@@ -21,6 +21,7 @@
 #include "inttype.h"
 #include "struct.h"
 #include "gfx.h"
+#include "r2d.h"
 #include "pointers.h"
 
 #define W16(p) rdI16(p)            /* unaligned-safe 16-bit read */
@@ -110,8 +111,6 @@ int far drawClipLineGlobal(void) {
 static const int g_ladderGeom[12] = {
     71, 248, 120, 200, 26, 26, 68, 68, 86, 86, 98, 98};
 void FAR CDECL hudComplex(int bxArg, int dxArg, int cxArg, int siArg) {
-    int pitch;
-    uint8 *page = gfx_pagePixelsForSeg((uint16)gfx_getCurPageSeg(), &pitch);
     uint8 color = 0x0f;
     int dir = (siArg == 0) ? -1 : 1;
     int cl = cxArg & 0xff, dl = dxArg & 0xff;
@@ -119,7 +118,6 @@ void FAR CDECL hudComplex(int bxArg, int dxArg, int cxArg, int siArg) {
     uint16 base, loY, hiY;
     int wi;
     long t;
-    if (!page) return;
     if ((int8)dl >= 1) bx += 0x14;
     if (cl != 0) {
         siArg += 4;
@@ -141,22 +139,22 @@ void FAR CDECL hudComplex(int bxArg, int dxArg, int cxArg, int siArg) {
         int thick = (phase == 0) ? 10 : phase;
         if (bx < loY) break;
         if (bx <= hiY && bx < 200) {
-            /* All marks land on row bx at columns base, base+dir, ...; index by
-             * the surface pitch instead of the old linear MK_FP offset. */
-            uint8 *p = page + (size_t)bx * pitch;
+            /* All marks land on row bx at columns base, base+dir, ...; submitted
+             * as 2D points so the GL backend replays the ladder crisply at native
+             * resolution (software still plots them into the page). */
             int col = (int)base;
             if (thick == 5) {
-                p[col] = color;
+                r2d_submitPoint(col, (int)bx, color);
                 col += dir;
-                p[col] = color;
+                r2d_submitPoint(col, (int)bx, color);
             } else if (thick == 10) {
-                p[col] = color;
+                r2d_submitPoint(col, (int)bx, color);
                 col += dir;
-                p[col] = color;
+                r2d_submitPoint(col, (int)bx, color);
                 col += dir;
-                if (cl == 0) p[col] = color;
+                if (cl == 0) r2d_submitPoint(col, (int)bx, color);
             } else {
-                p[col] = color;
+                r2d_submitPoint(col, (int)bx, color);
             }
         }
         bx -= 2;

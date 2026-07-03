@@ -28,9 +28,6 @@ void positionUnit(int, int);
 int approxDistance(int, int);
 void parseWorld(const char *);
 int calcBearing(int, int);
-void setMoveDstComm7A(const char *filename, const char *mode);
-void memAppend(void *ptr, int itemsz, int count, SDL_IOStream *unused);
-void doNothing(SDL_IOStream *);
 char *formatGridRef(int16, int16, int16);
 int clampValue(int, int, int);
 
@@ -397,38 +394,6 @@ void parseWorld(const char *filename) {
     }
 }
 
-void exportWorldToComm(const char *filename) {
-    int unused;
-    setMoveDstComm7A(filename, "wb");
-    memAppend(wldReadBuf1, 2, 1, fileHandle);
-    memAppend(&readItemSize, 2, 1, fileHandle);
-    memAppend(&groundUnitCount, 2, 1, fileHandle);
-    memAppend(&worldObjectCount, 2, 1, fileHandle);
-    memAppend(worldObjects, 16, readItemSize, fileHandle);
-    memAppend(&flightUnitCount, 2, 1, fileHandle);
-    memAppend(flightUnits, 36, flightUnitCount, fileHandle);
-    memAppend(wldReadBuf7, 100, 1, fileHandle);
-    memAppend(wldReadBuf8, 100, 1, fileHandle);
-    memAppend(wldReadBuf11, 1, WORLD_BUFSZ, fileHandle);
-    memAppend(terrainGrid, 1, 0x100, fileHandle);
-    memAppend(&missionDistAccum, 2, 1, fileHandle);
-    memAppend(&escortMissionFlag, 2, 1, fileHandle);
-    /* Originally one 16-byte block read (4x4) over the contiguous mission
-     * coordinate words; the port split these into separate globals (and widened
-     * missionTargetX/Y to 32-bit), so append each 16-bit word explicitly to keep
-     * the on-wire layout the reader (waypoints, 16 bytes) expects. */
-    memAppend(&missionMidX, 2, 1, fileHandle);
-    memAppend(&missionMidY, 2, 1, fileHandle);
-    memAppend(&missionTargetX, 2, 1, fileHandle);
-    memAppend(&missionTargetY, 2, 1, fileHandle);
-    memAppend(&missionTarget2X, 2, 1, fileHandle);
-    memAppend(&missionTarget2Y, 2, 1, fileHandle);
-    memAppend(&missionBase2X, 2, 1, fileHandle);
-    memAppend(&missionBase2Y, 2, 1, fileHandle);
-    memAppend(targets, 18, 2, fileHandle);
-    doNothing(fileHandle);
-}
-
 int calcBearing(int dx, int dy) {
     int16 angle, result;
     int32 ratio;
@@ -464,21 +429,6 @@ int calcBearing(int dx, int dy) {
         }
     }
     return result;
-}
-
-void setMoveDstComm7A(const char *filename, const char *mode) {
-    moveDst = (uint8 FAR *)(commData->worldBuf);
-}
-
-void memAppend(void *ptr, int itemsz, int count, SDL_IOStream *unused) {
-    /* moveDst is a real cursor into commData->worldBuf (set by
-     * setMoveDstComm7A); the original DOS movedata segment copy is dead. */
-    (void)unused;
-    memcpy(moveDst, ptr, (size_t)itemsz * count);
-    moveDst += itemsz * count;
-}
-
-void doNothing(SDL_IOStream *handle) {
 }
 
 char *getItemCoordStr(int16 idx) {

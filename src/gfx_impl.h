@@ -22,28 +22,16 @@ struct SDL_Surface;
 /* Shared gfx state. */
 typedef struct {
     uint16 rowOffsets[200];               /* replaces g_rowOffsets[] */
-    uint16 curPageSeg;                    /* replaces g_curPageSeg  */
     int16 blitOffset;                     /* replaces g_blitOffset  */
     uint8 modeFlag;                       /* replaces g_modeFlag = 1 */
     uint8 fillColor;                      /* replaces g_fillColor   */
     uint8 dacCounter;                     /* replaces g_dacCounter  */
     uint8 rowOffsetsReady;                /* replaces g_rowOffsetsReady */
-    uint16 pageSegs[16];                  /* replaces g_pageSegs[]  */
-    uint16 f15DataSeg;                    /* FP_SEG of f15.exe's DGROUP — see Finding A.
-                                           * Lets gfx functions reach their own const tables
-                                           * (palettes, font tables) via far pointer when a
-                                           * child far-calls in with DS = the child's DGROUP. */
-    uint8 displayPage;                    /* MGRAPHIC cs:0x1a2 — the back-buffer page index
-                                           * returned by getDisplayPage (slot 0x2d). The frame
-                                           * is composited here (page 1) then presented to the
-                                           * visible page 0 by gfx_dacAnimate (slot 0x2c). */
     uint16 dacPhase;                      /* MGRAPHIC data-seg 0x1ccc — the DAC fire-cycle phase
                                            * counter advanced by gfx_dacCycle (slot 0x2e) each
                                            * frame (LCG x*5+1); seeded 0x4d2 in gfx_initState. */
-    struct SDL_Surface *pageSurfaces[16]; /* SDL draw buffers, one per page index
-                                           * . Lazily created 320x200 8-bit surfaces;
-                                           * gfx_flipPage pushes page 0 to the renderer. */
-    int curPage;                          /* index of the current draw page. */
+    struct SDL_Surface *pageSurfaces[16]; /* SDL draw buffers. Pages 0/1 alias to index 0, the
+                                           * single hidden back buffer everything composites into. */
     int shakeOffset;                      /* horizontal screen-shake in pixels, set by gfx_dacCycle
                                            * (the explosion CRTC start-address jitter) and applied
                                            * by the page present. 0 when not shaking. */
@@ -63,8 +51,7 @@ struct SDL_Surface *gfx_getCurPageSurface(void);
 
 /* Sprite buffers: each is a 320x200 8-bit SDL_Surface addressed by a small
  * integer handle. The public gfx_allocSpriteBuf (gfx.h) creates one; the pic
- * decoder fills it and gfx_blitSprite reads it via this accessor. Replaces the
- * DOS-era 64KB "segment" sprite sheets. */
+ * decoder fills it and gfx_blitSprite reads it via this accessor. */
 struct SDL_Surface *gfx_getSpriteSurface(int handle);
 
 /* The live 256-entry VGA DAC palette (reflects gfx_setDac/gfx_setDacRange). The
@@ -73,6 +60,7 @@ struct SDL_Surface *gfx_getSpriteSurface(int handle);
 struct SDL_Palette;
 struct SDL_Palette *gfx_getPalette(void);
 void gfx_paletteRGB(int idx, uint8 *r, uint8 *g, uint8 *b);
+int gfx_paletteGeneration(void);
 
 /* Palette index reserved as the GL "show-through" key: the GL backend fills the
  * 3D viewport region of the page with it, and the overlay composite makes those

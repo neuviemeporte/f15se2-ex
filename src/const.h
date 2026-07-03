@@ -71,12 +71,22 @@
 #define BEARING_SOUTH 0x8000
 #define BEARING_WEST 0xC000
 
-/* color indices */
-#define COLOR_WHITE 0xf
-#define COLOR_GRAY 7
-#define COLOR_RED 0xc
-#define COLOR_TITLE 1
-#define COLOR_COORDS 3
+/* color indices (EGA palette) */
+enum EgaColor {
+    COLOR_BLACK = 0,
+    COLOR_BLUE = 1,
+    COLOR_GREEN = 2,
+    COLOR_CYAN = 3,
+    COLOR_RED = 4,
+    COLOR_LIGHTGRAY = 7,
+    COLOR_DARKGRAY = 8,
+    COLOR_LIGHTGREEN = 0xa,
+    COLOR_LIGHTCYAN = 0xb,
+    COLOR_LIGHTRED = 0xc,
+    COLOR_FLAMING = 0xd,
+    COLOR_YELLOW = 0xe,
+    COLOR_WHITE = 0xf
+};
 
 #define WORLD_BUFSZ 750 // 750
 #define GRID_MAGIC 0x3232

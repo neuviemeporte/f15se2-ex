@@ -233,7 +233,7 @@ skip_aam:
                 g_simObjects[idx].heading.w, g_simObjects[idx].pitch,
                 g_simObjects[idx].bank.w, 2 - depthShift);
         } else {
-            setDrawColor(0x0f);
+            setDrawColor(COLOR_WHITE);;
             drawViewportLine(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo);
         }
     next2:;
@@ -257,14 +257,14 @@ skip_aam:
 
             if (g_projDepth > -0x20) {
                 drawWorldObject(sams[g_projectiles[idx].specIdx].modelId,
-                                (long)g_projectiles[idx].mapX << 5,
-                                (long)g_projectiles[idx].mapY << 5,
+                                g_projInterpX[idx],
+                                g_projInterpY[idx],
                                 g_projectiles[idx].alt,
                                 g_projectiles[idx].worldX, g_projectiles[idx].worldY,
                                 g_projectiles[idx].worldZ + 0x2000,
                                 ((keyValue & 0x80) && keyValue != 0x8b) ? 3 : 1);
             } else {
-                setDrawColor(idx < 8 ? 0x0c : 0x0d);
+                setDrawColor(idx < 8 ? COLOR_LIGHTRED : COLOR_FLAMING);
                 drawViewportLine(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo);
             }
         }
@@ -300,21 +300,18 @@ skip_aam:
 done:;
 }
 
-void drawHudWorldOverlay(void) {
-    int p, lockFlag, prevDepth, r, wpEntry, hitFlag, tmp, t, missileSpecD, loftDist, e, missileSpec, marker, idx, g, radius, objIdx, pointY, pointX, dist, wpIdx, prevX, gunRadius, compat, prevY;
+/* World-space radius of an explosion burst, in fine map (posX) units; the alt
+ * axis is 32x finer (velZ carries a << 5), so vertical offsets are scaled to
+ * match. Tunable by eye. */
+static const int EXPLOSION_WORLD_RADIUS = 0x10;
 
-    g_prevKillMarker = g_targetInHudFlag;
-    g_targetInHudFlag = 0;
-
-    for (idx = 0; idx < 12; idx++) {
-        if (g_projectiles[idx].ttl != 0) {
-            projectWorldToHud(g_projectiles[idx].mapX, g_projectiles[idx].mapY, g_projectiles[idx].alt);
-            if (vtxScratch.vproj.x.lo != -1) {
-                setDrawColor(idx < 8 ? 0x0e : 0x0a);
-                drawTargetBox(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, 6, 0);
-            }
-        }
-    }
+/* Cannon tracers + explosion sparks as real world-space 3D line geometry
+ * (drawWorldLine): submitted into the scene BEFORE r3d_endScene so the software
+ * depth sort occludes them and the GL backend z-tests + fogs them. Split out of
+ * drawHudWorldOverlay (which keeps the 2D HUD symbology) so the effects join the
+ * 3D pass; game-logic order is unchanged (tracer hit-detect then explosion). */
+void drawWorldEffects(void) {
+    int prevDepth, hitFlag, tmp, idx, radius, objIdx, pointY, pointX, dist, wpEntry, prevX, gunRadius, prevY;
 
     gunRadius = 0x200 / isqrt(g_frameRateScaling * 4 + 8);
 
@@ -337,8 +334,18 @@ void drawHudWorldOverlay(void) {
 
                     dist = ((frameTick >> 1) - idx) & 7;
 
-                    setDrawColor(idx < g_bulletTrackCount ? 0x0d : 0x0c);
-                    drawViewportLine(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, prevX, prevY);
+                    /* The projectWorldToHud pair above still gates on-screen
+                     * visibility (prevX / vproj.x != -1); the tracer itself is a
+                     * real world-space 3D segment (bullet position -> half a
+                     * velocity-step ahead) so it perspective-projects, occludes
+                     * and hazes with the scene instead of overlaying a flat line. */
+                    drawWorldLine((long)(uint16)bulletTracks[idx].posX << 5,
+                                  (long)(uint16)bulletTracks[idx].posY << 5,
+                                  bulletTracks[idx].alt,
+                                  (long)(uint16)((bulletTracks[idx].velX >> 1) + bulletTracks[idx].posX) << 5,
+                                  (long)(uint16)((bulletTracks[idx].velY >> 1) + bulletTracks[idx].posY) << 5,
+                                  (bulletTracks[idx].velZ >> 1) + bulletTracks[idx].alt,
+                                  idx < g_bulletTrackCount ? 0x0d : 0x0c);
 
                     hitFlag = 0;
 
@@ -420,30 +427,57 @@ void drawHudWorldOverlay(void) {
     }
 
     if (g_hitEffectTimer != 0) {
+        /* Explosion burst as world-space 3D sparks radiating from the hit point:
+         * each is a real line (drawWorldLine) so the star has perspective, occludes
+         * and hazes — not a flat screen-space starburst. The projectWorldToHud call
+         * only gates on-screen visibility (the sparks are re-randomised every frame
+         * the timer is active, giving the flicker). radius is a WORLD radius (fine
+         * map units), so the burst shrinks with distance instead of a screen-px fan. */
         projectWorldToHud(g_hitMapX, g_hitMapY, g_hitAlt);
         if (vtxScratch.vproj.x.lo != -1) {
-            radius = abs(0x100 / g_projDepth);
+            long hx = (long)(uint16)g_hitMapX << 5;
+            long hy = (long)(uint16)g_hitMapY << 5;
+            radius = EXPLOSION_WORLD_RADIUS;
             for (idx = 0; idx < 8; idx++) {
-                setDrawColor(randomRange(4) + 0x0c);
+                int color = randomRange(4) + COLOR_LIGHTRED;
+                int ex, ey, ez;
                 if (g_hitAlt > 0) {
-                    drawViewportLine(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo,
-                                     randomRange(radius << 1) - radius + vtxScratch.vproj.x.lo,
-                                     randomRange(radius << 1) - radius + vtxScratch.vproj.y.lo);
+                    /* airburst: scatter in a world-space sphere around the hit */
+                    ex = g_hitMapX + randomRange(radius << 1) - radius;
+                    ey = g_hitMapY + randomRange(radius << 1) - radius;
+                    ez = g_hitAlt + ((randomRange(radius << 1) - radius) << 5);
                 } else {
-                    tmp = randomRange(0x6000) - 0x3000;
-                    if (g_hudVisible != 0) {
-                        tmp -= g_ourRoll;
-                    }
+                    /* ground burst: fan horizontally and plume upward */
+                    tmp = randomRange(0x8000) - 0x4000;
                     prevDepth = randomRange(radius);
-                    prevX = sinMul(tmp, prevDepth) + vtxScratch.vproj.x.lo;
-                    prevY = vtxScratch.vproj.y.lo - cosMul(tmp, prevDepth);
-                    drawViewportLine(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, prevX, prevY);
+                    ex = g_hitMapX + sinMul(tmp, prevDepth);
+                    ey = g_hitMapY - cosMul(tmp, prevDepth);
+                    ez = g_hitAlt + (randomRange(radius) << 5);
                 }
+                drawWorldLine(hx, hy, g_hitAlt,
+                              (long)(uint16)ex << 5, (long)(uint16)ey << 5, ez, color);
             }
         }
         g_hitEffectTimer -= signOf(g_hitEffectTimer);
     } else {
         g_lockedTargetKilled = 0;
+    }
+}
+
+void drawHudWorldOverlay(void) {
+    int p, lockFlag, r, wpEntry, tmp, t, missileSpecD, loftDist, e, missileSpec, marker, idx, g, radius, objIdx, pointY, pointX, dist, wpIdx, prevX, compat, prevY;
+
+    g_prevKillMarker = g_targetInHudFlag;
+    g_targetInHudFlag = 0;
+
+    for (idx = 0; idx < 12; idx++) {
+        if (g_projectiles[idx].ttl != 0) {
+            projectWorldToHud(g_projectiles[idx].mapX, g_projectiles[idx].mapY, g_projectiles[idx].alt);
+            if (vtxScratch.vproj.x.lo != -1) {
+                setDrawColor(idx < 8 ? 0x0e : 0x0a);
+                drawTargetBox(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, 6, 0);
+            }
+        }
     }
 
     if (g_hudVisible == 0) return;
@@ -453,7 +487,7 @@ void drawHudWorldOverlay(void) {
     }
 
     loadColorPalette(g_nightMode != 0 ? 2 : g_nightMode);
-    setDrawColor(0x0f);
+    setDrawColor(COLOR_WHITE);;
     drawFullscreenLine(319, 199, 319, 199);
     g_lockToneFlag = 0;
 
@@ -471,14 +505,14 @@ void drawHudWorldOverlay(void) {
 
                 if (vtxScratch.vproj.x.lo != -1) {
 
-                    setDrawColor(g_nightMode != 0 ? 8 : 0);
+                    setDrawColor(g_nightMode != 0 ? COLOR_DARKGRAY : COLOR_BLACK);
                     lockFlag = 0;
 
                     compat = missileTargetCompat(missleSpec[missileSpecIndex].weaponIdx, g_groundTargetLock) != 0 ? 4 : 0;
 
                     if (compat != 0 && (missileSpec != 4 || g_planeTable.planes[g_groundTargetLock].active != 0)) {
                         if (missleSpec[missileSpecIndex].ammo != 0) {
-                            setDrawColor(0x0f);
+                            setDrawColor(COLOR_WHITE);;
                             if ((rangeApprox(vtxScratch.vproj.x.lo - 160, vtxScratch.vproj.y.lo - 56) < 48 || g_lockToneFlag != 0) &&
                                 -g_projDepth / 7 < sams[missileSpec].lockRange &&
                                 sams[missileSpec].weaponClass != 7) {
@@ -486,7 +520,7 @@ void drawHudWorldOverlay(void) {
                                     g_lockToneFlag = 1;
                                     lockFlag = 1;
                                     if (sams[missileSpec].lockRange > (-g_projDepth >> 1 >> 1)) {
-                                        setDrawColor(0x0c);
+                                        setDrawColor(COLOR_LIGHTRED);
                                     }
                                 }
                             } else {
@@ -495,7 +529,7 @@ void drawHudWorldOverlay(void) {
                         }
                     } else {
                         if (missileSpec != -1) {
-                            setDrawColor(g_nightMode != 0 ? 8 : 0);
+                            setDrawColor(g_nightMode != 0 ? COLOR_DARKGRAY : COLOR_BLACK);
                         }
                         g_lockToneFlag = 0;
                     }
@@ -513,7 +547,6 @@ void drawHudWorldOverlay(void) {
 
     g_playerPlaneFlags &= ~0x200;
     g_pageFront[1] = 4;
-    g_pageBack[1] = 4;
 
     if (g_activePanelMode == 0x13) {
         if (g_currentWeaponType == 2 || g_currentWeaponType == 0) {
@@ -539,7 +572,7 @@ void drawHudWorldOverlay(void) {
 
                 if (g_currentWeaponType == 0) {
                     projectWorldToHud(g_planeTable.planes[g_groundTargetLock].mapX, g_planeTable.planes[g_groundTargetLock].mapY, 0);
-                    setDrawColor(0x0f);
+                    setDrawColor(COLOR_WHITE);;
                     drawTargetBox(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, 8, 0);
                 } else if (g_targetSlots[0].planeIndex == g_groundTargetLock) {
                     drawStringActivePage(egPrimaryTarget, 0xec, 0x8e, 0x0f);
@@ -573,19 +606,19 @@ void drawHudWorldOverlay(void) {
 
                 if (vtxScratch.vproj.x.lo != -1) {
 
-                    setDrawColor(g_nightMode != 0 ? 8 : 0);
+                    setDrawColor(g_nightMode != 0 ? COLOR_DARKGRAY : COLOR_BLACK);
                     lockFlag = 0;
 
                     missileSpec = missiles[missleSpec[missileSpecIndex].weaponIdx].specIndex;
 
                     if (missleSpec[missileSpecIndex].ammo != 0 && sams[missileSpec].weaponClass == 7) {
-                        setDrawColor(0x0f);
+                        setDrawColor(COLOR_WHITE);;
                         if (rangeApprox(vtxScratch.vproj.x.lo - 160, vtxScratch.vproj.y.lo - 56) < 48) {
                             if (-g_projDepth >> 3 < sams[missileSpec].lockRange) {
                                 g_lockToneFlag = 1;
                                 lockFlag = 1;
                                 if (-g_projDepth >> 1 >> 1 < sams[missileSpec].lockRange) {
-                                    setDrawColor(0x0c);
+                                    setDrawColor(COLOR_LIGHTRED);
                                 }
                             }
                         }
@@ -630,7 +663,6 @@ void drawHudWorldOverlay(void) {
     }
 
     g_pageFront[1] = 2;
-    g_pageBack[1] = 2;
 
     if (g_scopeSweepTimer > 0 && g_threatLabelTarget < 0) {
         idx = -1 - g_threatLabelTarget;
@@ -654,10 +686,10 @@ void drawHudWorldOverlay(void) {
                 vtxScratch.vproj.x.lo = (sinMul(g_ourRoll, 96 - g_flightPathMarkerY) << 2) / 3 + 160;
                 vtxScratch.vproj.y.lo = 96;
             } else {
-                setDrawColor(0x0c);
+                setDrawColor(COLOR_LIGHTRED);
                 drawTargetBox(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, 5, 1);
             }
-            setDrawColor(0x0f);
+            setDrawColor(COLOR_WHITE);;
             drawHudViewLine(160, g_flightPathMarkerY, vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo);
         }
 
@@ -676,11 +708,11 @@ void drawHudWorldOverlay(void) {
                 } else {
                     g_projDepth = clampRange(computeMapTargetRange(g_groundTargetLock) >> 3, 0x0000, 0x0040);
                 }
-                setDrawColor(0x0c);
+                setDrawColor(COLOR_LIGHTRED);
                 drawViewportLine(159 - g_projDepth, 33, 159 - g_projDepth, 30);
                 drawViewportLine(g_projDepth + 160, 33, g_projDepth + 160, 30);
                 drawViewportLine(159 - g_projDepth, 30, g_projDepth + 160, 30);
-                setDrawColor(0x0f);
+                setDrawColor(COLOR_WHITE);;
                 drawHudViewLine(vtxScratch.vproj.x.lo - 4, vtxScratch.vproj.y.lo, vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo - 4);
                 drawHudViewLine(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo - 4, vtxScratch.vproj.x.lo + 4, vtxScratch.vproj.y.lo);
                 drawHudViewLine(vtxScratch.vproj.x.lo + 4, vtxScratch.vproj.y.lo, vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo + 4);
@@ -737,10 +769,8 @@ void drawMissileLock(void) {
     int markX;
     int markY;
     if (g_lockToneFlag != 0 && g_hudVisible != 0) {
-        if (g_drawPage != 0) {
-            drawStringActivePage("Missile Lock", 244, 150, 14);
-        }
-        setDrawColor(14);
+        drawStringActivePage("Missile Lock", 244, 150, 14);
+        setDrawColor(COLOR_YELLOW);
         markX = 268;
         markY = 156;
         drawFullscreenLine(258, 156, 278, 156);

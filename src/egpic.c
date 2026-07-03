@@ -1,5 +1,5 @@
 // seg000 optimization disabled (/Od) code
-#include "egfileio.h"
+#include "shared/common.h"
 #include "egcode.h"
 #include "egpic.h"
 #include "egtypes.h"
@@ -11,7 +11,6 @@
 #include <dos.h>
 #include <memory.h>
 
-void showPicFile(SDL_IOStream *handle, int pageNum);
 void openBlitClosePic(const char *filename, int page) { /* Original chain: OpenFile + blit/decode + CloseFile. Open, blit PIC to page, then close. */
     SDL_IOStream *handle = openFileWrapper(filename, 0);
     /* The PIC decoder/blitter consumes the already-open file handle. */

@@ -10,6 +10,7 @@
 #include "pointers.h"
 #include "log.h"
 #include "gfx.h"
+#include "r2d.h"
 #include "const.h"
 
 #include "comm.h"
@@ -38,10 +39,16 @@ void drawTacticalMap(char page) {
     int gridLo;
     int gridStep;
 
+    /* The scope's grid/marker/projectile lines and its blip icon sprites share the
+     * one ordered overlay stream, so on GL they replay at native resolution in
+     * submission order (icons, submitted last, land over the lines) — the crisp
+     * vector scope. The black backdrop is a direct page fill (fillSpanRect), so it
+     * composites behind the native stream. The interior is a plain rectangle (all
+     * content is rect-clipped at submit), not a round mask, so no scissor is needed. */
     radius = g_radarScopeRange + 1;
-    setDrawColor(0);
-    fillSpanRect(page == 0 ? g_pageFront : g_pageBack, 120, 104, 199, 175);
-    setDrawColor(8);
+    setDrawColor(COLOR_BLACK);
+    fillSpanRect(g_pageFront, 120, 104, 199, 175);
+    setDrawColor(COLOR_DARKGRAY);
     gridStep = 1;
     if (g_radarScopeRange < 2 && g_detailLevel != 0) {
         gridStep = (1 << (2 - (unsigned char)g_radarScopeRange)) + 1;
@@ -99,18 +106,18 @@ void drawTacticalMap(char page) {
             projectMapPoint(g_projectiles[i].mapX, g_projectiles[i].mapY);
             if (g_projDepth != -1) {
                 if (sams[g_projectiles[i].specIdx].weaponClass <= 0) {
-                    setDrawColor(0x0c);
+                    setDrawColor(COLOR_LIGHTRED);
                 } else {
-                    setDrawColor(0x0e);
+                    setDrawColor(COLOR_YELLOW);
                 }
                 if (sams[g_projectiles[i].specIdx].weaponClass == 3) {
-                    setDrawColor(0x0d);
+                    setDrawColor(COLOR_FLAMING);
                 }
                 if (!(g_projectiles[i].alt & 1)) {
-                    setDrawColor(7);
+                    setDrawColor(COLOR_LIGHTGRAY);
                 }
                 if (i >= 8) {
-                    setDrawColor(0x0f);
+                    setDrawColor(COLOR_WHITE);;
                 }
                 code = g_projectiles[i].worldX - g_ourHead;
                 drawScreenLineOnePage(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, vtxScratch.vproj.x.lo - sinMul(code, radius), cosMul(code, radius) + vtxScratch.vproj.y.lo);
@@ -198,7 +205,7 @@ void blitGaugeSprite(int srcCol, int srcRow, int destX, int destY) {
     gaugeSpriteParams.bufPtr = gfxBufPtr;
     gaugeSpriteParams.srcX = srcCol * 8 + 1;
     gaugeSpriteParams.srcY = srcRow * 8 + 31;
-    gaugeSpriteParams.page = (g_drawPage != 0);
+    gaugeSpriteParams.page = 0;
     gaugeSpriteParams.dstX = destX - 3;
     gaugeSpriteParams.dstY = destY - 3;
     gaugeSpriteParams.width = 7;
@@ -211,7 +218,7 @@ void blitSprite(int destX, int destY, int srcX, int srcY, int spriteWidth, int s
     blitSpriteParams.bufPtr = gfxBufPtr;
     blitSpriteParams.srcX = srcX;
     blitSpriteParams.srcY = srcY;
-    blitSpriteParams.page = (g_drawPage != 0);
+    blitSpriteParams.page = 0;
     blitSpriteParams.dstX = destX;
     blitSpriteParams.dstY = destY;
     blitSpriteParams.width = spriteWidth;
@@ -228,16 +235,15 @@ void blitSprite(int destX, int destY, int srcX, int srcY, int spriteWidth, int s
 
 // ==== seg000:0xa934 ====
 void cacheScopePanel(void) {
-    gfx_copyRect(*g_pageFront, 24, 112, *g_pageOffscreen, 24, 112, 73, 57);
+    gfx_captureToImage(g_eg2dBacking, *g_pageFront, 24, 112, 24, 112, 73, 57);
 }
 
 // ==== seg000:0xa962 ====
 void restoreScopePanel(void) {
-    gfx_copyRect(*g_pageOffscreen, 24, 112, *g_pageFront, 24, 112, 73, 57);
-    gfx_copyRect(*g_pageFront, 24, 112, *g_pageBack, 24, 112, 73, 57);
+    gfx_restoreFromImage(g_eg2dBacking, *g_pageFront, 24, 112, 24, 112, 73, 57);
 }
 
 // ==== seg000:0xa9bc ====
 void captureScopePanel(void) {
-    gfx_copyRect(*g_pageOffscreen, 24, 112, g_drawPage ? *g_pageBack : *g_pageFront, 24, 112, 73, 57);
+    gfx_restoreFromImage(g_eg2dBacking, *g_pageFront, 24, 112, 24, 112, 73, 57);
 }

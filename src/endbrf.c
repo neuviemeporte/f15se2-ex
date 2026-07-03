@@ -78,7 +78,9 @@ open_dbicons:
     gfx_waitRetrace();
     fileClose(worldBufHandle);
     gfx_setFadeSteps(8);
-    openShowPic("dbicons.spr", 1);
+    /* Decode the popup icon sheet into a sprite buffer image. */
+    g_dbiconsBuf = gfx_allocSpriteBuf();
+    loadPic("dbicons.spr", g_dbiconsBuf);
 
     spriteMapAreaDef.bufPtr = a;
     spriteStatusBarDef.bufPtr = a;
@@ -96,6 +98,9 @@ open_dbicons:
     gfx_waitRetrace();
     clearRect(debriefPage, 0, 0, 319, 199);
     gfx_blitSprite(spriteMapArea);
+    pathExtent = 0; /* fresh map: no flight path revealed yet */
+    popupVisible = 0;
+    blinkMarker = 0;
     gfx_blitSprite(spriteStatusBar);
 
     debriefPage[2] = 0;
@@ -109,6 +114,7 @@ open_dbicons:
         e += 10;
         c++;
     } while (c < 2);
+    menuLabelsReset(); /* labels just drawn in the unselected colour */
 
     g = 0;
     ejectedFlag = 1;

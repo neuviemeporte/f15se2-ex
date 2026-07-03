@@ -562,10 +562,6 @@ void updateObjects(void) {
                     }
                 }
 
-                g_simObjects[objIdx].terrainColor = readMapPixelColor(
-                    g_simObjects[objIdx].posX,
-                    g_simObjects[objIdx].posY);
-
                 {
                     register char o;
                     o = g_simObjects[objIdx].flags.b[0];

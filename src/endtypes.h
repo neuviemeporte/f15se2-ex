@@ -30,10 +30,6 @@
 /* Popup overlay dimensions (pixels) */
 #define POPUP_WIDTH 48
 #define POPUP_HEIGHT 40
-#define POPUP_SAVE_Y 150 /* Y offset for popup save area */
-
-/* VGA double-buffer size in paragraphs */
-#define VGA_BUF_SIZE 15500
 
 /* Normal debrief exit code */
 #define EXIT_DEBRIEF 0x23
@@ -46,7 +42,7 @@
 #define LANDING_EJECTED 2
 #define LANDING_SAFE 3
 
-/* Max record count sentinel for drawFlightPath */
+/* pathExtent sentinel: the full flight path */
 #define ALL_RECORDS 9999
 
 /* calcMissionScore: compute score for all events */
@@ -97,11 +93,11 @@ typedef struct {
     char unk5;
 } FlightRecord;
 
-/* TargetBlock: the 36-byte (0x24) world target record that readWorldData loads
- * in a single movedata (loadWorldData(&targetBlock, 36), see enworld.c). The
- * original keeps these five fields in one contiguous block at DS:0x4800; the
- * struct guarantees that layout instead of relying on the linker placing five
- * separate communal globals adjacently (which it does not). */
+/* TargetBlock: the 36-byte (0x24) world target record that worldExportToEnd()
+ * fills from EGAME's g_targetSlots (worldxfer.c). The original keeps these five
+ * fields in one contiguous block at DS:0x4800; the struct guarantees that layout
+ * instead of relying on the linker placing five separate communal globals
+ * adjacently (which it does not). */
 #pragma pack(1)
 typedef struct {
     int16 target1Type[2];     /* 0x00 */

@@ -17,11 +17,13 @@ extern int16 lineX2;
 extern int16 lineY2;
 extern int16 clipMaxX;
 extern int16 clipMaxY;
-extern int lastDrawX;
-extern int prevDrawX;
-extern int lastDrawY;
-extern int prevDrawY;
 extern char popupVisible;
+extern char blinkMarker; /* debriefPresent blinks the current-event map marker */
+/* How far the debrief flight path currently extends: the highest flightRecords
+ * index revealed (review), ALL_RECORDS for the full mission-summary path, or 0
+ * when the map holds no path. debriefPresent redraws the map, path and markers
+ * up to this record every frame. */
+extern int pathExtent;
 extern int32 missionScore;
 extern int popupX;
 extern int popupY;
@@ -57,6 +59,7 @@ extern char slotInfoTable[]; /* slot info table, 16 bytes per slot */
 extern char ejectedFlag;
 extern const int popupSpriteY[];
 extern const int popupSpriteX[];
+extern int g_dbiconsBuf; /* sprite buffer holding the decoded dbicons.spr popup icon sheet */
 extern struct SpriteParams *spriteAir;
 extern struct SpriteParams *spriteSam;
 extern struct SpriteParams *spriteGround;
@@ -81,7 +84,6 @@ extern int16 *cursorBoundsPtr;
 extern const char *theaterSprFiles[];
 extern const char *debriefMenuStrings[];
 extern MenuItem debriefMenuItems[];
-extern int worldDataReady;
 extern char *worldStrings[];
 extern char worldStringBuf[];
 extern SDL_IOStream *worldBufHandle;
@@ -131,18 +133,9 @@ extern struct Game far *gameData;
 extern char hercFlag;
 extern uint8 joyAxisY;
 extern uint8 joyAxisX;
-extern int hasVgaMode;
-/* END graphics scratch buffers (allocBuffer in enmain). DOS used these as raw
- * VGA/aux segments; the native debrief draws through the SDL gfx layer instead,
- * so they are allocated but never read — candidates for removal. */
-extern void *gfxBufSeg;
-extern void *vgaBufSeg;
-extern void *vgaBufSeg2;
-extern int vgaBufOffset;
 extern int spriteBufSeg;
 extern int missionResult;
 extern int selectedMenuItem;
-extern uint8 far *worldBufCursor;
 
 /* Named views into weaponDataBlock[] (offsets documented in endata.c):
  *   planeArray     +0x156  SamDataEntry[] — enemy aircraft specs

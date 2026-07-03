@@ -14,7 +14,6 @@
 
 #include "inttype.h"
 #include "pointers.h"
-#include "dosfunc.h"
 #include "log.h"
 #include "comm.h"
 #include "offsets.h"
@@ -32,20 +31,17 @@
 
 #include <SDL3/SDL.h>
 
-const uint16 GFX_INIT_ARG = 2;
 const int RET_MENU = 0xc;
 const int RET_DEBRIEFING = 0x23;
 
 struct GameComm commBuffer;
 struct Game gameBuffer;
 
-void game_init(void) {
-    uint16 gfxBufAddress;
-
+void game_init(const int16 showIntro) {
     commData = &commBuffer;
     gameData = &gameBuffer;
 
-    commData->needSplash = 1;
+    commData->needSplash = showIntro;
     commData->setupUseJoy = 0;
     commData->setupDetail = 4; /* 4 = extended detail: full LOD + long-range draw distance */
 
@@ -53,16 +49,20 @@ void game_init(void) {
     gfx_setMode13();
     r3d_init();
 
-    gfxBufAddress = (uint16)gfx_allocPage((int)GFX_INIT_ARG);
-    commData->gfxInitResult = gfxBufAddress;
+    /* F15.SPR (radar/tac-map/HUD sprite sheet) lives in a sprite-buffer image, not
+     * a page. Allocated once here; START decodes f15.spr into it and EGAME blits
+     * from it via gfxBufPtr (the handle). */
+    commData->gfxInitResult = (int16)gfx_allocSpriteBuf();
 }
 
-/* In-process entry points for the former START.EXE / EGAME.EXE / END.EXE.
- * These used to be separate programs launched via dos_runProgram(); they are
- * now linked into this single executable and called directly. */
+/* In-process entry points for START.EXE / EGAME.EXE / END.EXE — three separate
+ * DOS programs in the original, here linked into this single executable and
+ * called directly. */
 int start_main(void);
 int egame_main(void);
 int end_main(void);
+bool setGamePath(const char *path);
+bool verifyGameAssets();
 
 /* Graceful application shutdown, registered with the input pump as the
  * window-close (SDL_EVENT_QUIT) handler so closing the window quits from any
@@ -74,13 +74,37 @@ static void app_quit(void) {
     exit(0);
 }
 
-int main(int argc, char *argv[]) {
-    /* process cmdline args */
-    int argIdx, charIdx;
+void usage(int errcode) {
+    printf("Usage: f15se2-ex [--help] [--nointro] [--game path]\n"
+           "--nointro      Skip intro sequence\n"
+           "--game path    Path to directory containing game assets, can also use\n"
+           "               F15SE2_DIR env var, default is current directory\n");
+    exit(errcode);
+}
 
+int main(int argc, char *argv[]) {
+    int16 showIntro = 1;
     log_set_app("f15");
+    if (!setGamePath(getenv("F15SE2_DIR"))) goto shutdown;
+    /* process cmdline args */
+    for (int i = 1; i < argc; ++i) {
+        const char* optStr = argv[i];
+        if (strcmp(optStr, "--help") == 0) usage(0);
+        else if (strcmp(optStr, "--nointro") == 0) showIntro = 0;
+        else if (strcmp(optStr, "--game") == 0) {
+            if (i + 1 >= argc) { printf("Option requires an argument: --game\n"); usage(1); }
+            if (!setGamePath(argv[i + 1])) goto shutdown;
+            i++;
+        }
+        else {
+            printf("Unrecognized option: '%s'\n", optStr);
+            usage(1);
+        }
+    }
+
+    if (!verifyGameAssets()) goto shutdown;
     gfx_videoInit();
-    game_init();
+    game_init(showIntro);
     joy_init();
     input_setQuitHandler(app_quit);
 
@@ -102,6 +126,7 @@ int main(int argc, char *argv[]) {
         if (err != RET_DEBRIEFING) break;
     }
 
+shutdown:
     joy_shutdown();
     r3d_shutdown();
     gfx_videoShutdown();

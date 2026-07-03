@@ -70,6 +70,14 @@ FetchContent_Declare(
     UPDATE_DISCONNECTED TRUE
 )
 FetchContent_MakeAvailable(nuked_opl3)
+FetchContent_Declare(
+    quick_digest5
+    GIT_REPOSITORY "https://github.com/nthnn/QuickDigest5.git"
+    GIT_TAG "1d61aece0e023e4c41cf24547fa1ac2f8028219d"
+    UPDATE_DISCONNECTED TRUE
+)
+FetchContent_MakeAvailable(quick_digest5)
+
 
 #==============================================================================
 # Sources
@@ -97,7 +105,6 @@ set(F15SE2_SOURCES
     # f15 launcher
     ${SRC_DIR}/f15.c
     ${SRC_DIR}/dosfunc.c
-    ${SRC_DIR}/biosfunc.c
     ${SRC_DIR}/log.c
     ${SRC_DIR}/gfx_impl.c
     ${SRC_DIR}/joystick.c
@@ -121,6 +128,7 @@ set(EGAME_SOURCES
     ${SRC_DIR}/egmain.c
     ${SRC_DIR}/egsphere.c
     ${SRC_DIR}/egframe.c
+    ${SRC_DIR}/worldxfer.c
     ${SRC_DIR}/eg3dview.c
     ${SRC_DIR}/eg3dproj.c
     ${SRC_DIR}/eg3dgrid.c
@@ -137,7 +145,6 @@ set(EGAME_SOURCES
     ${SRC_DIR}/egtgt2.c
     ${SRC_DIR}/egmath.c
     ${SRC_DIR}/egkeys.c
-    ${SRC_DIR}/egfileio.c
     ${SRC_DIR}/egpic.c
     ${SRC_DIR}/egdata.c
     ${SRC_DIR}/egfarbuf.c
@@ -149,6 +156,7 @@ set(EGAME_SOURCES
     ${SRC_DIR}/r3d_sw.c
     ${SRC_DIR}/r3d_gl.c
     ${SRC_DIR}/r3dmesh.c
+    ${SRC_DIR}/r2d.c
     ${SRC_DIR}/egsys.c
     ${SRC_DIR}/egtick.c
     ${SRC_DIR}/eginput.c
@@ -164,7 +172,6 @@ set(EGAME_SOURCES
 set(END_SOURCES
     ${SRC_DIR}/enmain.c
     ${SRC_DIR}/enmisc.c
-    ${SRC_DIR}/enworld.c
     ${SRC_DIR}/eninput.c
     ${SRC_DIR}/entext.c
     ${SRC_DIR}/enrand.c
@@ -181,761 +188,24 @@ list(APPEND F15SE2_SOURCES ${END_SOURCES})
 #==============================================================================
 # Target
 #==============================================================================
-add_executable(f15se2 ${F15SE2_SOURCES})
-add_executable(original_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/original_behavior_tests.cpp
-    ${SRC_DIR}/eg3dmath.c
-    ${SRC_DIR}/egmath.c
-    ${SRC_DIR}/egflight.c
-    ${SRC_DIR}/eghudm.c
-    ${SRC_DIR}/egdata.c
-)
-add_executable(utility_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/utility_behavior_tests.cpp
-    ${SRC_DIR}/shared/miscimpl.c
-    ${SRC_DIR}/shared/filepic.c
-    ${SRC_DIR}/shared/textfmt.c
-    ${SRC_DIR}/shared/drawstr.c
-    ${SRC_DIR}/eg3dload.c
-    ${SRC_DIR}/enbrief.c
-    ${SRC_DIR}/enworld.c
-    ${SRC_DIR}/enmisc.c
-    ${SRC_DIR}/endata.c
-    ${SRC_DIR}/strand.c
-    ${SRC_DIR}/stgen.c
-    ${SRC_DIR}/stterr.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/r3d_render_stubs.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/utility_stubs.cpp
-)
-add_executable(award_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/award_behavior_tests.cpp
-    ${SRC_DIR}/enaward.c
-    ${SRC_DIR}/endata.c
-)
-add_executable(end_file_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/end_file_behavior_tests.cpp
-    ${SRC_DIR}/enfile.c
-    ${SRC_DIR}/enrand.c
-    ${SRC_DIR}/endata.c
-)
-add_executable(end_input_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/end_input_behavior_tests.cpp
-    ${SRC_DIR}/eninput.c
-    ${SRC_DIR}/endata.c
-)
-add_executable(end_runtime_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/end_runtime_behavior_tests.cpp
-    ${SRC_DIR}/enmain.c
-)
-add_executable(end_debrief_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/end_debrief_behavior_tests.cpp
-    ${SRC_DIR}/endbrf.c
-    ${SRC_DIR}/endata.c
-)
-add_executable(geometry_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/geometry_behavior_tests.cpp
-    ${SRC_DIR}/eg3dproj.c
-    ${SRC_DIR}/egtacmap.c
-    ${SRC_DIR}/egui.c
-    ${SRC_DIR}/egtgt2.c
-    ${SRC_DIR}/eg3dvp.c
-    ${SRC_DIR}/eg3dgrid.c
-    ${SRC_DIR}/eg3dmap.c
-    ${SRC_DIR}/eg3dcam.c
-    ${SRC_DIR}/eg3dmath.c
-    ${SRC_DIR}/egmath.c
-    ${SRC_DIR}/egdata.c
-)
-add_executable(file_io_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/file_io_behavior_tests.cpp
-    ${SRC_DIR}/shared/file_io.c
-)
-add_executable(gameplay_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/gameplay_behavior_tests.cpp
-    ${SRC_DIR}/egthreat.c
-    ${SRC_DIR}/egcombat.c
-    ${SRC_DIR}/egtarget.c
-    ${SRC_DIR}/egframe.c
-    ${SRC_DIR}/egkeys.c
-    ${SRC_DIR}/egmath.c
-    ${SRC_DIR}/egdata.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/r3d_render_stubs.cpp
-)
-add_executable(input_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/input_behavior_tests.cpp
-    ${SRC_DIR}/eginput.c
-    ${SRC_DIR}/egdata.c
-)
-add_executable(hud_raster_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/hud_raster_behavior_tests.cpp
-    ${SRC_DIR}/eghudr.c
-    ${SRC_DIR}/eghudm.c
-    ${SRC_DIR}/egdata.c
-)
-add_executable(view_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/view_behavior_tests.cpp
-    ${SRC_DIR}/eg3dview.c
-    ${SRC_DIR}/egdata.c
-)
-add_executable(sys_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/sys_behavior_tests.cpp
-    ${SRC_DIR}/egsys.c
-    ${SRC_DIR}/egdata.c
-)
-add_executable(egsys_internal_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/egsys_internal_behavior_tests.cpp
-    ${SRC_DIR}/egdata.c
-)
-add_executable(io_wrapper_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/io_wrapper_behavior_tests.cpp
-    ${SRC_DIR}/egfileio.c
-)
-add_executable(farbuf_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/farbuf_behavior_tests.cpp
-    ${SRC_DIR}/egfarbuf.c
-)
-add_executable(pic_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/pic_behavior_tests.cpp
-    ${SRC_DIR}/egpic.c
-)
-add_executable(sphere_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/sphere_behavior_tests.cpp
-    ${SRC_DIR}/egsphere.c
-    ${SRC_DIR}/egdata.c
-)
-add_executable(load_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/load_behavior_tests.cpp
-    ${SRC_DIR}/eg3dload.c
-    ${SRC_DIR}/egmath.c
-    ${SRC_DIR}/egdata.c
-    ${SRC_DIR}/egfarbuf.c
-)
-add_executable(start_runtime_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/start_runtime_behavior_tests.cpp
-    ${SRC_DIR}/stinit.c
-    ${SRC_DIR}/stalloc.c
-    ${SRC_DIR}/stsprit.c
-    ${SRC_DIR}/stdata.c
-)
-add_executable(shared_timer_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/shared_timer_behavior_tests.cpp
-    ${SRC_DIR}/shared/timer.c
-)
-add_executable(shared_runtime_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/shared_runtime_behavior_tests.cpp
-    ${SRC_DIR}/shared/cleanup.c
-    ${SRC_DIR}/shared/drawstr.c
-)
-add_executable(shared_overlay_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/shared_overlay_behavior_tests.cpp
-    ${SRC_DIR}/shared/ovlimpl.c
-)
-add_executable(shared_misc_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/shared_misc_behavior_tests.cpp
-)
-add_executable(shared_picimpl_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/shared_picimpl_behavior_tests.cpp
-    ${SRC_DIR}/shared/picimpl.c
-)
-add_executable(eg_stubs_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/eg_stubs_behavior_tests.cpp
-    ${SRC_DIR}/egstubs.c
-)
-add_executable(eg_main_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/eg_main_behavior_tests.cpp
-    ${SRC_DIR}/egmain.c
-    ${SRC_DIR}/egdata.c
-    ${SRC_DIR}/egfarbuf.c
-)
-add_executable(eg3drast_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/eg3drast_behavior_tests.cpp
-    ${SRC_DIR}/eg3drast.c
-    ${SRC_DIR}/egdata.c
-)
-add_executable(eg3drast_internal_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/eg3drast_internal_behavior_tests.cpp
-    ${SRC_DIR}/egdata.c
-)
-add_executable(tick_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/tick_behavior_tests.cpp
-    ${SRC_DIR}/egtick.c
-    ${SRC_DIR}/egdata.c
-)
-add_executable(start_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/start_behavior_tests.cpp
-    ${SRC_DIR}/stgen.c
-    ${SRC_DIR}/strand.c
-    ${SRC_DIR}/stparse.c
-    ${SRC_DIR}/stterr.c
-    ${SRC_DIR}/stmissn.c
-    ${SRC_DIR}/stpilot.c
-    ${SRC_DIR}/stdata.c
-    ${SRC_DIR}/entext.c
-    ${SRC_DIR}/shared/filepic.c
-)
-add_executable(start_parse_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/start_parse_behavior_tests.cpp
-    ${SRC_DIR}/stparse.c
-    ${SRC_DIR}/stdata.c
-)
-add_executable(launcher_runtime_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/launcher_runtime_behavior_tests.cpp
-    ${SRC_DIR}/f15.c
-)
-add_executable(log_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/log_behavior_tests.cpp
-    ${SRC_DIR}/log.c
-)
-add_executable(dosfunc_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/dosfunc_behavior_tests.cpp
-)
-add_executable(vgapal_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/vgapal_behavior_tests.cpp
-    ${SRC_DIR}/vgapal.c
-)
-add_executable(vgapal_internal_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/vgapal_internal_behavior_tests.cpp
-)
-add_executable(start_main_autostart_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/start_main_autostart_behavior_tests.cpp
-    ${SRC_DIR}/stmain.c
-)
-add_executable(start_main_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/start_main_behavior_tests.cpp
-    ${SRC_DIR}/stmain.c
-)
-add_executable(gfx_impl_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/gfx_impl_behavior_tests.cpp
-    ${SRC_DIR}/gfx_impl.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/r3d_render_stubs.cpp
-)
-add_executable(biosfunc_behavior_tests
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/biosfunc_behavior_tests.cpp
-)
-
-set_target_properties(f15se2 PROPERTIES
-    OUTPUT_NAME "f15se2-ex"
-    PREFIX ""
-)
-
-# Compile C as C++ for extra linting.
-set_source_files_properties(${F15SE2_SOURCES} PROPERTIES LANGUAGE CXX)
-
-# Nuked-OPL3 stays plain C (not in the CXX-forced list above).
-target_sources(f15se2 PRIVATE ${nuked_opl3_SOURCE_DIR}/opl3.c)
-
-# Keep the new log.h diagnostics live (the Log* macros compile out without DEBUG).
-target_compile_definitions(f15se2 PRIVATE DEBUG)
-
-if(AUTOSTART)
-    target_compile_definitions(f15se2 PRIVATE DEBUG_AUTOSTART)
-endif()
-
-target_include_directories(f15se2 BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-    ${SRC_DIR}/asound
-    ${nuked_opl3_SOURCE_DIR}
-)
-target_include_directories(original_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(utility_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(award_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(end_file_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(end_input_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(end_runtime_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(end_debrief_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(geometry_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(file_io_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(gameplay_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(input_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(hud_raster_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(view_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(sys_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(egsys_internal_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(io_wrapper_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(farbuf_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(pic_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(sphere_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(load_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(start_runtime_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(shared_timer_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(shared_runtime_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(shared_overlay_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(shared_misc_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(shared_picimpl_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(eg_stubs_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(eg_main_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(eg3drast_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(eg3drast_internal_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(tick_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(start_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(start_parse_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(launcher_runtime_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(log_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(dosfunc_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(vgapal_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(vgapal_internal_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(start_main_autostart_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(start_main_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(gfx_impl_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-target_include_directories(biosfunc_behavior_tests BEFORE PRIVATE
-    ${SRC_DIR}/compat64
-    ${SRC_DIR}
-    ${SRC_DIR}/shared
-)
-
-# SDL3::SDL3 is exported by both the system package and the FetchContent build,
-# so this works regardless of how SDL3 was provided.
-target_link_libraries(f15se2 PRIVATE SDL3::SDL3)
-target_link_libraries(utility_behavior_tests PRIVATE SDL3::SDL3)
-target_link_libraries(award_behavior_tests PRIVATE SDL3::SDL3)
-target_link_libraries(end_file_behavior_tests PRIVATE SDL3::SDL3)
-target_link_libraries(end_input_behavior_tests PRIVATE SDL3::SDL3)
-target_link_libraries(file_io_behavior_tests PRIVATE SDL3::SDL3)
-target_link_libraries(input_behavior_tests PRIVATE SDL3::SDL3)
-target_link_libraries(shared_timer_behavior_tests PRIVATE SDL3::SDL3)
-target_link_libraries(shared_overlay_behavior_tests PRIVATE SDL3::SDL3)
-target_link_libraries(shared_picimpl_behavior_tests PRIVATE SDL3::SDL3)
-target_link_libraries(start_behavior_tests PRIVATE SDL3::SDL3)
-target_link_libraries(launcher_runtime_behavior_tests PRIVATE SDL3::SDL3)
-target_link_libraries(log_behavior_tests PRIVATE SDL3::SDL3)
-target_link_libraries(start_main_autostart_behavior_tests PRIVATE SDL3::SDL3)
-target_link_libraries(start_main_behavior_tests PRIVATE SDL3::SDL3)
-target_link_libraries(gfx_impl_behavior_tests PRIVATE SDL3::SDL3)
+# The .c files are compiled as C++ (const linkage rules, overloads, etc.).
+# vgapal.c is a standalone tool pulled in only by its own tests.
 set_source_files_properties(
-    ${SRC_DIR}/eg3dmath.c
-    ${SRC_DIR}/egmath.c
-    ${SRC_DIR}/egflight.c
-    ${SRC_DIR}/eghudm.c
-    ${SRC_DIR}/egdata.c
-    ${SRC_DIR}/shared/miscimpl.c
-    ${SRC_DIR}/shared/filepic.c
-    ${SRC_DIR}/shared/textfmt.c
-    ${SRC_DIR}/shared/drawstr.c
-    ${SRC_DIR}/eg3dload.c
-    ${SRC_DIR}/enbrief.c
-    ${SRC_DIR}/enworld.c
-    ${SRC_DIR}/enmisc.c
-    ${SRC_DIR}/endata.c
-    ${SRC_DIR}/strand.c
-    ${SRC_DIR}/stgen.c
-    ${SRC_DIR}/stterr.c
-    ${SRC_DIR}/enaward.c
-    ${SRC_DIR}/enfile.c
-    ${SRC_DIR}/enrand.c
-    ${SRC_DIR}/eninput.c
-    ${SRC_DIR}/enmain.c
-    ${SRC_DIR}/endbrf.c
-    ${SRC_DIR}/eg3dproj.c
-    ${SRC_DIR}/egtacmap.c
-    ${SRC_DIR}/egui.c
-    ${SRC_DIR}/egtgt2.c
-    ${SRC_DIR}/eg3dvp.c
-    ${SRC_DIR}/eg3dgrid.c
-    ${SRC_DIR}/eg3dmap.c
-    ${SRC_DIR}/eg3dcam.c
-    ${SRC_DIR}/shared/file_io.c
-    ${SRC_DIR}/egthreat.c
-    ${SRC_DIR}/egcombat.c
-    ${SRC_DIR}/egtarget.c
-    ${SRC_DIR}/egframe.c
-    ${SRC_DIR}/egkeys.c
-    ${SRC_DIR}/eginput.c
-    ${SRC_DIR}/eghudr.c
-    ${SRC_DIR}/eg3dview.c
-    ${SRC_DIR}/egsys.c
-    ${SRC_DIR}/egfileio.c
-    ${SRC_DIR}/egfarbuf.c
-    ${SRC_DIR}/egpic.c
-    ${SRC_DIR}/egsphere.c
-    ${SRC_DIR}/eg3dload.c
-    ${SRC_DIR}/stalloc.c
-    ${SRC_DIR}/stsprit.c
-    ${SRC_DIR}/shared/timer.c
-    ${SRC_DIR}/shared/cleanup.c
-    ${SRC_DIR}/shared/drawstr.c
-    ${SRC_DIR}/shared/ovlimpl.c
-    ${SRC_DIR}/shared/miscimpl.c
-    ${SRC_DIR}/shared/picimpl.c
-    ${SRC_DIR}/egstubs.c
-    ${SRC_DIR}/egmain.c
-    ${SRC_DIR}/eg3drast.c
-    ${SRC_DIR}/egtick.c
-    ${SRC_DIR}/stpilot.c
-    ${SRC_DIR}/stdata.c
-    ${SRC_DIR}/entext.c
-    ${SRC_DIR}/stparse.c
-    ${SRC_DIR}/f15.c
-    ${SRC_DIR}/log.c
-    ${SRC_DIR}/dosfunc.c
+    ${F15SE2_SOURCES}
     ${SRC_DIR}/vgapal.c
-    ${SRC_DIR}/stmain.c
-    ${SRC_DIR}/gfx_impl.c
     PROPERTIES LANGUAGE CXX
-)
-if(
-    CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
-    OR CMAKE_CXX_COMPILER_ID MATCHES "Clang"
-)
-    target_compile_options(original_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(original_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(utility_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(utility_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(award_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(award_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(end_file_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(end_file_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(end_input_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(end_input_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(end_runtime_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(end_runtime_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(end_debrief_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(end_debrief_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(geometry_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(geometry_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(file_io_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(file_io_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(gameplay_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(gameplay_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(input_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(input_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(hud_raster_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(hud_raster_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(view_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(view_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(sys_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(sys_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(egsys_internal_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(egsys_internal_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(io_wrapper_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(io_wrapper_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(farbuf_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(farbuf_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(pic_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(pic_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(sphere_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(sphere_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(load_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(load_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(start_runtime_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(start_runtime_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(shared_timer_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(shared_timer_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(shared_runtime_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(shared_runtime_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(shared_overlay_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(shared_overlay_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(shared_misc_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(shared_misc_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(shared_picimpl_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(shared_picimpl_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(eg_stubs_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(eg_stubs_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(eg_main_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(eg_main_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(eg3drast_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(eg3drast_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(eg3drast_internal_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(eg3drast_internal_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(tick_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(tick_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(start_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(start_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(start_parse_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(start_parse_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(launcher_runtime_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(launcher_runtime_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(log_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(log_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(dosfunc_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(dosfunc_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(vgapal_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(vgapal_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(vgapal_internal_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(vgapal_internal_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(start_main_autostart_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(start_main_autostart_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(start_main_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(start_main_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(gfx_impl_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(gfx_impl_behavior_tests PRIVATE -Wl,--gc-sections)
-    target_compile_options(biosfunc_behavior_tests PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
-    target_link_options(biosfunc_behavior_tests PRIVATE -Wl,--gc-sections)
-endif()
-
-target_compile_definitions(launcher_runtime_behavior_tests PRIVATE main=f15_program_main)
-target_compile_definitions(vgapal_behavior_tests PRIVATE main=vgapal_program_main)
-target_compile_definitions(start_main_autostart_behavior_tests PRIVATE DEBUG_AUTOSTART)
-
-enable_testing()
-add_test(NAME original_behavior_tests COMMAND original_behavior_tests)
-add_test(NAME utility_behavior_tests COMMAND utility_behavior_tests)
-add_test(NAME award_behavior_tests COMMAND award_behavior_tests)
-add_test(NAME end_file_behavior_tests COMMAND end_file_behavior_tests)
-add_test(NAME end_input_behavior_tests COMMAND end_input_behavior_tests)
-add_test(NAME end_runtime_behavior_tests COMMAND end_runtime_behavior_tests)
-add_test(NAME end_debrief_behavior_tests COMMAND end_debrief_behavior_tests)
-add_test(NAME geometry_behavior_tests COMMAND geometry_behavior_tests)
-add_test(NAME file_io_behavior_tests COMMAND file_io_behavior_tests)
-add_test(NAME gameplay_behavior_tests COMMAND gameplay_behavior_tests)
-add_test(NAME input_behavior_tests COMMAND input_behavior_tests)
-add_test(NAME hud_raster_behavior_tests COMMAND hud_raster_behavior_tests)
-add_test(NAME view_behavior_tests COMMAND view_behavior_tests)
-add_test(NAME sys_behavior_tests COMMAND sys_behavior_tests)
-add_test(NAME egsys_internal_behavior_tests COMMAND egsys_internal_behavior_tests)
-add_test(NAME io_wrapper_behavior_tests COMMAND io_wrapper_behavior_tests)
-add_test(NAME farbuf_behavior_tests COMMAND farbuf_behavior_tests)
-add_test(NAME pic_behavior_tests COMMAND pic_behavior_tests)
-add_test(NAME sphere_behavior_tests COMMAND sphere_behavior_tests)
-add_test(NAME load_behavior_tests COMMAND load_behavior_tests)
-add_test(NAME start_runtime_behavior_tests COMMAND start_runtime_behavior_tests)
-add_test(NAME shared_timer_behavior_tests COMMAND shared_timer_behavior_tests)
-add_test(NAME shared_runtime_behavior_tests COMMAND shared_runtime_behavior_tests)
-add_test(NAME shared_overlay_behavior_tests COMMAND shared_overlay_behavior_tests)
-add_test(NAME shared_misc_behavior_tests COMMAND shared_misc_behavior_tests)
-add_test(NAME shared_picimpl_behavior_tests COMMAND shared_picimpl_behavior_tests)
-add_test(NAME eg_stubs_behavior_tests COMMAND eg_stubs_behavior_tests)
-add_test(NAME eg_main_behavior_tests COMMAND eg_main_behavior_tests)
-add_test(NAME eg3drast_behavior_tests COMMAND eg3drast_behavior_tests)
-add_test(NAME eg3drast_internal_behavior_tests COMMAND eg3drast_internal_behavior_tests)
-add_test(NAME tick_behavior_tests COMMAND tick_behavior_tests)
-add_test(NAME start_behavior_tests COMMAND start_behavior_tests)
-add_test(NAME start_parse_behavior_tests COMMAND start_parse_behavior_tests)
-add_test(NAME launcher_runtime_behavior_tests COMMAND launcher_runtime_behavior_tests)
-add_test(NAME log_behavior_tests COMMAND log_behavior_tests)
-add_test(NAME dosfunc_behavior_tests COMMAND dosfunc_behavior_tests)
-add_test(NAME vgapal_behavior_tests COMMAND vgapal_behavior_tests)
-add_test(NAME vgapal_internal_behavior_tests COMMAND vgapal_internal_behavior_tests)
-add_test(NAME start_main_autostart_behavior_tests COMMAND start_main_autostart_behavior_tests)
-add_test(NAME start_main_behavior_tests COMMAND start_main_behavior_tests)
-add_test(NAME gfx_impl_behavior_tests COMMAND gfx_impl_behavior_tests)
-add_test(NAME biosfunc_behavior_tests COMMAND biosfunc_behavior_tests)
-add_test(NAME original_binary_function_harness
-    COMMAND python3 /home/xor/games/f15se2-re/mzretools/original_binary_function_harness.py
-)
-add_custom_target(function_coverage_audit
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tests/function_coverage_audit.py ${CMAKE_BINARY_DIR}
-    COMMENT "Running tests and auditing source function coverage from unit-test object files"
-)
-add_custom_target(source_line_coverage_audit
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tests/function_coverage_audit.py ${CMAKE_BINARY_DIR}
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tests/source_line_coverage_audit.py ${CMAKE_BINARY_DIR}
-    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tests/cross_layer_function_inventory.py --build-dir ${CMAKE_BINARY_DIR}
-    COMMENT "Running tests and auditing source line coverage and cross-layer function inventory"
 )
 
 # OpenGL for the GL 3D backend (r3d_gl.c). The immediate-mode 1.x path needs only
 # the base GL library; SDL3 supplies the GL headers and context management.
 find_package(OpenGL REQUIRED)
-target_link_libraries(f15se2 PRIVATE OpenGL::GL)
 
-#==============================================================================
-# Compiler warnings
-#==============================================================================
-if(
-    CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
-    OR
-    (
-        CMAKE_CXX_COMPILER_ID MATCHES "Clang"
-        AND
-        NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
-    )
-)
-
-    # find same definiton/extern mismatches as the MSVC linker using gcc/LTO
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-      # only available with gcc
-      target_compile_options(f15se2 PRIVATE -flto)
-      # break linking on mismatch errors
-      target_link_options(f15se2 PRIVATE -flto -Werror=lto-type-mismatch)
-    endif()
-
-    target_compile_options(f15se2 PRIVATE
-        -Wall
-
-        -Wno-unused
-        -Wno-unused-variable
-        -Wno-unused-parameter
-        -Wno-unused-function
-        -Wno-unused-but-set-variable
-        -Wno-deprecated-declarations
-        -Wno-deprecated
-
-        $<$<CXX_COMPILER_ID:Clang>:-ferror-limit=1000>
-        $<$<CXX_COMPILER_ID:AppleClang>:-ferror-limit=1000>
-        $<$<CXX_COMPILER_ID:GNU>:-fmax-errors=1000>
-
-        -Wno-narrowing
-    )
-
-    # Sanitizers must be passed to both the compiler and the linker.
+#------------------------------------------------------------------------------
+# Sanitizers (GCC/Clang, opt-in). Applied at directory scope so the executable
+# and the tests (which each compile the game code they exercise) are instrumented
+# consistently.
+#------------------------------------------------------------------------------
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(SANITIZERS "")
     if(ASAN)
         list(APPEND SANITIZERS address)
@@ -946,14 +216,63 @@ if(
     if(SANITIZERS)
         list(JOIN SANITIZERS "," SANITIZER_LIST)
         message(STATUS "Building with sanitizers: ${SANITIZER_LIST}")
-        target_compile_options(f15se2 PRIVATE
-            -fsanitize=${SANITIZER_LIST}
-            -fno-omit-frame-pointer
-            -g                      # DWARF line info so ASan/UBSan reports symbolize to file:line
-        )
-        target_link_options(f15se2 PRIVATE -fsanitize=${SANITIZER_LIST})
+        add_compile_options(-fsanitize=${SANITIZER_LIST} -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=${SANITIZER_LIST})
+    endif()
+endif()
+
+add_executable(f15se2 ${F15SE2_SOURCES})
+target_sources(f15se2 PRIVATE
+    ${nuked_opl3_SOURCE_DIR}/opl3.c
+    ${quick_digest5_SOURCE_DIR}/src/quickdigest5.cpp
+)
+# Keep the log.h diagnostics live (the Log* macros compile out without DEBUG).
+target_compile_definitions(f15se2 PRIVATE DEBUG)
+if(AUTOSTART)
+    target_compile_definitions(f15se2 PRIVATE DEBUG_AUTOSTART)
+endif()
+target_include_directories(f15se2 BEFORE PRIVATE
+    ${SRC_DIR}/compat64
+    ${SRC_DIR}
+    ${SRC_DIR}/shared
+    ${SRC_DIR}/asound
+    ${nuked_opl3_SOURCE_DIR}
+    ${quick_digest5_SOURCE_DIR}/include
+)
+target_link_libraries(f15se2 PRIVATE SDL3::SDL3 OpenGL::GL)
+
+#==============================================================================
+# Compiler warnings (game executable)
+#==============================================================================
+if(
+    CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+    OR
+    (
+        CMAKE_CXX_COMPILER_ID MATCHES "Clang"
+        AND
+        NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
+    )
+)
+    # find same definition/extern mismatches as the MSVC linker using gcc/LTO
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_compile_options(f15se2 PRIVATE -flto)
+        target_link_options(f15se2 PRIVATE -flto -Werror=lto-type-mismatch)
     endif()
 
+    target_compile_options(f15se2 PRIVATE
+        -Wall
+        -Wno-unused
+        -Wno-unused-variable
+        -Wno-unused-parameter
+        -Wno-unused-function
+        -Wno-unused-but-set-variable
+        -Wno-deprecated-declarations
+        -Wno-deprecated
+        $<$<CXX_COMPILER_ID:Clang>:-ferror-limit=1000>
+        $<$<CXX_COMPILER_ID:AppleClang>:-ferror-limit=1000>
+        $<$<CXX_COMPILER_ID:GNU>:-fmax-errors=1000>
+        -Wno-narrowing
+    )
 elseif(
     MSVC
     OR
@@ -973,7 +292,157 @@ elseif(
         /wd4311  # pointer truncation
         /wd4312  # conversion to pointer of greater size
     )
-
 else()
     message(WARNING "Unknown C++ compiler: ${CMAKE_CXX_COMPILER_ID}")
 endif()
+
+# copy sdl3.dll into the build directory after build
+if(WIN32)
+    add_custom_command(TARGET f15se2 POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:SDL3::SDL3>
+        $<TARGET_FILE_DIR:f15se2>
+    )
+endif()
+
+#==============================================================================
+# Behavior tests
+#==============================================================================
+# The suite is isolation-designed: each test compiles only the game translation
+# units it exercises and stubs the rest, so tests deliberately do NOT link the
+# whole game (that would pull real objects in and clash with the inline stubs).
+# add_behavior_test() collapses the per-target boilerplate (include dirs, compile
+# options, ctest registration) while keeping each test's curated source list.
+#
+#   add_behavior_test(<name> [SOURCES <game .c / stub .cpp ...>] [DEFS <defs...>])
+enable_testing()
+
+set(TEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+
+function(add_behavior_test name)
+    cmake_parse_arguments(T "" "" "SOURCES;DEFS" ${ARGN})
+    add_executable(${name} ${TEST_DIR}/${name}.cpp ${T_SOURCES})
+    target_include_directories(${name} BEFORE PRIVATE
+        ${SRC_DIR}/compat64
+        ${SRC_DIR}
+        ${SRC_DIR}/shared
+    )
+    target_link_libraries(${name} PRIVATE SDL3::SDL3)
+    if(T_DEFS)
+        target_compile_definitions(${name} PRIVATE ${T_DEFS})
+    endif()
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(${name} PRIVATE -ffunction-sections -fdata-sections -Wno-narrowing)
+        target_link_options(${name} PRIVATE -Wl,--gc-sections)
+    endif()
+    add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+add_behavior_test(original_behavior_tests SOURCES
+    ${SRC_DIR}/eg3dmath.c ${SRC_DIR}/egmath.c ${SRC_DIR}/egflight.c
+    ${SRC_DIR}/eghudm.c ${SRC_DIR}/egdata.c)
+add_behavior_test(utility_behavior_tests SOURCES
+    ${SRC_DIR}/shared/miscimpl.c ${SRC_DIR}/shared/filepic.c
+    ${SRC_DIR}/shared/textfmt.c ${SRC_DIR}/shared/drawstr.c
+    ${SRC_DIR}/eg3dload.c ${SRC_DIR}/enbrief.c ${SRC_DIR}/worldxfer.c
+    ${SRC_DIR}/enmisc.c ${SRC_DIR}/endata.c ${SRC_DIR}/strand.c
+    ${SRC_DIR}/stgen.c ${SRC_DIR}/stterr.c
+    ${TEST_DIR}/r3d_render_stubs.cpp ${TEST_DIR}/utility_stubs.cpp)
+add_behavior_test(award_behavior_tests SOURCES
+    ${SRC_DIR}/enaward.c ${SRC_DIR}/endata.c)
+add_behavior_test(end_file_behavior_tests SOURCES
+    ${SRC_DIR}/enfile.c ${SRC_DIR}/enrand.c ${SRC_DIR}/endata.c)
+add_behavior_test(end_input_behavior_tests SOURCES
+    ${SRC_DIR}/eninput.c ${SRC_DIR}/endata.c)
+add_behavior_test(end_runtime_behavior_tests SOURCES
+    ${SRC_DIR}/enmain.c)
+add_behavior_test(end_debrief_behavior_tests SOURCES
+    ${SRC_DIR}/endbrf.c ${SRC_DIR}/endata.c)
+add_behavior_test(geometry_behavior_tests SOURCES
+    ${SRC_DIR}/eg3dproj.c ${SRC_DIR}/egtacmap.c ${SRC_DIR}/egui.c
+    ${SRC_DIR}/egtgt2.c ${SRC_DIR}/eg3dvp.c ${SRC_DIR}/eg3dgrid.c
+    ${SRC_DIR}/eg3dmap.c ${SRC_DIR}/eg3dcam.c ${SRC_DIR}/eg3dmath.c
+    ${SRC_DIR}/egmath.c ${SRC_DIR}/egdata.c)
+add_behavior_test(file_io_behavior_tests SOURCES
+    ${SRC_DIR}/shared/file_io.c)
+add_behavior_test(gameplay_behavior_tests SOURCES
+    ${SRC_DIR}/egthreat.c ${SRC_DIR}/egcombat.c ${SRC_DIR}/egtarget.c
+    ${SRC_DIR}/egframe.c ${SRC_DIR}/egkeys.c ${SRC_DIR}/egmath.c
+    ${SRC_DIR}/egdata.c ${TEST_DIR}/r3d_render_stubs.cpp)
+add_behavior_test(input_behavior_tests SOURCES
+    ${SRC_DIR}/eginput.c ${SRC_DIR}/egdata.c)
+add_behavior_test(hud_raster_behavior_tests SOURCES
+    ${SRC_DIR}/eghudr.c ${SRC_DIR}/eghudm.c ${SRC_DIR}/egdata.c)
+add_behavior_test(view_behavior_tests SOURCES
+    ${SRC_DIR}/eg3dview.c ${SRC_DIR}/egdata.c)
+add_behavior_test(sys_behavior_tests SOURCES
+    ${SRC_DIR}/egsys.c ${SRC_DIR}/egdata.c)
+add_behavior_test(egsys_internal_behavior_tests SOURCES
+    ${SRC_DIR}/egdata.c)
+add_behavior_test(farbuf_behavior_tests SOURCES
+    ${SRC_DIR}/egfarbuf.c)
+add_behavior_test(pic_behavior_tests SOURCES
+    ${SRC_DIR}/egpic.c)
+add_behavior_test(sphere_behavior_tests SOURCES
+    ${SRC_DIR}/egsphere.c ${SRC_DIR}/egdata.c)
+add_behavior_test(load_behavior_tests SOURCES
+    ${SRC_DIR}/eg3dload.c ${SRC_DIR}/egmath.c ${SRC_DIR}/egdata.c
+    ${SRC_DIR}/egfarbuf.c)
+add_behavior_test(start_runtime_behavior_tests SOURCES
+    ${SRC_DIR}/stinit.c ${SRC_DIR}/stalloc.c ${SRC_DIR}/stsprit.c
+    ${SRC_DIR}/stdata.c)
+add_behavior_test(shared_timer_behavior_tests SOURCES
+    ${SRC_DIR}/shared/timer.c)
+add_behavior_test(shared_runtime_behavior_tests SOURCES
+    ${SRC_DIR}/shared/cleanup.c ${SRC_DIR}/shared/drawstr.c)
+add_behavior_test(shared_overlay_behavior_tests SOURCES
+    ${SRC_DIR}/shared/ovlimpl.c)
+add_behavior_test(shared_misc_behavior_tests)
+add_behavior_test(shared_picimpl_behavior_tests SOURCES
+    ${SRC_DIR}/shared/picimpl.c)
+add_behavior_test(eg_stubs_behavior_tests SOURCES
+    ${SRC_DIR}/egstubs.c)
+add_behavior_test(eg_main_behavior_tests SOURCES
+    ${SRC_DIR}/egmain.c ${SRC_DIR}/egdata.c ${SRC_DIR}/egfarbuf.c)
+add_behavior_test(eg3drast_behavior_tests SOURCES
+    ${SRC_DIR}/eg3drast.c ${SRC_DIR}/egdata.c)
+add_behavior_test(eg3drast_internal_behavior_tests SOURCES
+    ${SRC_DIR}/egdata.c)
+add_behavior_test(tick_behavior_tests SOURCES
+    ${SRC_DIR}/egtick.c ${SRC_DIR}/egdata.c)
+add_behavior_test(start_behavior_tests SOURCES
+    ${SRC_DIR}/stgen.c ${SRC_DIR}/strand.c ${SRC_DIR}/stparse.c
+    ${SRC_DIR}/stterr.c ${SRC_DIR}/stmissn.c ${SRC_DIR}/stpilot.c
+    ${SRC_DIR}/stdata.c ${SRC_DIR}/entext.c ${SRC_DIR}/shared/filepic.c)
+add_behavior_test(start_parse_behavior_tests SOURCES
+    ${SRC_DIR}/stparse.c ${SRC_DIR}/stdata.c)
+add_behavior_test(launcher_runtime_behavior_tests SOURCES
+    ${SRC_DIR}/f15.c DEFS main=f15_program_main)
+add_behavior_test(log_behavior_tests SOURCES
+    ${SRC_DIR}/log.c)
+add_behavior_test(dosfunc_behavior_tests)
+add_behavior_test(vgapal_behavior_tests SOURCES
+    ${SRC_DIR}/vgapal.c DEFS main=vgapal_program_main)
+add_behavior_test(vgapal_internal_behavior_tests)
+add_behavior_test(start_main_autostart_behavior_tests SOURCES
+    ${SRC_DIR}/stmain.c DEFS DEBUG_AUTOSTART)
+add_behavior_test(start_main_behavior_tests SOURCES
+    ${SRC_DIR}/stmain.c)
+add_behavior_test(gfx_impl_behavior_tests SOURCES
+    ${SRC_DIR}/gfx_impl.c ${TEST_DIR}/r3d_render_stubs.cpp)
+
+#------------------------------------------------------------------------------
+# Coverage/inventory audits (opt-in custom targets; not part of `ctest`).
+#------------------------------------------------------------------------------
+add_custom_target(function_coverage_audit
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    COMMAND python3 ${TEST_DIR}/function_coverage_audit.py ${CMAKE_BINARY_DIR}
+    COMMENT "Running tests and auditing source function coverage from unit-test object files"
+)
+add_custom_target(source_line_coverage_audit
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    COMMAND python3 ${TEST_DIR}/function_coverage_audit.py ${CMAKE_BINARY_DIR}
+    COMMAND python3 ${TEST_DIR}/source_line_coverage_audit.py ${CMAKE_BINARY_DIR}
+    COMMAND python3 ${TEST_DIR}/cross_layer_function_inventory.py --build-dir ${CMAKE_BINARY_DIR}
+    COMMENT "Running tests and auditing source line coverage and cross-layer function inventory"
+)

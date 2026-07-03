@@ -6,6 +6,7 @@
 #include "egdata.h"
 #include "egflight.h"
 #include "egframe.h"
+#include "worldxfer.h"
 #include "egkeys.h"
 #include "egmath.h"
 #include "egtacmap.h"
@@ -168,8 +169,7 @@ void updateFrame(void) {
     applyGravityFall();
 
     if (objectToScreen(g_viewX_, g_viewY_, (int16 *)&val, (int16 *)&screenY) != 0) {
-        g_drawPage = gfx_getDisplayPage();
-        gfx_copyRect(2, val - 3, screenY - 3, g_drawPage, val - 3, screenY - 3, 6, 6);
+        gfx_restoreFromImage(g_eg2dBacking, 0, val - 3, screenY - 3, val - 3, screenY - 3, 6, 6);
         blitSprite(val - 1, screenY - 1, ((g_ourHead + 0x1000) >> 0xd & 7) * 4 + 164, 4, 4, 4, 0);
         if (((int16)val < 32 || (int16)val > 88 || (int16)screenY < 118 || (int16)screenY > 162) && g_mapZoomLevel > 2) {
             g_mapZoomLevel--;
@@ -359,7 +359,7 @@ skip_autopilot:
             if ((gameData->unk4 != 0 || g_gunHits > 4 || g_fuelRemaining == 0) &&
                 g_ejectState == 0 && g_knots > 50) {
                 makeSound(0, 2);
-                setDrawColor(0);
+                setDrawColor(COLOR_BLACK);
                 fillRectBoth(0, 0, 319, 199);
                 waitFrameSync(120);
                 finalizeMission(1);
@@ -582,10 +582,6 @@ void initFrameRandom(void) {
 
 // ==== seg000:0x1971 ====
 void resetSimObjectLocks() {
-    int i;
-    for (i = 0; i < g_groundUnitCount; i++) {
-        g_simObjects[i].terrainColor = -1;
-    }
     g_trackedEnemyIdx = -1;
 }
 
@@ -616,7 +612,7 @@ void drawWeaponAmmo() {
         return;
     }
     for (i = 0; i < 3; i++) {
-        setDrawColor(0);
+        setDrawColor(COLOR_BLACK);
         x = g_tacmapIndicators[i];
         fillRectBoth(x - 1, 190, x + 2, 194);
         drawNumber(missleSpec[i].ammo, x, 190, 0x0c);
@@ -755,9 +751,7 @@ void placeString(int waypointIdx) {
 // ==== seg000:0x1e0e ====
 void initMissionStrings() {
     int nameIdx, i;
-    setCommWorldbufPtr();
-    flagFarToNear = 1;
-    moveStuff();
+    worldImportToEgame();
     g_targetNameTable[0] = g_stringPool;
     nameIdx = 1;
     for (i = 0; i < 750; ++i) {
@@ -798,50 +792,4 @@ void findWaypointFeatures() {
         }
     }
     g_render3DTiles = 0;
-}
-
-// ==== seg000:0x2049 ====
-void moveDataFar() {
-    int unused1, unused2;
-    setCommWorldbufPtr();
-    flagFarToNear = 0;
-    moveStuff();
-    moveNearFar(g_replayLog.events, 1536);
-}
-
-// ==== seg000:0x206d ====
-void moveStuff() {
-    moveNearFar(g_landTargetId, 1);
-    moveNearFar(g_waterTargetId, 1);
-    moveNearFar(&g_planeCount, 2);
-    moveNearFar(&g_targetEntityCount, 2);
-    moveNearFar(&g_planeScanCount, 2);
-    moveNearFar(&g_planeTable, g_planeCount * 16);
-    moveNearFar(&g_groundUnitCount, 2);
-    moveNearFar(g_simObjects, g_groundUnitCount * 36);
-    moveNearFar(g_shapeTargetCategory, 100);
-    moveNearFar(g_tileKillTally, 100);
-    moveNearFar(g_stringPool, 750);
-    moveNearFar(g_mapCellFlags, 0x100);
-    moveNearFar(&g_unusedSavedWord, 2);
-    moveNearFar(&g_padlockAircraft, 2);
-    moveNearFar(waypoints, 16);
-    moveNearFar(g_targetSlots, 36);
-}
-
-// ==== seg000:0x215c ====
-void moveNearFar(void *nearPtr, int count) {
-    /* farPointer is a real cursor into commData->worldBuf. */
-    if (flagFarToNear != 0) {
-        memcpy(nearPtr, farPointer, count); /* load: worldBuf -> near globals */
-    } else {
-        memcpy(farPointer, nearPtr, count); /* save: near globals -> worldBuf */
-    }
-    farPointer += count;
-}
-
-// ==== seg000:0x21a9 ====
-int setCommWorldbufPtr() {
-    farPointer = (uint8 FAR *)commData->worldBuf;
-    return 0;
 }

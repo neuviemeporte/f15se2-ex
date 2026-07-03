@@ -33,7 +33,7 @@ static inline int abs16Compat(int value) {
 }
 /*
  * Unaligned multi-byte access for packed asset / save-file buffers (model
- * streams in *.3D*, the HallFame roster record, worldBuf serialization). The
+ * streams in *.3D*, the HallFame roster record). The
  * original game read these with raw `*(int16*)p` casts, which is fine on x86
  * but is undefined behaviour on alignment-strict targets (ARM, 3DS, VR) — a
  * real trap there, not just a UBSan note. memcpy is the portable form and the

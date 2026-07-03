@@ -4182,7 +4182,7 @@ char textBuf[100];
 char unitTypeTable[100];
 char gridFlags[256];
 
-/* Target data — one contiguous 36-byte block (see TargetBlock / readWorldData) */
+/* Target data — one contiguous 36-byte block (see TargetBlock / worldExportToEnd) */
 TargetBlock targetBlock;
 
 /* Score string buffer */
@@ -4202,11 +4202,13 @@ int missionResult;
 char enterPressed;
 
 /* Drawing state */
-int lastDrawX;
-int prevDrawX;
-int lastDrawY;
-int prevDrawY;
 char popupVisible;
+char blinkMarker; /* debriefPresent blinks the current-event map marker */
+/* How far the debrief flight path currently extends: the highest flightRecords
+ * index revealed (review), ALL_RECORDS for the full mission-summary path, or 0
+ * when the map holds no path. debriefPresent redraws the map, path and markers
+ * up to this record every frame. */
+int pathExtent;
 int primaryHit;
 
 /* Mission scoring (32-bit score occupying the slot the decompiler split into
@@ -4222,7 +4224,6 @@ int popupY;
 typedef struct SDL_IOStream SDL_IOStream;
 
 /* World data */
-int worldDataReady;
 char *worldStrings[100];
 char worldStringBuf[750];
 SDL_IOStream *worldBufHandle;
@@ -4243,11 +4244,8 @@ int totalFlightRecords;
 char slotInfoTable[1194];
 uint16 cursorX;
 uint16 cursorY;
-int hasVgaMode;
 int spriteBufSeg;
-void *vgaBufSeg;
-int vgaBufOffset;
-void *vgaBufSeg2;
+int g_dbiconsBuf;
 
 /* Theater sprite filename pointer table (8 entries) */
 const char *theaterSprFiles[] = {
@@ -4425,8 +4423,8 @@ char str_insertDiskA[] = "Please insert F15 Disk A";
 char str_pressKey2[] = "<Press a key when ready>";
 char str_missionDebrief[] = "  MISSION DEBRIEFING\0";
 
-/* Ctrl-Break handler state. origCBreak* and the timer block are shared
- * impl state owned by stdata.c. */
+/* Ctrl-Break handler state (cbreakHit and the timer block are shared
+ * impl state owned by stdata.c). */
 uint8 quitFlag = 0;
 
 /* Random number generator */
@@ -4455,8 +4453,6 @@ uint8 joyAxisY = 0;
 
 /* Pic decoder state (the picReadBufEndPtr..picSlotCounter run is shared impl
  * state owned by stdata.c). */
-/* Read-back cursor into commData->worldBuf (mirrors stgen.c's moveDst). */
-uint8 far *worldBufCursor = 0;
 uint8 picProcessFlag = 0;
 
 /* Second LZW decoder state */
@@ -4473,8 +4469,8 @@ int16 lzw2CurCode = 0;
 int16 lzw2FirstChar = 0;
 uint8 lzw2WorkBuf[10] = {0};
 
-/* gameData, commData, worldObjectCount and ovlInsaneFlag are the shared
- * inter-module comm state owned by stdata.c. */
+/* gameData, commData and worldObjectCount are the shared inter-module comm
+ * state owned by stdata.c. */
 
 /* BSS variables */
 uint8 worldMiscHeader[4] = {0};
@@ -4482,14 +4478,13 @@ uint8 bssPad179[4] = {0};
 uint8 worldRouteTable[516] = {0};
 uint8 animExitFlag = 0;
 int16 worldWaypointCount = 0;
-uint8 worldSamTable[720] = {0};
+uint8 worldSamTable[20 * sizeof(struct SimObject)] = {0};
 uint8 worldUnitFlags[102] = {0};
 int16 menuItemUnused = 0;
 int16 worldGridSize = 0;
 uint16 worldSamCount = 0;
 int16 worldRouteCount = 0;
-void *gfxBufSeg = nullptr;
 uint8 gfxBufPad[512] = {0};
 /* One contiguous 0x600 buffer backing both the flightTimeTable and flightRecords
- * views (declared in endata.h). Loaded as a unit by readWorldData. */
+ * views (declared in endata.h). Filled from EGAME's g_replayLog by worldExportToEnd. */
 uint8 flightDataBuf[0x600] = {0};

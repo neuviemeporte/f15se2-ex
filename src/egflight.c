@@ -14,6 +14,7 @@
 #include "pointers.h"
 #include "log.h"
 #include "gfx.h"
+#include "r2d.h"
 #include "slot.h"
 #include "const.h"
 #include "comm.h"
@@ -147,15 +148,14 @@ void stepFlightModel(void) {
         goto switch_break;
     case SCAN_ALT_B:
         if (g_hudVisible != 0) {
-            gfx_copyRect(*g_pageFront, 0, 97, *g_pageOffscreen, 0, 97, 320, 103);
+            gfx_captureToImage(g_eg2dBacking, *g_pageFront, 0, 97, 0, 97, 320, 103);
         }
-        setDrawColor(0);
+        setDrawColor(COLOR_BLACK);
         fillRectBoth(0, 0, 319, 199);
         blitSprite(0, 0, 113, 55, 12, 7, 0);
         waitForKeyPress();
         if (g_hudVisible != 0) {
-            gfx_copyRect(*g_pageOffscreen, 0, 97, *g_pageFront, 0, 97, 320, 103);
-            gfx_copyRect(*g_pageOffscreen, 0, 97, *g_pageBack, 0, 97, 320, 103);
+            gfx_restoreFromImage(g_eg2dBacking, *g_pageFront, 0, 97, 0, 97, 320, 103);
             UpdateThrottleState();
         }
         goto switch_break;
@@ -756,6 +756,15 @@ int isqrt(int value) { /* Original: Sqrt(N). Return integer square root using Ne
     return guess;
 }
 
+/* Q12 shortest-arc tween that snaps across the 0x8000 gimbal flip (see lerpAngle
+ * in egsys.c) rather than sweeping the view 180deg for one frame. */
+static int lerpViewAngle(int a0, int a1, int alpha) {
+    int16 d = (int16)(a1 - a0);
+    if (d >= 0x4000 || d <= -0x4000)
+        return a1;
+    return a0 + ((d * alpha) >> 12);
+}
+
 // something to do with view switching?
 void renderFrame() {
     int camDist, savedCamDist, range, camOffset, dx, dy, tmp;
@@ -798,9 +807,9 @@ void renderFrame() {
         r1 = (tmp + 1) & 0xf;
         s0 = &g_viewSnapshotRing[tmp];
         s1 = &g_viewSnapshotRing[r1];
-        g_viewHeading = s0->heading + (((int16)(s1->heading - s0->heading) * a) >> 12);
-        g_viewPitch = s0->pitch + (((int16)(s1->pitch - s0->pitch) * a) >> 12);
-        g_viewRoll = s0->roll + (((int16)(s1->roll - s0->roll) * a) >> 12);
+        g_viewHeading = lerpViewAngle(s0->heading, s1->heading, a);
+        g_viewPitch = lerpViewAngle(s0->pitch, s1->pitch, a);
+        g_viewRoll = lerpViewAngle(s0->roll, s1->roll, a);
         g_camEyeX = s0->worldX + (int32)(((int64)(s1->worldX - s0->worldX) * a) >> 12);
         g_camEyeY = s0->worldY + (int32)(((int64)(s1->worldY - s0->worldY) * a) >> 12);
         g_camEyeZ = s0->alt + (((int32)(s1->alt - s0->alt) * a) >> 12);
@@ -844,8 +853,10 @@ void renderFrame() {
         if (!(g_viewTargetObj & 0x40)) {
             if (!(g_viewTargetObj & 0x20)) {
                 if (g_projectiles[g_viewTargetObj].ttl != 0) {
-                    g_viewTargetX = (uint32)(g_projectiles[g_viewTargetObj].mapX) << 5;
-                    g_viewTargetY = (uint32)(g_projectiles[g_viewTargetObj].mapY) << 5;
+                    /* Fine (sub-mapX-unit) interpolated position so the tracking
+                     * camera doesn't lurch in 32-unit steps (the "earthquake"). */
+                    g_viewTargetX = (uint32)g_projInterpX[g_viewTargetObj];
+                    g_viewTargetY = (uint32)g_projInterpY[g_viewTargetObj];
                     g_viewTargetAlt = g_projectiles[g_viewTargetObj].alt;
                 } else {
                     g_projectiles[g_viewTargetObj].worldX = g_ourHead;
@@ -868,11 +879,23 @@ void renderFrame() {
             if (g_autopilotEngaged != 0 && g_directorEventDeadline == -1) camDist = 6;
         }
         if (g_directorMode == 0) camDist = savedCamDist;
-        dx = (g_viewTargetX >> 5) - g_viewX_;
-        dy = (g_viewTargetY >> 5) - g_viewY_;
-        range = rangeApprox(dx, dy);
+        /* Derive the tracking-camera heading and pitch from FINE world coords —
+         * both the fine target position and the fine player position (g_ViewX/Y),
+         * not the coarse map coords (g_viewX_/g_viewY_) which step 32 fine units
+         * at a time and made the whole world "earthquake" around a tracked target.
+         * computeBearing is scale-invariant, so the angles are identical to the
+         * original coarse formula but with ~32x less quantization jitter. range is
+         * computed inline (rangeApprox would saturate its 0x7fff cap on fine
+         * deltas) and kept in the same scale as the altitude delta so the pitch
+         * ratio is unchanged. */
+        dx = (int)(g_viewTargetX - g_ViewX);
+        dy = (int)(g_viewTargetY - g_ViewY);
+        {
+            int adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
+            range = adx > ady ? adx + (ady >> 1) : ady + (adx >> 1);
+        }
         g_viewHeading = computeBearing(dx, -dy);
-        g_viewPitch = -computeBearing((g_viewTargetAlt - g_viewZ) >> 5, range);
+        g_viewPitch = -computeBearing(g_viewTargetAlt - g_viewZ, range);
         g_viewRoll = 0;
         camOffset = cosMul(g_viewPitch, 0x18 << camDist);
         if (g_viewTargetObj & 0x60 || g_directorMode != 0) {
@@ -924,9 +947,7 @@ void renderFrame() {
         gfx_waitRetrace();
         if (g_hudVisible != 0) {
             gfx_nop23();
-            // the pointer arguments are probably rastports, RectCopy?
-            gfx_copyRect(*g_pageOffscreen, 0, 97, *g_pageFront, 0, 97, 320, 103);
-            gfx_copyRect(*g_pageOffscreen, 0, 97, *g_pageBack, 0, 97, 320, 103);
+            gfx_restoreFromImage(g_eg2dBacking, *g_pageFront, 0, 97, 0, 97, 320, 103);
             UpdateThrottleState();
             drawWeaponAmmo();
             drawWeaponSelectMarker(missileSpecIndex);
@@ -937,7 +958,7 @@ void renderFrame() {
             fillPanelBox(3, 3);
             g_lockedTargetKilled = 0;
         } else {
-            gfx_copyRect(*g_pageFront, 0, 97, *g_pageOffscreen, 0, 97, 320, 103);
+            gfx_captureToImage(g_eg2dBacking, *g_pageFront, 0, 97, 0, 97, 320, 103);
         }
     }
     if (keyValue != g_lastViewKey) {
@@ -952,10 +973,9 @@ void renderFrame() {
                                                                                   : "Rear.Pic",
                                  *g_pageFront);
             }
-            gfx_copyRect(*g_pageFront, 0, 97, *g_pageBack, 0, 97, 320, 103);
-            g_pageFront[8] = g_pageBack[8] = 96;
+            g_pageFront[8] = 96;
         } else {
-            g_pageFront[8] = g_pageBack[8] = g_hudVisible != 0 ? 96 : 199;
+            g_pageFront[8] = g_hudVisible != 0 ? 96 : 199;
         }
         g_lastViewKey = keyValue;
     }
@@ -984,25 +1004,33 @@ void renderFrame() {
         g_lineY2 = 94;
         drawClipLineGlobal();
         gfx_nop23();
-        tmp = g_drawPage;
-        /* Blit the rear-view sprites onto the page the frame is composited on
-         * (curPage), not the back-buffer index: the rear view renders into page 0. */
-        g_drawPage = gfx_curPage();
         blitSprite(107, 48, 209, 0, 111, 47, 0);
         blitSprite(65, 95, 125, 54, 195, 2, 0);
-        g_drawPage = tmp;
     }
     g_hudBottomY = (g_activePanelMode == 0x13 || g_mapMode == 1 || g_hudVisible == 0) ? 200 : 97;
+
+    /* Non-retained renderers (GL) rebuild the 2D overlay every present, so the
+     * tac map — cached into g_eg2dBacking for the software page — must be re-emitted
+     * into this frame's native stream, crisp at window resolution. Runs inside the
+     * vector frame (render3DView opened it above). It reloads colorLut to the map
+     * palette; save/restore it so the HUD/gauges drawn after keep the flight
+     * palette render3DView set. The software path leaves the cached map alone. */
+    if (!r2d_overlayRetained()) {
+        uint8 savedLut[16];
+        memcpy(savedLut, colorLut, 16);
+        renderTacMapOverlay();
+        memcpy(colorLut, savedLut, 16);
+    }
 }
 
 void UpdateThrottleState(void) {
     if (g_hudVisible != 0) {
-        setDrawColor(0);
+        setDrawColor(COLOR_BLACK);
         fillRectBoth(212, 127, 222, 175);
-        setDrawColor(0x0c);
+        setDrawColor(COLOR_LIGHTRED);
         fillRectBoth(212, -(g_setThrust / 3 - 175), 222, 175);
         if (100 < g_setThrust) {
-            setDrawColor(0x0e);
+            setDrawColor(COLOR_YELLOW);
             fillRectBoth(212, -(g_setThrust / 3 - 175), 222, 142);
         }
     }
@@ -1011,9 +1039,9 @@ void drawFuelGauge(void) {
     if (g_hudVisible == 0) {
         return;
     }
-    setDrawColor(0);
+    setDrawColor(COLOR_BLACK);
     fillRectBoth(5, 109, 10, 152);
-    setDrawColor(g_fuelRemaining > 2000 ? 2 : 14);
+    setDrawColor(g_fuelRemaining > 2000 ? COLOR_GREEN : COLOR_YELLOW);
     fillRectBoth(5, -(g_fuelRemaining / 250 - 152), 10, 152);
 }
 

@@ -1,12 +1,12 @@
 /*
  * input.c - single SDL event pump and shared BIOS-style key ring.
  *
- * Replaces the two near-duplicate event loops the port used to carry (the
- * flight ISR replacement in eginput.c and the MISC overlay keyboard in
- * shared/ovlimpl.c). Both the original DOS pieces hooked the keyboard hardware
- * (INT 09h / INT 16h) and read raw scancodes; here a single SDL_PollEvent drain
- * fills one BIOS-style key ring (AH = scan code, AL = ASCII, matching what INT
- * 16h returned and what the game dispatch compares against).
+ * The single SDL event pump for the whole game; the flight-loop keyboard
+ * (eginput.c) and the MISC overlay keyboard (shared/ovlimpl.c) are thin wrappers
+ * over it. The original DOS pieces hooked the keyboard hardware (INT 09h / INT
+ * 16h) and read raw scancodes; here a single SDL_PollEvent drain fills one
+ * BIOS-style key ring (AH = scan code, AL = ASCII, matching what INT 16h returned
+ * and what the game dispatch compares against).
  *
  * Window-level events are handled uniformly for every game phase: quit, the
  * Alt+Enter fullscreen toggle, focus changes, gamepad hotplug, and audio-device
@@ -41,7 +41,13 @@ static void (*g_quitHandler)(void) = NULL;
  * activity flips it back (see input_preferGamepad / noteGamepadActivity). */
 static bool g_lastWasGamepad = true;
 
-void input_setMode(InputMode mode) { g_mode = mode; }
+void input_setMode(InputMode mode) {
+    /* Leaving text input on during flight lets a desktop IME intercept editing
+     * keys it treats specially (Backspace fires the gun here) and intermittently
+     * swallow or delay their auto-repeat. Only the menus need composed text. */
+    if (mode != g_mode) gfx_setTextInputEnabled(mode == INPUT_MODE_MENU);
+    g_mode = mode;
+}
 InputMode input_getMode(void) { return g_mode; }
 bool input_quitRequested(void) { return g_quitRequested; }
 bool input_hasFocus(void) { return g_hasFocus; }
