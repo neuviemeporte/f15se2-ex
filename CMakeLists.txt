@@ -384,11 +384,7 @@ add_behavior_test(start_parse_behavior_tests SOURCES
 #
 # add_behavior_test(original_behavior_tests SOURCES        # g_pageBack (gfx page rename)
 #     ${SRC_DIR}/eg3dmath.c ${SRC_DIR}/egmath.c ${SRC_DIR}/egflight.c ${SRC_DIR}/eghudm.c ${SRC_DIR}/egdata.c)
-# add_behavior_test(utility_behavior_tests SOURCES         # worldBuf/lastDrawX; enworld->worldxfer; gfx spies
-#     ${SRC_DIR}/shared/miscimpl.c ${SRC_DIR}/shared/filepic.c ${SRC_DIR}/shared/textfmt.c
-#     ${SRC_DIR}/shared/drawstr.c ${SRC_DIR}/eg3dload.c ${SRC_DIR}/enbrief.c ${SRC_DIR}/worldxfer.c
-#     ${SRC_DIR}/enmisc.c ${SRC_DIR}/endata.c ${SRC_DIR}/strand.c ${SRC_DIR}/stgen.c ${SRC_DIR}/stterr.c
-#     ${TEST_DIR}/r3d_render_stubs.cpp ${TEST_DIR}/utility_stubs.cpp)
+add_behavior_test(utility_behavior_tests LINK_CORE)
 add_behavior_test(end_runtime_behavior_tests LINK_CORE)
 # end_debrief_behavior_tests: SCRAPPED - all render/menu/IO/timer/input spies;
 #   debrief moved to the debriefPresent redraw model. Scoring/campaign logic and
