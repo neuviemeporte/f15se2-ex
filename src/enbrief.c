@@ -217,7 +217,7 @@ int isPointInRect(const MenuItem *p) {
     int joyBtn0;
     int joyBtn1;
     char repeatActive;
-    int keycode;
+    int keycode = 0; /* stays 0 when no key/joystick input matched → no-op keycode */
 
     colorTablePtr = (unsigned int *)((char *)colorStyleTable + menuItem->colorTableIdx * 14);
     blinkMarker = (menuItem->flags & MENUITEM_HAS_SPRITE) && (menuItem->flags & MENUITEM_SPRITE_BLINK);

@@ -448,10 +448,10 @@ struct SpriteParams {
 #pragma pack()
 STATIC_ASSERT(sizeof(struct SpriteParams) == 28);
 
-/* PageDesc: 24-byte page descriptor used by graphics overlay.
- * The overlay receives a pointer to this struct and reads fields by offset.
- * The selfPtr field at +0x16 points back to the start of the struct.
- * C code accesses color/font directly; overlay accesses by word index from pointer. */
+/* PageDesc: page descriptor used by the graphics layer.
+ * Callers pass a pointer to this struct (as int16 *) and the gfx layer reads
+ * fields by word index — word 0 pageNum, word 3 color, word 6 font.
+ * C code accesses color/font directly. */
 #pragma pack(1)
 struct PageDesc {
     int16 pageNum;  /* +0x00: page number (1, 2, 3, or 0 for screen) */
@@ -461,10 +461,9 @@ struct PageDesc {
     uint8 pad2[5];  /* +0x07 */
     int16 font;     /* +0x0C: font index */
     uint8 pad3[8];  /* +0x0E */
-    int16 *selfPtr; /* +0x16: pointer to start of this struct (pageNum field) */
 };
 #pragma pack()
-STATIC_ASSERT(sizeof(struct PageDesc) == 22 + sizeof(void *));
+STATIC_ASSERT(sizeof(struct PageDesc) == 22);
 
 #pragma pack(1)
 struct TileSceneObject {
