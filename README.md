@@ -68,6 +68,7 @@ These are things that were never part of, or were broken in the original that ar
 1. Make the gun more predictable, right now it's spraying all over the place so it's difficult to tell where it's going. The gun and explosion effects were moved to 3D (they were 2D in the original game), but the point of impact does not really line up with the reticle, make bullets affected by gravity etc.
 1. More realistic player aircraft handling, right now it's too responsive, turns too quickly.
 1. Implement missile trails for better situational awareness/cool visuals.
+1. Fix firing a missile at a new target (particularly air?) while the old target is still in the hud making the missile hit the old target.
 1. Make the square bounding boxes marking objects like planes and missiles move less erratically when the object is close to the player.
 1. In-game menu for configuration (keyboard/joystick binds, video resolution, turn engine sounds on and off, ...)
 1. Better damage model for player aircraft, currently being hit by a missile only results in a small drop of maximum RPM. Simulate full/partial loss of stability, broken systems, weapons, hydraulics etc., up to instant destruction.
