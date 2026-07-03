@@ -27,6 +27,11 @@ jobs:
             build: cmake --build build --config Release --parallel
             test: ctest --test-dir build -C Release --output-on-failure
 
+          - name: macOS Clang
+            os: macos-latest
+            configure: cmake -S . -B build
+            build: cmake --build build -j$(sysctl -n hw.ncpu)
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
