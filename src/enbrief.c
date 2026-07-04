@@ -23,13 +23,14 @@ void drawMapPixel(int x, int y, int color);
 int isPointInRect(const struct MenuItem *p);
 void blinkWidget(MenuItem *item);
 unsigned int countFlightRecords(void);
+
 void showEventPopup(void);
 void drawFlightLine(int p1, int p2, int p3, int p4);
 char *formatFlightTime(int timeValue, char *buffer);
 void plotMapPoint(int x, int y, int color, int unused);
-void timerWait(unsigned int ticks);
+void timerWait(uint16 ticks);
 void processDebriefInput(const int16 *cursorBounds, const MenuItem *menuItem);
-void drawMenuItem(const MenuItem *items, unsigned int index, int16 *gfxPage);
+void drawMenuItem(const MenuItem *items, uint16 index, int16 *gfxPage);
 static void debriefPresent(void);
 static void drawEventBlinkSprite(int recordIdx);
 
@@ -61,7 +62,7 @@ static void menuLabelSwitch(const MenuItem *item, int from, int to) {
 }
 
 void computeMissionResult(void) {
-    unsigned int gridX, gridY;
+    uint16 gridX, gridY;
 
     gridX = commData->worldX >> 0x0b;
     gridY = commData->worldY >> 0x0b;
@@ -218,7 +219,7 @@ int isPointInRect(const MenuItem *p) {
     char repeatActive;
     int keycode = 0; /* stays 0 when no key/joystick input matched → no-op keycode */
 
-    colorTablePtr = (unsigned int *)((char *)colorStyleTable + menuItem->colorTableIdx * 14);
+    colorTablePtr = (uint16 *)((char *)colorStyleTable + menuItem->colorTableIdx * 14);
     blinkMarker = (menuItem->flags & MENUITEM_HAS_SPRITE) && (menuItem->flags & MENUITEM_SPRITE_BLINK);
     timerCounter2 = 0;
     joyBtn0 = joyBtn1 = 0;
@@ -349,14 +350,14 @@ int isPointInRect(const MenuItem *p) {
 }
 
 // 2bd1
-void drawMenuItem(const MenuItem *items, unsigned int index, int16 *gfxPage) {
+void drawMenuItem(const MenuItem *items, uint16 index, int16 *gfxPage) {
     char p[2];
     char a[2];
     char prefix[2];
     char d[2];
     int m;
     char numBuf[22];
-    unsigned int unitIdx;
+    uint16 unitIdx;
     p[0] = 0x0a;
     p[1] = 0;
     prefix[0] = 0x89;
@@ -626,7 +627,7 @@ void waitForKeyOrJoy(void);
 /* The flight-path poly-line + start dot up to `maxRecord`: a line through the
  * start point and every record (timestamps AND events — every record is a vertex)
  * in path colour 0. */
-static void drawFullPathLines(unsigned int maxRecord) {
+static void drawFullPathLines(uint16 maxRecord) {
     int curX, curY, prevX, prevY, recIdx;
     prevX = prevY = 0;
     recIdx = -1;
@@ -778,11 +779,11 @@ char *formatFlightTime(int timeValue, char *buffer) {
 }
 
 int mapToScreenX(unsigned char mapCoord) {
-    return ((unsigned int)mapCoord << 7) / MAP_SCALE_X;
+    return ((uint16)mapCoord << 7) / MAP_SCALE_X;
 }
 
 int mapToScreenY(unsigned char mapCoord) {
-    return ((unsigned int)mapCoord << 7) / MAP_SCALE_Y;
+    return ((uint16)mapCoord << 7) / MAP_SCALE_Y;
 }
 
 void plotMapPoint(int x, int y, int color, int unused) {
@@ -800,7 +801,7 @@ void plotMapPoint(int x, int y, int color, int unused) {
     }
 }
 
-void timerWait(unsigned int ticks) {
+void timerWait(uint16 ticks) {
     timerCounter = 0;
     setTimerIrqHandler();
     while (ticks >= timerCounter) timerYield();

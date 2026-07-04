@@ -39,7 +39,7 @@ extern uint16 cursorX;
 extern uint16 cursorY;
 extern struct GameComm far *commData;
 extern uint8 quitFlag;
-extern unsigned int *colorTablePtr;
+extern uint16 *colorTablePtr;
 extern char inputChanged;
 extern int colorAnimIdx;
 extern int colorAnimEnabled;

@@ -60,7 +60,7 @@ inline int int86x(int intno, union REGS *inregs, union REGS *outregs, struct SRE
     (void)segregs;
     return 0;
 }
-inline void movedata(unsigned int srcseg, unsigned int srcoff, unsigned int dstseg, unsigned int dstoff, unsigned int nbytes) {
+inline void movedata(uint16 srcseg, uint16 srcoff, uint16 dstseg, uint16 dstoff, uint16 nbytes) {
     (void)srcseg;
     (void)srcoff;
     (void)dstseg;

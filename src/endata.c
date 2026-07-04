@@ -4229,7 +4229,7 @@ char worldStringBuf[750];
 SDL_IOStream *worldBufHandle;
 
 /* Graphics animation state (from BSS) */
-unsigned int *colorTablePtr;
+uint16 *colorTablePtr;
 char inputChanged;
 int colorAnimIdx;
 int colorAnimEnabled;
