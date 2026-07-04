@@ -4,7 +4,7 @@
 #include "r3d.h"
 #include "log.h"
 
-#include <stdlib.h> /* getenv */
+#include <SDL3/SDL.h> /* SDL_getenv */
 
 /* Preference order. New backends (VR, Metal, exotic ports) register here ahead of
  * software, implement the R3DBackend vtable, and probe the environment in their
@@ -31,7 +31,10 @@ static int ieq(const char *a, const char *b) {
 }
 
 const char *r3d_requestedBackend(void) {
-    const char *e = getenv("F15_RENDER");
+    /* SDL_getenv (not the CRT getenv): on Windows SDL keeps its own environment
+     * block, and callers/tests set F15_RENDER via SDL_setenv_unsafe. Reading the
+     * CRT environment there would miss it and mis-select the backend. */
+    const char *e = SDL_getenv("F15_RENDER");
     if (!e || !*e || ieq(e, "auto")) return 0;
     if (ieq(e, "gl") || ieq(e, "opengl") || ieq(e, "opengl1")) return "opengl1";
     if (ieq(e, "sw") || ieq(e, "soft") || ieq(e, "software")) return "software";

@@ -90,10 +90,17 @@ size_t fileWrite(const void *ptr, size_t size, size_t count, SDL_IOStream *io) {
 
 /* Raw read into a host buffer. Shared with the PIC decoder (picimpl.c), which
  * streams the file 512 bytes at a time. Returns bytes read, or -1 on a null
- * stream. A negative count means "as much as fits" (DOS used cx=0xFFFF). */
+ * stream. A negative count means "read the rest of the stream" (DOS passed
+ * cx=0xFFFF; we resolve the exact remaining byte count so the request never
+ * exceeds what the file holds, which SDL's backends handle inconsistently). */
 int fileReadRaw(SDL_IOStream *io, void *dst, int count) {
     if (!io) return -1;
-    if (count < 0) count = 0xFFFF;
+    if (count < 0) {
+        const Sint64 size = SDL_GetIOSize(io);
+        const Sint64 pos = SDL_TellIO(io);
+        if (size < 0 || pos < 0 || pos >= size) return 0;
+        count = (int)(size - pos);
+    }
     return (int)SDL_ReadIO(io, dst, (size_t)count);
 }
 

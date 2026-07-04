@@ -10,7 +10,7 @@
 #include <time.h>
 
 static void miscdbg(const char *msg) {
-    FILE *f = fopen("NOASM.LOG", "a");
+    FILE *f = fopen("NOASM.LOG", "ab");
     if (f) {
         fputs(msg, f);
         fputs("\r\n", f);
