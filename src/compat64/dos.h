@@ -19,13 +19,13 @@
 #define __far
 
 struct WORDREGS {
-    uint16 short ax;
-    uint16 short bx;
-    uint16 short cx;
-    uint16 short dx;
-    uint16 short si;
-    uint16 short di;
-    uint16 short cflag;
+    uint16 ax;
+    uint16 bx;
+    uint16 cx;
+    uint16 dx;
+    uint16 si;
+    uint16 di;
+    uint16 cflag;
 };
 
 struct BYTEREGS {
@@ -41,10 +41,10 @@ union REGS {
 };
 
 struct SREGS {
-    uint16 short es;
-    uint16 short cs;
-    uint16 short ss;
-    uint16 short ds;
+    uint16 es;
+    uint16 cs;
+    uint16 ss;
+    uint16 ds;
 };
 
 inline int int86(int16 intno, union REGS *inregs, union REGS *outregs) {
