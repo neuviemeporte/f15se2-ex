@@ -30,7 +30,7 @@ void stepFlightModel();
 void applyRotationDelta(const int16 *matA, const int16 *matB);
 void computeAttitudeAngles(void);
 void rebuildOrientation();
-unsigned signedRatio16(int16, int16);
+uint16 signedRatio16(int16, int16);
 int16 valueToAngle(int16 value);
 int16 complementAngle(int16 value);
 void renderFrame();
@@ -693,7 +693,7 @@ void rebuildOrientation() {
     g_rotationCounter = 0;
 }
 
-unsigned signedRatio16(int16 numerator, int16 denominator) { /* Original: IntDiv(A,B). Divide two signed 15-bit fractions. */
+uint16 signedRatio16(int16 numerator, int16 denominator) { /* Original: IntDiv(A,B). Divide two signed 15-bit fractions. */
     char numeratorSign = 1;
     char denominatorSign = 1;
     long absNumerator;
