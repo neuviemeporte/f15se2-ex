@@ -10,7 +10,7 @@
 #include <dos.h>
 #include <memory.h>
 
-void openBlitClosePic(const char *filename, int page) { /* Original chain: OpenFile + blit/decode + CloseFile. Open, blit PIC to page, then close. */
+void openBlitClosePic(const char *filename, int16 page) { /* Original chain: OpenFile + blit/decode + CloseFile. Open, blit PIC to page, then close. */
     SDL_IOStream *handle = openFileWrapper(filename, 0);
     /* The PIC decoder/blitter consumes the already-open file handle. */
     showPicFile(handle, page);

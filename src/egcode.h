@@ -17,9 +17,19 @@ void restoreCbreakHandler();
 void runGameLoop();
 void gameMainLoop();
 void advanceFrameTick();
+<<<<<<< HEAD
 int16 __cdecl drawCenteredLabelBox(int16 panel, const char *text);
 SDL_IOStream *createFile(const char *path, int16 attr);
 void picBlit(SDL_IOStream *handle, int16 unk);
+=======
+int16 drawCenteredLabelBox(int16 panel, const char *text);
+int16 createFile(const char *path, int16 attr);
+void closeFile(int16 handle);
+int16 readFile1(int16 handle, int16 count, int16 bufOffset);
+int16 readFile2(int16 handle, int16 count, int16 bufOffset, int16 bufSegment);
+int16 writeFileAtRaw(int16 handle, int16 count, int16 bufOffset, int16 bufSegment, int16 offsetAddend);
+void picBlit(int16 handle, int16 unk);
+>>>>>>> accc598 (more int->int16)
 void pascal shiftLongLeftInPlace(int16 count, long *ptr);
 void pascal shiftLongRightInPlace(int16 count, long *ptr);
 int16 far drawPolygonOutline(int16 fillColor, int16 pointCount, int16 *points, int16 edgeColor);
@@ -59,8 +69,8 @@ int16 far drawClipLineGlobal();
 int16 far flushSpanDirtyRect();
 int16 far resetScanlineSpans();
 int16 far clipAndRasterizeEdge();
-void __cdecl __far setupInstrumentLayoutFar();
-void __cdecl __far drawInstrumentGaugesFar();
+void FAR setupInstrumentLayoutFar();
+void FAR drawInstrumentGaugesFar();
 int16 far initJoystickCalibration();
 void seedJoystickBaseline();
 int16 far readCalibratedJoystick();

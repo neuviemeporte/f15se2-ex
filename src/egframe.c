@@ -35,20 +35,33 @@ void initFrameRandom();
 void generateRandomRadioMessage();
 void findWaypointFeatures();
 void moveStuff();
-void moveNearFar(void *nearPtr, int count);
-int setCommWorldbufPtr();
+void moveNearFar(void *nearPtr, int16 count);
+int16 setCommWorldbufPtr();
 
 // ==== seg000:0x0720 ====
 void updateFrame(void) {
-    int tmp;
-    int unused;
+    int16 tmp, unused;
     uint16 val;
     uint16 screenY;
+<<<<<<< HEAD
     int i;
     int objIdx;
+=======
+    int16 i, objIdx;
+#ifdef DEBUG
+    {
+        static int16 sig_was_ok = 1;
+        int16 s4 = *(int16 far *)((char far *)commData - 4);
+        if (sig_was_ok && (unsigned)s4 != 0xca01) {
+            sig_was_ok = 0;
+            LogError(("SIG CORRUPTED at frame %d: commData-4(MCB)=%04x", frameTick, s4));
+        }
+    }
+#endif
+>>>>>>> accc598 (more int->int16)
 
-    g_viewX_ = (int)((g_ViewX + 0x10L) >> 5);
-    g_viewY_ = -((int)((g_ViewY + 0x10L) >> 5) - 0x8000);
+    g_viewX_ = (int16)((g_ViewX + 0x10L) >> 5);
+    g_viewY_ = -((int16)((g_ViewY + 0x10L) >> 5) - 0x8000);
 
     if (g_initPhase == 1) {
         g_playerPlaneFlags = 0;
@@ -420,15 +433,23 @@ skip_autopilot:
 
 // ==== seg000:0x14e8 ====
 void dispatchKeyScancode(void) {
+<<<<<<< HEAD
     int unused0, unused1, unused2, unused3, unused4, unused5, unused6, unused7;
+=======
+    int16 unused0, unused1, unused2, unused3, unused4, unused5, unused6, unused7;
+#ifdef DEBUG
+    if (keyScancode != 0)
+        LogInfo(("KEY scancode=%04x  dot joyAxes[0/1]=%d/%d  ISR raw axes=%d/%d",
+                 (unsigned)keyScancode, (int16)joyAxes[0], (int16)joyAxes[1], (int16)g_joyRawX, (int16)g_joyRawY));
+#endif
+>>>>>>> accc598 (more int->int16)
     keyDispatch(keyScancode);
 }
 
 // ==== seg000:0x14fc ====
-void countermeasures(int eventType) {
+void countermeasures(int16 eventType) {
     const char *name;
-    int i;
-    int slot;
+    int16 i, slot;
 
     slot = -1;
     if ((g_eventTimers[eventType])-- <= 0) {
@@ -467,7 +488,7 @@ void countermeasures(int eventType) {
 
 // ==== seg000:0x1636 ====
 void tickMessageTimers(void) {
-    int i;
+    int16 i;
     for (i = 0; i < 4; i++) {
         if (mapEvents[i].ttl != 0) {
             (mapEvents[i].ttl)--;
@@ -479,12 +500,17 @@ void tickMessageTimers(void) {
 }
 
 void updateBulletsAndFire(void) {
+<<<<<<< HEAD
     int off;
     int firing;
     int unused;
     int i;
     int mag;
     int slot;
+=======
+    register int16 off;
+    int16 firing, unused, i, mag, slot;
+>>>>>>> accc598 (more int->int16)
 
     for (i = 0; i < g_bulletTrackCount + 4; i++) {
         off = i * 12;
@@ -528,8 +554,7 @@ done_fire:
 
 // ==== seg000:0x1841 ====
 void updateTracerParticles() {
-    int i;
-    int slot;
+    int16 i, slot;
 
     if (g_smokeSourceIdx != -1) {
         for (i = 0; i < 8; i++) {
@@ -560,7 +585,7 @@ void applyGravityFall() {
 
 // ==== seg000:0x18f6 ====
 void initFrameRandom(void) {
-    int seedSum, unused0, unused1, unused2;
+    int16 seedSum, unused0, unused1, unused2;
 
     seedRng();
     clearStatusPanel();
@@ -576,12 +601,19 @@ void initFrameRandom(void) {
 
 // ==== seg000:0x1971 ====
 void resetSimObjectLocks() {
+<<<<<<< HEAD
+=======
+    int16 i;
+    for (i = 0; i < g_groundUnitCount; i++) {
+        g_simObjects[i].terrainColor = -1;
+    }
+>>>>>>> accc598 (more int->int16)
     g_trackedEnemyIdx = -1;
 }
 
 // ==== seg000:0x19a3 ====
 void initWeaponLoadout() {
-    int i;
+    int16 i;
 
     i = g_gunHits = g_bombDamageMask = 0;
     for (; i < 3; i++) {
@@ -599,8 +631,7 @@ void initWeaponLoadout() {
 
 // ==== seg000:0x1a18 routine_131 ====
 void drawWeaponAmmo() {
-    int x;
-    int i;
+    int16 x, i;
 
     if (g_hudVisible == 0) {
         return;
@@ -614,7 +645,7 @@ void drawWeaponAmmo() {
 }
 
 // ==== seg000:0x1a88 ====
-void drawWeaponSelectMarker(int weaponIdx) {
+void drawWeaponSelectMarker(int16 weaponIdx) {
     if (g_hudVisible == 0) return;
     g_pageFront[2] = 0;
     drawFullscreenLine(g_weaponMarkerBoxX[g_weaponMarkerSel], 196, g_weaponMarkerBoxX[g_weaponMarkerSel] + 6, 196);
@@ -628,7 +659,12 @@ void drawWeaponSelectMarker(int weaponIdx) {
 }
 
 // ==== seg000:0x1b37 routine_148 ====
+<<<<<<< HEAD
 void finalizeMission(int outcome) {
+=======
+void finalizeMission(int16 outcome) {
+    LogInfo(("DEATH/END finalizeMission: outcome=%d, g_ejectState=%d, tick=%d", outcome, g_ejectState, frameTick));
+>>>>>>> accc598 (more int->int16)
     if (g_ejectState != 0 && outcome != 0) {
         return;
     }
@@ -653,7 +689,7 @@ void finalizeMission(int outcome) {
 }
 
 // ==== seg000:0x1bc3 ====
-void scheduleEventCheck(int eventObjIdx, uint16 priority) {
+void scheduleEventCheck(int16 eventObjIdx, uint16 priority) {
     if (priority > (uint16)g_directorMode) return;
     if (g_directorEventDeadline != -1) return;
     g_viewTargetObj = eventObjIdx;
@@ -661,7 +697,7 @@ void scheduleEventCheck(int eventObjIdx, uint16 priority) {
 }
 
 // ==== seg000:0x1bfd scheduleTimedEvent ====
-void scheduleTimedEvent(int keyVal, int delay) {
+void scheduleTimedEvent(int16 keyVal, int16 delay) {
     if (g_directorMode == 0) {
         return;
     }
@@ -671,7 +707,7 @@ void scheduleTimedEvent(int keyVal, int delay) {
 
 // ==== seg000:0x1c21 routine_180 ====
 void generateRandomRadioMessage(void) {
-    int idx;
+    int16 idx;
 
     if (g_directorEventDeadline != -1) {
         return;
@@ -704,7 +740,7 @@ void generateRandomRadioMessage(void) {
 }
 
 // ==== seg000:0x1d10 ====
-void appendMapEvent(int eventType, int eventArg) {
+void appendMapEvent(int16 eventType, int16 eventArg) {
     if (g_eventLogCount >= 255) {
         return;
     }
@@ -718,7 +754,7 @@ void appendMapEvent(int eventType, int eventArg) {
 }
 
 // ==== seg000:0x1d6e placeString ====
-void placeString(int waypointIdx) {
+void placeString(int16 waypointIdx) {
     strcpy(strBuf, g_targetNameTable[(g_planeTable.planes[waypointIdx].nameIndex) & 0x7f]);
     if (strlen(g_targetNameTable[((int16 *)&g_planeTable)[waypointIdx * 8]])) {
         if (strlen(g_targetNameTable[(g_planeTable.planes[waypointIdx].nameIndex) & 0x7f])) {
@@ -726,7 +762,7 @@ void placeString(int waypointIdx) {
         }
         strcat(strBuf, g_targetNameTable[((int16 *)&g_planeTable)[waypointIdx * 8]]);
     }
-    if ((int)strlen(strBuf) > 25) {
+    if ((int16)strlen(strBuf) > 25) {
         g_strTruncDot = '.';
         g_strTruncTerm[0] = 0;
     }
@@ -734,7 +770,7 @@ void placeString(int waypointIdx) {
 
 // ==== seg000:0x1e0e ====
 void initMissionStrings() {
-    int nameIdx, i;
+    int16 nameIdx, i;
     worldImportToEgame();
     g_targetNameTable[0] = g_stringPool;
     nameIdx = 1;
@@ -756,8 +792,7 @@ void initMissionStrings() {
 
 // ==== seg000:0x1f3e ====
 void findWaypointFeatures() {
-    int nameIdx;
-    int slot;
+    int16 nameIdx, slot;
 
     nameIdx = size3d3;
     for (slot = 0; slot < 2; slot++) {

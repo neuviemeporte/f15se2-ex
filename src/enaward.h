@@ -3,7 +3,7 @@
 /* awards screen + buffer alloc (enaward.c) */
 #include "inttype.h"
 
-void *allocBuffer(int size);
+void *allocBuffer(int16 size);
 void showPostMissionAwards(void);
 
 #endif /* F15_SE2_ENAWARD */

@@ -25,12 +25,12 @@ int kbhit(void) {
     return input_keyWaiting();
 }
 
-int far setInt9Handler(void) {
+int16 far setInt9Handler(void) {
     input_setMode(INPUT_MODE_FLIGHT);
     input_ringReset();
     return 0;
 }
 
-int far restoreInt9Handler(void) {
+int16 far restoreInt9Handler(void) {
     return 0;
 }

@@ -8,17 +8,17 @@
 #include "shared/common.h"
 #include <SDL3/SDL.h>
 
-void loadPicFromFile(const char *name, int segment);
-void loadPicFromFileAt(const char *name, int segment, int off, SDL_IOWhence whence);
+void loadPicFromFile(const char *name, uint16 segment);
+void loadPicFromFileAt(const char *name, uint16 segment, int16 off, SDL_IOWhence whence);
 
-void loadPicFromFile(const char *name, int segment) {
+void loadPicFromFile(const char *name, uint16 segment) {
     SDL_IOStream *handle;
     handle = openFileWrapper(name, 0);
     decodePicRaw(handle, segment);
     closeFileWrapper(handle);
 }
 
-void loadPicFromFileAt(const char *name, int segment, int off, SDL_IOWhence whence) {
+void loadPicFromFileAt(const char *name, uint16 segment, int16 off, SDL_IOWhence whence) {
     SDL_IOStream *handle;
     handle = openFileWrapper(name, 0);
     SDL_SeekIO(handle, off, whence);
@@ -28,7 +28,7 @@ void loadPicFromFileAt(const char *name, int segment, int off, SDL_IOWhence when
 
 // 1e78
 void showPostMissionAwards(void) {
-    int idx;
+    int16 idx;
     awardPage[3] = 0;
     if (commData->trainingFlag != 0)
         goto done;

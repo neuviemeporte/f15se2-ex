@@ -12,7 +12,7 @@
 /* per-frame work reconstructed in their own TUs (egflight/egtacmap/egframe),
  * not surfaced in a header; declared here for the game loop below. */
 void renderFrame(void);
-void renderHudFrame(int unused);
+void renderHudFrame(int16 unused);
 void stepFlightModel(void);
 void updateFrame(void);
 
@@ -377,7 +377,7 @@ void runGameLoop(void) {
  * unless g_horizonGroundColor==2 the 16-entry ground ramp (g_dacGroundPaletteSrc)
  * is copied over g_dacGroundPalette (= dacValues+0x30) first. */
 void setupDac(void) {
-    int i;
+    int16 i;
     gfx_setDacRange(0x10, 0x50, dacValues1);
     if (g_horizonGroundColor != 2) {
         for (i = 0; i < 0x30; i++)

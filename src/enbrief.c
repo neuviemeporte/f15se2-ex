@@ -14,20 +14,20 @@
 #include "entext.h"
 
 /* Private helpers for this translation unit. */
-int mapToScreenY(unsigned char mapCoord);
-int mapToScreenX(unsigned char mapCoord);
-void drawClippedLineEx(int x1, int y1, int x2, int y2, int cx1, int cy1, int cx2, int cy2, int flag);
-void drawClippedLine(int x1, int y1, int x2, int y2);
-int drawEventSprite(int recordIdx);
-void drawMapPixel(int x, int y, int color);
-int isPointInRect(const struct MenuItem *p);
+int16 mapToScreenY(unsigned char mapCoord);
+int16 mapToScreenX(unsigned char mapCoord);
+void drawClippedLineEx(int16 x1, int16 y1, int16 x2, int16 y2, int16 cx1, int16 cy1, int16 cx2, int16 cy2, int16 flag);
+void drawClippedLine(int16 x1, int16 y1, int16 x2, int16 y2);
+int16 drawEventSprite(int16 recordIdx);
+void drawMapPixel(int16 x, int16 y, int16 color);
+int16 isPointInRect(const struct MenuItem *p);
 void blinkWidget(MenuItem *item);
 unsigned int countFlightRecords(void);
 
 void showEventPopup(void);
-void drawFlightLine(int p1, int p2, int p3, int p4);
-char *formatFlightTime(int timeValue, char *buffer);
-void plotMapPoint(int x, int y, int color, int unused);
+void drawFlightLine(int16 p1, int16 p2, int16 p3, int16 p4);
+char *formatFlightTime(int16 timeValue, char *buffer);
+void plotMapPoint(int16 x, int16 y, int16 color, int16 unused);
 void timerWait(uint16 ticks);
 void processDebriefInput(const int16 *cursorBounds, const MenuItem *menuItem);
 void drawMenuItem(const MenuItem *items, uint16 index, int16 *gfxPage);
@@ -69,11 +69,11 @@ void computeMissionResult(void) {
     missionResult = gridFlags[gridX + gridY * 16] & 3;
 }
 
-void processMenuItems(MenuItem *items, int unused, int itemCount, int cursorStartX, int cursorStartY, int16 *gfxPage) {
+void processMenuItems(MenuItem *items, int16 unused, int16 itemCount, int16 cursorStartX, int16 cursorStartY, int16 *gfxPage) {
     char p[2];
     char a[2];
     char c[2];
-    int idx;
+    int16 idx;
     char f[2];
     (void)unused;
     p[0] = 0x0d;
@@ -102,13 +102,13 @@ void processMenuItems(MenuItem *items, int unused, int itemCount, int cursorStar
 }
 
 // 224a
-int selectMenuItem(MenuItem *items, int unused, int itemCount, int16 *inputState, int16 *gfxPage) {
+int16 selectMenuItem(MenuItem *items, int16 unused, int16 itemCount, int16 *inputState, int16 *gfxPage) {
     char p[2];
     char c[2];
     char e[2];
-    int groupIdx;
+    int16 groupIdx;
     char h[2];
-    int curIdx;
+    int16 curIdx;
     (void)unused;
     p[0] = 0x0d;
     p[1] = 0;
@@ -185,8 +185,8 @@ done:
 }
 
 void blinkWidget(MenuItem *item) {
-    int toColor;
-    int fromColor;
+    int16 toColor;
+    int16 fromColor;
     if (item->state == 0) {
         item->state = 1;
         fromColor = (unsigned)item->colorPair >> 4;
@@ -204,7 +204,7 @@ void blinkWidget(MenuItem *item) {
     }
 }
 
-int isPointInRect(const MenuItem *p) {
+int16 isPointInRect(const MenuItem *p) {
     if (p->hitX1 <= cursorX && p->hitX2 >= cursorX && p->hitY1 <= cursorY && p->hitY2 >= cursorY)
         return 1;
     else
@@ -212,12 +212,9 @@ int isPointInRect(const MenuItem *p) {
 }
 
 /*static*/ void processDebriefInput(const int16 *cursorBounds, const MenuItem *menuItem) {
-    int fromColor;
-    int toColor;
-    int joyBtn0;
-    int joyBtn1;
+    int16 fromColor, toColor, joyBtn0, joyBtn1;
     char repeatActive;
-    int keycode = 0; /* stays 0 when no key/joystick input matched → no-op keycode */
+    int16 keycode = 0; /* stays 0 when no key/joystick input matched → no-op keycode */
 
     colorTablePtr = (uint16 *)((char *)colorStyleTable + menuItem->colorTableIdx * 14);
     blinkMarker = (menuItem->flags & MENUITEM_HAS_SPRITE) && (menuItem->flags & MENUITEM_SPRITE_BLINK);
@@ -317,7 +314,7 @@ int isPointInRect(const MenuItem *p) {
     }
     if (keycode == KEYCODE_UPARROW) {
         cursorY -= cursorBounds[1];
-        if (cursorBounds[4] > (int)cursorY) {
+        if (cursorBounds[4] > (int16)cursorY) {
             cursorY = cursorBounds[4];
         }
         inputChanged = 1;
@@ -338,10 +335,10 @@ int isPointInRect(const MenuItem *p) {
     }
     if (keycode == KEYCODE_LEFTARROW) {
         cursorX -= cursorBounds[0];
-        if (cursorBounds[2] > (int)cursorX) {
+        if (cursorBounds[2] > (int16)cursorX) {
             cursorX = cursorBounds[2];
         }
-        if (cursorBounds[4] > (int)cursorY) {
+        if (cursorBounds[4] > (int16)cursorY) {
             cursorX += cursorBounds[0];
         }
         inputChanged = 1;
@@ -355,7 +352,7 @@ void drawMenuItem(const MenuItem *items, uint16 index, int16 *gfxPage) {
     char a[2];
     char prefix[2];
     char d[2];
-    int m;
+    int16 m;
     char numBuf[22];
     uint16 unitIdx;
     p[0] = 0x0a;
@@ -551,7 +548,7 @@ void drawMenuItem(const MenuItem *items, uint16 index, int16 *gfxPage) {
     } // 35db
 }
 
-int drawEventSprite(int recordIdx) {
+int16 drawEventSprite(int16 recordIdx) {
     switch (flightRecords[recordIdx].status & STATUS_TYPE_MASK) {
     case EVENT_AIR_KILL:
     case EVENT_AIR_KILL2:
@@ -628,7 +625,7 @@ void waitForKeyOrJoy(void);
  * start point and every record (timestamps AND events — every record is a vertex)
  * in path colour 0. */
 static void drawFullPathLines(uint16 maxRecord) {
-    int curX, curY, prevX, prevY, recIdx;
+    int16 curX, curY, prevX, prevY, recIdx;
     prevX = prevY = 0;
     recIdx = -1;
     while (++recIdx, (flightRecords[recIdx].status & STATUS_TYPE_MASK) != 0 && (unsigned)recIdx <= maxRecord) {
@@ -750,11 +747,8 @@ unsigned int countFlightRecords(void) {
     return recIdx - 1;
 }
 
-char *formatFlightTime(int timeValue, char *buffer) {
-    int hours;
-    int miscBits;
-    int minutes;
-    int seconds;
+char *formatFlightTime(int16 timeValue, char *buffer) {
+    int16 hours, miscBits, minutes, seconds;
 
     miscBits = targetBlock.target1MiscBits[0] + targetBlock.target2MiscBits[0];
     nightMission = ((char)miscBits & 3) == 0;
@@ -778,17 +772,16 @@ char *formatFlightTime(int timeValue, char *buffer) {
     return buffer;
 }
 
-int mapToScreenX(unsigned char mapCoord) {
+int16 mapToScreenX(unsigned char mapCoord) {
     return ((uint16)mapCoord << 7) / MAP_SCALE_X;
 }
 
-int mapToScreenY(unsigned char mapCoord) {
+int16 mapToScreenY(unsigned char mapCoord) {
     return ((uint16)mapCoord << 7) / MAP_SCALE_Y;
 }
 
-void plotMapPoint(int x, int y, int color, int unused) {
-    int sx;
-    int sy;
+void plotMapPoint(int16 x, int16 y, int16 color, int16 unused) {
+    int16 sx, sy;
     (void)unused;
     sx = mapToScreenX(x);
     sy = mapToScreenY(y);
@@ -808,16 +801,16 @@ void timerWait(uint16 ticks) {
     restoreTimerIrqHandler();
 }
 
-void drawFlightLine(int p1, int p2, int p3, int p4) {
+void drawFlightLine(int16 p1, int16 p2, int16 p3, int16 p4) {
     drawClippedLineEx(mapToScreenX(p1), mapToScreenY(p2), mapToScreenX(p3), mapToScreenY(p4), mapViewX1, mapViewX2, mapViewY1, mapViewY2, 1);
 }
 
-void drawClippedLine(int x1, int y1, int x2, int y2) {
+void drawClippedLine(int16 x1, int16 y1, int16 x2, int16 y2) {
     drawClippedLineEx(x1, y1, x2, y2, mapViewX1, mapViewX2, mapViewY1, mapViewY2, 1);
 }
 
-void drawClippedLineEx(int x1, int y1, int x2, int y2, int cx1, int cy1, int cx2, int cy2, int flag) {
-    int w, h;
+void drawClippedLineEx(int16 x1, int16 y1, int16 x2, int16 y2, int16 cx1, int16 cy1, int16 cx2, int16 cy2, int16 flag) {
+    int16 w, h;
     (void)flag;
     w = cy1 - cx1;
     h = cy2 - cx2;
@@ -839,18 +832,14 @@ void drawClippedLineEx(int x1, int y1, int x2, int y2, int cx1, int cy1, int cx2
     gfx_setBlitOffset(0);
 }
 
-void drawMapPixel(int x, int y, int color) {
+void drawMapPixel(int16 x, int16 y, int16 color) {
     drawClippedLine(x, y, x, y);
 }
 
-long calcMissionScore(int param) {
-    int weaponCount;
-    int a;
-    int recIdx;
-    int ejected;
+long calcMissionScore(int16 param) {
+    int16 weaponCount, a, recIdx, ejected;
     long score;
-    int unitId;
-    int waypointCount;
+    int16 unitId, waypointCount;
 
     samKilled = groundKilled = samMissed = groundMissed = airKilled = airMissed = primaryHit = secondaryHit = ejected = 0;
     waypointCount = 1;
@@ -879,7 +868,7 @@ long calcMissionScore(int param) {
                 airKilled++;
             } else if (unitTypeTable[unitId & UNIT_ID_MASK] & 0x40) {
                 airMissed++;
-            } else if (!(*(int *)&slotInfoTable[unitId * 16] & 0x500)) {
+            } else if (!(*(int16 *)&slotInfoTable[unitId * 16] & 0x500)) {
                 airKilled++;
             } else {
                 airMissed++;
@@ -943,7 +932,7 @@ long calcMissionScore(int param) {
 }
 
 void showEventPopup(void) {
-    int spriteIdx;
+    int16 spriteIdx;
 
     spriteIdx = flightRecords[curRecordIdx].status & STATUS_TYPE_MASK;
     switch (spriteIdx) {

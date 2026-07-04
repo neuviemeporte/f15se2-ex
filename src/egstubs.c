@@ -11,4 +11,4 @@
 /* setInt9Handler/restoreInt9Handler (the keyboard ISR) live in eginput.c. */
 
 /* --- functions declared in egcode.h --- */
-int __cdecl drawCenteredLabelBox(int panel, const char *text) { return 0; } // Real one is also a nop
+int16 drawCenteredLabelBox(int16 panel, const char *text) { return 0; } // Real one is also a nop
