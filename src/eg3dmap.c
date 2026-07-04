@@ -275,7 +275,7 @@ void drawMapTileObject(char far *modelData, int screenX, int screenY) {
         if ((**(char far **)&g_modelStreamPtr & 0x40) != g_modelEvenOddBit)
             return;
     }
-    switch ((unsigned)(uint8)**(char far **)&g_modelStreamPtr & 0x3f) {
+    switch ((uint16)(uint8)**(char far **)&g_modelStreamPtr & 0x3f) {
     case 0x3e:
         return;
     case 0x3f:

@@ -153,18 +153,18 @@ void projectObjects(int heading, int rangeGate, long worldX, long worldY, long w
             continue;
         }
         scaled = scaleCoordToLod(g_curLod, worldX);
-        tileX = (unsigned long)scaled >> 12;
-        fracX = (int)scaled & 0xfff;
+        tileX = (uint32)scaled >> 12;
+        fracX = (int16)scaled & 0xfff;
         s_lodViewFracX = (int16)(lodCoordFracQ8(g_curLod, (uint32)worldX) +
                                  lodEyeFracQ8(g_curLod, g_camEyeFracX));
         scaled = scaleCoordToLod(g_curLod, worldY);
-        tileY = (unsigned long)scaled >> 12;
-        fracY = (int)scaled & 0xfff;
+        tileY = (uint32)scaled >> 12;
+        fracY = (int16)scaled & 0xfff;
         s_lodViewFracY = (int16)(lodCoordFracQ8(g_curLod, (uint32)worldY) +
                                  lodEyeFracQ8(g_curLod, g_camEyeFracY));
         scaled = scaleCoordToLod(g_curLod, worldZ);
-        if ((unsigned long)scaled < 0x7FFFUL) {
-            g_objLocalZ = (int)(((unsigned long)scaled < 2UL) ? 2UL : (unsigned long)scaled);
+        if ((uint32)scaled < 0x7FFFUL) {
+            g_objLocalZ = (int16)(((uint32)scaled < 2UL) ? 2UL : (uint32)scaled);
             s_lodViewFracZ = ((unsigned long)scaled < 2UL)
                                  ? 0
                                  : (int16)(lodCoordFracQ8(g_curLod, (uint32)worldZ) +
