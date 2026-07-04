@@ -1,18 +1,9 @@
-// Utility behavior tests — migrated to LINK_CORE (exercises the real game code).
+// Utility behavior tests (LINK_CORE — exercises the real game code).
 //
-// Scope after migration: deterministic, side-effect-free helper logic that
-// survives the refactor — terrain LOD scaling, DOS 15-bit rand scaling, integer
-// formatting, string helpers, debrief map/scoring math — plus a worldxfer
-// round-trip that replaces the deleted worldBuf byte-cursor tests.
-//
-// Dropped here (see docs/test-migration.md): every gfx/line/sprite/input-spy
-// section (plotMapPoint, drawEventSprite, drawFlightPath, blinkWidget,
-// processDebriefInput, processMenuItems, selectMenuItem, drawMenuItem,
-// showEventPopup, animateFlightPath, stringWidth/drawStringCentered, the
-// file/pic wrappers, DOS video/interrupt/outport no-ops) — they asserted on
-// inline spy call-counts that collide with the real symbols under LINK_CORE and
-// belong to the new render/input test set. approxDistance/calcBearing/clampValue
-// are covered by start_behavior_tests.
+// Scope: deterministic, side-effect-free helper logic — terrain LOD scaling,
+// DOS 15-bit rand scaling, integer formatting, string helpers, debrief
+// map/scoring math — plus a worldxfer import->export round-trip.
+// (approxDistance/calcBearing/clampValue are covered by start_behavior_tests.)
 
 #include "endata.h"    /* pulls struct.h, comm.h, endtypes.h */
 #include "worldxfer.h"

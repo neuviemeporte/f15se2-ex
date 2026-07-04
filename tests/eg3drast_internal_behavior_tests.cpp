@@ -1627,9 +1627,6 @@ int main() {
                 "projectSceneObject preserves the original store-transform opcode before sorted insertion");
     }
 
-    // installDivZeroHandler/installDivZeroVector dropped: the DOS INT0 divide-trap
-    // handler was deleted (the manual udiv32by16/sdivFull sentinels replaced it).
-
     std::cout << "eg3drast_internal_behavior_tests passed\n";
     return 0;
 }

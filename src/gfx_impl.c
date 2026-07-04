@@ -357,8 +357,7 @@ static R2DImage *gfx_spriteImage(int handle) {
 }
 
 /* Software realization of an image submission: clipped blit into the back buffer.
- * Registered with r2d so a submitted sprite rasterizes exactly as gfx_blitSprite
- * used to. */
+ * Registered with r2d so a submitted sprite rasterizes straight into the page. */
 static void gfx_swImage(R2DImage *img, int srcX, int srcY, int w, int h,
                         int dstX, int dstY, int key) {
     r2d_blit(r2d_imageSurface(img), srcX, srcY, ensurePage(0), dstX, dstY, w, h, key);

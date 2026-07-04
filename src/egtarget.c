@@ -307,9 +307,9 @@ static const int EXPLOSION_WORLD_RADIUS = 0x10;
 
 /* Cannon tracers + explosion sparks as real world-space 3D line geometry
  * (drawWorldLine): submitted into the scene BEFORE r3d_endScene so the software
- * depth sort occludes them and the GL backend z-tests + fogs them. Split out of
- * drawHudWorldOverlay (which keeps the 2D HUD symbology) so the effects join the
- * 3D pass; game-logic order is unchanged (tracer hit-detect then explosion). */
+ * depth sort occludes them and the GL backend z-tests + fogs them. Kept separate
+ * from drawHudWorldOverlay (which does the 2D HUD symbology) so the effects join
+ * the 3D pass; game-logic order is tracer hit-detect then explosion. */
 void drawWorldEffects(void) {
     int prevDepth, hitFlag, tmp, idx, radius, objIdx, pointY, pointX, dist, wpEntry, prevX, gunRadius, prevY;
 

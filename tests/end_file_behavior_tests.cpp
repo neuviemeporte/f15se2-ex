@@ -1,3 +1,15 @@
+// enfile.c helpers. srandInit / enSeedRandom are real and tested directly.
+// loadFileSection / writeFileSection are thin wrappers over the file_io layer,
+// but that layer's readFileAt/writeFile still address their buffer through
+// MK_FP(segment, offset) — the DOS segment:offset path that is a silent no-op
+// natively and "the next thing to be ported away" (see file_io.c). Until that is
+// ported there is no way to drive load/writeFileSection against a real file, so
+// this test defines its own openFileWrapper/readFileAt/writeFile/etc. to capture
+// and assert the wrapper's forwarding contract (name, read mode, count == -1,
+// offset, segment, matching close handle). It is a forwarding check by necessity,
+// NOT a real round-trip; the real file_io.c round-trips live in
+// file_io_behavior_tests. Revisit and convert to a real round-trip once
+// readFileAt/writeFile drop MK_FP.
 #include "endata.h"
 #include "inttype.h"
 #include "shared/common.h"

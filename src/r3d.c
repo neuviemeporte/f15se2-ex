@@ -1,4 +1,4 @@
-/* 3D renderer backend dispatch + registry (see docs/render-3d-backend.md).
+/* 3D renderer backend dispatch + registry.
  * Backends are probed in preference order; the first whose init() claims the
  * environment wins. Software is last and always claims. */
 #include "r3d.h"

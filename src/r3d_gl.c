@@ -18,7 +18,7 @@
  * Compositing (interim): the software 2D page is drawn over the GL 3D as a
  * single flat textured quad with the show-through key (GFX_GL_SHOWTHROUGH_KEY)
  * made transparent, so the HUD/cockpit land on top of the GL viewport. A later
- * step submits 2D through the renderer too (docs/render-2d-overlay.md).
+ * step submits 2D through the renderer too.
  */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
@@ -649,7 +649,7 @@ static void gl_beginScene(const R3DScene *s) {
     if (s_wide < 0) {
         /* Widescreen 3D (Hor+): on by default; F15_WIDESCREEN=0 forces 4:3. The
          * stock UI stays a centred, pillarboxed 320x200 image (it never widens);
-         * only the 3D fills the extra width (docs/render-2d-overlay.md). */
+         * only the 3D fills the extra width. */
         const char *e = SDL_getenv("F15_WIDESCREEN");
         s_wide = (e && (e[0] == '0' || e[0] == 'n' || e[0] == 'N')) ? 0 : 1;
         LogInfo(("r3d_gl: widescreen 3D %s", s_wide ? "on" : "off"));

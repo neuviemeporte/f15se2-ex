@@ -117,8 +117,8 @@ int r3dmesh_decodeLod(const uint8 *body, const uint8 *limit,
  * is a tree of headers (near branch = descend to more detail, far branch = signed
  * skip to a sibling/shared header); the finest LOD is the near branch at every
  * header, so this never follows a skip and is immune to the signed/shared-skip
- * graph. The GPU backend uses the finest LOD always (docs/render-3d-backend.md,
- * resolved Q3). Result lands in out->lods[0] with out->nLods == 1. `colorLut`
+ * graph. The GPU backend uses the finest LOD always. Result lands in
+ * out->lods[0] with out->nLods == 1. `colorLut`
  * supplies the distance gate (may be NULL). Returns body bytes consumed, or -1. */
 int r3dmesh_decode(const uint8 *model, const uint8 *limit,
                    const MeshVtxPools *pools, const uint8 *colorLut,

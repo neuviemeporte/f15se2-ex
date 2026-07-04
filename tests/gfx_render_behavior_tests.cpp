@@ -1,8 +1,6 @@
 // LINK_CORE + headless. Exercises the real 2D render engine (gfx_impl.c + the
-// r2d software backend) against the *current* API, not the deleted DOS MCGA
-// segment/page model the scrapped gfx_impl/hud_raster tests assumed. Everything
-// here is observable by reading page pixels back after a draw — no draw-capture
-// spy hook is needed (see docs/test-migration.md "2D render engine").
+// r2d software backend) against the current API. Everything here is observable
+// by reading page pixels back after a draw — no draw-capture spy hook is needed.
 //
 // gfx_videoInit() brings up SDL's dummy video driver + a software renderer and
 // registers the software rasterization hooks (gfx_swLine/gfx_swImage), so the

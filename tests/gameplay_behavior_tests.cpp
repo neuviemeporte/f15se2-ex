@@ -3,11 +3,7 @@
 // Exercises the real threat/combat/target/flight/keys logic against the linked
 // core library. Scoped to functions whose behavior is observable through game
 // state (threat scoring, SAM acquisition, target/mission bookkeeping, replay
-// log, director scheduling, wreck physics, timing/LOD math). The original
-// auto-generated suite spied on rendering/audio call counts through inline
-// stubs; those collide with the real symbols under LINK_CORE and asserted on
-// draw-call mechanics rather than behavior, so the render/AI-frame sections were
-// dropped (see docs/test-migration.md "Future tests").
+// log, director scheduling, wreck physics, timing/LOD math).
 #include "egdata.h"
 #include "egmath.h"
 #include "inttype.h"
