@@ -20,4 +20,13 @@ void setViewPosition(int viewX, int viewY, int viewZ) { /* Original: SetViewPos(
     g_viewPosX = viewX;
     g_viewPosY = viewY;
     g_viewPosZ = viewZ;
+    g_viewPosFracX = g_viewPosFracY = g_viewPosFracZ = 0;
+}
+
+/* Q8 sub-unit remainder of the viewer position (true = g_viewPos + frac/256).
+ * Cleared by setViewPosition, so callers with sub-unit knowledge opt in after it. */
+void setViewPositionFrac(int fracX, int fracY, int fracZ) {
+    g_viewPosFracX = (int16)fracX;
+    g_viewPosFracY = (int16)fracY;
+    g_viewPosFracZ = (int16)fracZ;
 }

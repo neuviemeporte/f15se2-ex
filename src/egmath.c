@@ -54,6 +54,8 @@ void drawWorldObject(int shapeId, long worldX, long worldY, int altitude, int ob
     long relY;
     int altDiff;
     int shiftAmt;
+    int efx = 0, efy = 0, efz = 0;
+    int vfx, vfy, vfz;
 
     dataOff = shapeDataOffset(shapeId);
     drawPg = g_pageFront;
@@ -64,23 +66,45 @@ void drawWorldObject(int shapeId, long worldX, long worldY, int altitude, int ob
         relX += g_ViewX - g_camEyeX;
         relY += g_camEyeY - g_ViewY;
         altDiff += g_viewZ - g_camEyeZ;
+        /* Q8 remainder of the external eye position (true eye is frac/256
+         * further along each axis than the integer subtracted above). */
+        efx = g_camEyeFracX;
+        efy = g_camEyeFracY;
+        efz = g_camEyeFracZ;
     }
     scaleShift = (g_halfScaleRender != 0) ? (scaleShift - 2) : (scaleShift - 3);
     if (scaleShift > 0) {
         shiftLongLeftInPlace(scaleShift, &relX);
         shiftLongLeftInPlace(scaleShift, &relY);
         altDiff <<= (char)scaleShift;
-    }
-    if (scaleShift < 0) {
+        vfx = efx << scaleShift;
+        vfy = efy << scaleShift;
+        vfz = efz << scaleShift;
+    } else if (scaleShift < 0) {
         /* full int, not just the low byte: native shift uses all 32 bits */
+        long preX = relX, preY = relY;
+        int preZ = altDiff;
         shiftAmt = -scaleShift;
         shiftLongRightInPlace(shiftAmt, &relX);
         shiftLongRightInPlace(shiftAmt, &relY);
         altDiff >>= (char)shiftAmt;
+        /* Viewer fraction (Q8, submit units) combining the fraction the
+         * arithmetic shift floors away (up to 8 fine units at full scale) with
+         * the eye remainder — close objects (own plane in chase view,
+         * just-fired missiles) otherwise step. Signs follow the submit below:
+         * posX carries +relX, posY carries −relY, viewPosZ = −altDiff. */
+        vfx = (efx - ((int)(preX - (relX << shiftAmt)) << 8)) >> shiftAmt;
+        vfy = (((int)(preY - (relY << shiftAmt)) << 8) + efy) >> shiftAmt;
+        vfz = (efz - ((preZ - (altDiff << shiftAmt)) << 8)) >> shiftAmt;
+    } else {
+        vfx = efx;
+        vfy = efy;
+        vfz = efz;
     }
     if ((long)(int16)labs(relX) < (long)0x7FFF) {
         if ((long)(int16)labs(relY) < (long)0x7FFF) {
             setViewPosition(0, 0, -altDiff);
+            setViewPositionFrac(vfx, vfy, vfz);
             g_curLod = 1;
             {
                 R3DSubmit obj = {g_world3dData + dataOff, -objYaw, objPitch, objRoll,
@@ -365,6 +389,17 @@ int sinMul(int angle, int value) { /* Original: sinX(angle,x). Fixed-point sine 
 int cosMul(int angle, int value) { /* Original: cosX(angle,x). Cosine via sine phase shift. */
     enum { WORD_DEGREES_QUARTER_TURN = 0x4000 };
     return sinMul(angle + WORD_DEGREES_QUARTER_TURN, value);
+}
+
+/* sinMul/cosMul keeping 8 fractional bits (result = sinMul<<8 without the Q15
+ * truncation) — for the external camera eye, where a whole-unit result makes
+ * the view lurch as the offset rotates. */
+long sinMulQ8(int angle, int value) {
+    return ((long)sine(angle) * value) >> 7;
+}
+
+long cosMulQ8(int angle, int value) {
+    return sinMulQ8(angle + 0x4000, value);
 }
 
 // ==== seg000:0xd1c8 ====

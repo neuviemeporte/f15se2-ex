@@ -174,8 +174,13 @@ struct Projectile {
     int16 weaponIdx;  // +0x12  index into missiles[] (player-fired)
     int16 targetLock; // +0x14  tracked target id (-1 = none)
     int16 targetRef;  // +0x16  ground threat: target index (>0 plane / <0 -simObject); player missile: loft angle
+    /* Fine (mapX<<5-scale) authoritative position. The original stepped mapX/mapY
+     * in whole map units, truncating the per-step fraction; accumulating here and
+     * deriving mapX/mapY (= fine>>5) keeps the sub-unit motion, so slow/oblique
+     * flight doesn't stair-step. Wraps at 21 bits to mirror the uint16 map wrap. */
+    int32 fineX; // +0x18
+    int32 fineY; // +0x1C
 };
-STATIC_ASSERT(sizeof(struct Projectile) == 24);
 
 /* g_proj3d: the world-space origin (x,y,z) projectObjects() projects the 3D scene
  * relative to. Three int32 written from the routine's long parameters. */

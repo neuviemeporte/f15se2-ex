@@ -21,6 +21,45 @@
 /* Private helpers for this translation unit. */
 int far transformAndCullObjectFar(int, int, int);
 
+/* Q8 sub-LOD-unit remainder scaleCoordToLod discards (signed, around its
+ * round-to-nearest bias). Without it the viewer position feeding the terrain
+ * transform steps in whole LOD units — 64 fine units at LOD 4 — which made
+ * large far tiles (ocean shoreline, mountains) visibly judder while the
+ * fine-resolution moving objects glided. */
+static int lodCoordFracQ8(int level, uint32 coord) {
+    switch (level) {
+    case 4:
+        return (int)(((coord + 0x20) & 0x3f) - 0x20) << 2;
+    case 3:
+        return (int)(((coord + 8) & 0xf) - 8) << 4;
+    case 2:
+        return (int)(((coord + 2) & 3) - 2) << 6;
+    default: /* LOD 1/0 scaling is exact */
+        return 0;
+    }
+}
+
+/* Scale the eye's Q8 sub-fine-unit remainder (g_camEyeFrac*, the scene camera
+ * projectObjects renders from) into the LOD level's unit. */
+static int lodEyeFracQ8(int level, int fracQ8) {
+    switch (level) {
+    case 4:
+        return fracQ8 >> 6;
+    case 3:
+        return fracQ8 >> 4;
+    case 2:
+        return fracQ8 >> 2;
+    case 1:
+        return fracQ8;
+    default:
+        return fracQ8 << 1;
+    }
+}
+
+/* Viewer fraction for the LOD level currently being walked (renderGridTile's
+ * setViewPosition clears the frac state, so it re-applies these). */
+static int16 s_lodViewFracX, s_lodViewFracY, s_lodViewFracZ;
+
 /* Bounds test mirroring process3dg's own clamp (LOD 4 uses a +2 origin offset).
    Used by the detail-4 extended-radius walk so it never samples off-grid. */
 static int gridTileInBounds(int lod, int col, int row) {
@@ -51,6 +90,7 @@ static void renderGridTile(int lod, int tileX, int tileY, int gridX, int gridY, 
         return;
     }
     setViewPosition(g_objLocalX, g_objLocalY, g_objLocalZ);
+    setViewPositionFrac(s_lodViewFracX, s_lodViewFracY, s_lodViewFracZ);
     cell = process3dg(lod, col, row);
     if (cell == -1) {
         return;
@@ -115,12 +155,20 @@ void projectObjects(int heading, int rangeGate, long worldX, long worldY, long w
         scaled = scaleCoordToLod(g_curLod, worldX);
         tileX = (unsigned long)scaled >> 12;
         fracX = (int)scaled & 0xfff;
+        s_lodViewFracX = (int16)(lodCoordFracQ8(g_curLod, (uint32)worldX) +
+                                 lodEyeFracQ8(g_curLod, g_camEyeFracX));
         scaled = scaleCoordToLod(g_curLod, worldY);
         tileY = (unsigned long)scaled >> 12;
         fracY = (int)scaled & 0xfff;
+        s_lodViewFracY = (int16)(lodCoordFracQ8(g_curLod, (uint32)worldY) +
+                                 lodEyeFracQ8(g_curLod, g_camEyeFracY));
         scaled = scaleCoordToLod(g_curLod, worldZ);
         if ((unsigned long)scaled < 0x7FFFUL) {
             g_objLocalZ = (int)(((unsigned long)scaled < 2UL) ? 2UL : (unsigned long)scaled);
+            s_lodViewFracZ = ((unsigned long)scaled < 2UL)
+                                 ? 0
+                                 : (int16)(lodCoordFracQ8(g_curLod, (uint32)worldZ) +
+                                           lodEyeFracQ8(g_curLod, g_camEyeFracZ));
             for (sampleIdx = 0;; sampleIdx++) {
                 if (g_detailLevel >= 4) break; /* detail 4: the dense walk below replaces this sparse pattern */
                 if (g_curLod == 4 && g_detailLevel >= 2) {
@@ -153,6 +201,7 @@ void projectObjects(int heading, int rangeGate, long worldX, long worldY, long w
                     g_objLocalY = fracY - (gridY << 12) - 0x800;
                 }
                 setViewPosition(g_objLocalX, g_objLocalY, g_objLocalZ);
+                setViewPositionFrac(s_lodViewFracX, s_lodViewFracY, s_lodViewFracZ);
                 cell = process3dg(g_curLod, tileX + gridX, tileY + gridY);
                 if (cell == -1) {
                     goto next_iter;

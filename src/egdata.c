@@ -727,6 +727,22 @@ int16 g_objRenderMode = 0;
 int16 g_viewPosX = 0;
 int16 g_viewPosY = 0;
 int16 g_viewPosZ = 0;
+/* Q8 sub-unit fraction of the true viewer position (true = g_viewPos + frac/256,
+ * in the current submit-space unit). The int16 transform inputs can't carry
+ * sub-unit camera position, so transformAndCullObject folds this into the 32-bit
+ * camera-space origin instead — without it the terrain walk quantizes the camera
+ * to whole LOD units (64 fine units at LOD 4) and the world visibly steps. */
+int16 g_viewPosFracX = 0;
+int16 g_viewPosFracY = 0;
+int16 g_viewPosFracZ = 0;
+/* Q8 sub-fine-unit remainder of the external camera eye (true eye =
+ * g_camEye* + frac/256, in [0,255]). The sinMul-derived chase/track eye
+ * positions land on whole fine units; at close cam distances a 1-unit eye
+ * step is a visible view lurch while turning, so renderFrame keeps the
+ * remainder and the render paths fold it back in. */
+int16 g_camEyeFracX = 0;
+int16 g_camEyeFracY = 0;
+int16 g_camEyeFracZ = 0;
 int16 g_rotSinYaw = 0;
 int16 g_rotCosYaw = 0;
 /* g_sphereRadius-227: sphere/horizon projection scalars. */

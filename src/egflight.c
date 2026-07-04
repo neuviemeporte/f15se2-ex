@@ -764,6 +764,23 @@ static int lerpViewAngle(int a0, int a1, int alpha) {
     return a0 + ((d * alpha) >> 12);
 }
 
+/* A gimbal flip rewrites the whole head/pitch/roll triple (see lerpPose in
+ * egsys.c): if any component snaps, take the full new pose instead of mixing a
+ * snapped component with still-tweening ones. */
+static int poseSnapsQ12(const struct ViewSnapshot *s0, const struct ViewSnapshot *s1) {
+    int16 dh = (int16)(s1->heading - s0->heading);
+    int16 dp = (int16)(s1->pitch - s0->pitch);
+    int16 dr = (int16)(s1->roll - s0->roll);
+    return dh >= 0x4000 || dh <= -0x4000 || dp >= 0x4000 || dp <= -0x4000 ||
+           dr >= 0x4000 || dr <= -0x4000;
+}
+
+/* split a Q8 fixed-point eye coordinate into the integer part + [0,255] frac */
+static int32 eyeFromQ8(long q8, int16 *frac) {
+    *frac = (int16)(q8 & 0xff);
+    return (int32)(q8 >> 8);
+}
+
 // something to do with view switching?
 void renderFrame() {
     int camDist, savedCamDist, range, camOffset, dx, dy, tmp;
@@ -771,6 +788,7 @@ void renderFrame() {
     g_camEyeY = g_ViewY;
     g_viewTargetY = 0x100000 - g_ViewY;
     g_camEyeZ = g_viewZ + 0x18;
+    g_camEyeFracX = g_camEyeFracY = g_camEyeFracZ = 0;
     g_viewTargetAlt = g_viewZ;
     camDist = g_externalCamDist = clampRange(g_externalCamDist, 2, 8);
     switch (keyValue) {
@@ -806,9 +824,15 @@ void renderFrame() {
         r1 = (tmp + 1) & 0xf;
         s0 = &g_viewSnapshotRing[tmp];
         s1 = &g_viewSnapshotRing[r1];
-        g_viewHeading = lerpViewAngle(s0->heading, s1->heading, a);
-        g_viewPitch = lerpViewAngle(s0->pitch, s1->pitch, a);
-        g_viewRoll = lerpViewAngle(s0->roll, s1->roll, a);
+        if (poseSnapsQ12(s0, s1)) {
+            g_viewHeading = s1->heading;
+            g_viewPitch = s1->pitch;
+            g_viewRoll = s1->roll;
+        } else {
+            g_viewHeading = lerpViewAngle(s0->heading, s1->heading, a);
+            g_viewPitch = lerpViewAngle(s0->pitch, s1->pitch, a);
+            g_viewRoll = lerpViewAngle(s0->roll, s1->roll, a);
+        }
         g_camEyeX = s0->worldX + (int32)(((int64)(s1->worldX - s0->worldX) * a) >> 12);
         g_camEyeY = s0->worldY + (int32)(((int64)(s1->worldY - s0->worldY) * a) >> 12);
         g_camEyeZ = s0->alt + (((int32)(s1->alt - s0->alt) * a) >> 12);
@@ -818,8 +842,10 @@ void renderFrame() {
         g_viewHeading = g_ourHead - 0x4000;
         g_viewPitch = 0;
         g_viewRoll = 0;
-        g_camEyeX = sinMul(g_ourHead + 0x4000, 0x18 << camDist) + g_ViewX;
-        g_camEyeY = cosMul(g_ourHead + 0x4000, 0x18 << camDist) + g_ViewY;
+        /* Q8 eye: a whole-fine-unit eye position lurches visibly at close cam
+         * distance as the offset rotates with the (smoothly interpolated) heading. */
+        g_camEyeX = eyeFromQ8(sinMulQ8(g_ourHead + 0x4000, 0x18 << camDist) + ((long)g_ViewX << 8), &g_camEyeFracX);
+        g_camEyeY = eyeFromQ8(cosMulQ8(g_ourHead + 0x4000, 0x18 << camDist) + ((long)g_ViewY << 8), &g_camEyeFracY);
         break;
     case 0x86:
         g_viewHeading = 0x8000;
@@ -831,8 +857,8 @@ void renderFrame() {
         g_viewHeading = g_ourHead;
         g_viewPitch = 0;
         g_viewRoll = 0;
-        g_camEyeX = sinMul(g_ourHead + 0x8000, 0x18 << camDist) + g_ViewX;
-        g_camEyeY = cosMul(g_ourHead + 0x8000, 0x18 << camDist) + g_ViewY;
+        g_camEyeX = eyeFromQ8(sinMulQ8(g_ourHead + 0x8000, 0x18 << camDist) + ((long)g_ViewX << 8), &g_camEyeFracX);
+        g_camEyeY = eyeFromQ8(cosMulQ8(g_ourHead + 0x8000, 0x18 << camDist) + ((long)g_ViewY << 8), &g_camEyeFracY);
         g_camEyeZ = (4 << camDist) + g_viewZ;
         break;
     case 0x88:
@@ -899,16 +925,17 @@ void renderFrame() {
         camOffset = cosMul(g_viewPitch, 0x18 << camDist);
         if (g_viewTargetObj & 0x60 || g_directorMode != 0) {
             if (keyValue == 0x88) {
-                g_camEyeX = sinMul(g_viewHeading + 0x8000, camOffset) + g_ViewX;
-                g_camEyeY = cosMul(g_viewHeading + 0x8000, camOffset) + g_ViewY;
-                g_camEyeZ = sinMul(g_viewPitch, 0x18 << camDist) + (4 << camDist) + g_viewZ;
+                g_camEyeX = eyeFromQ8(sinMulQ8(g_viewHeading + 0x8000, camOffset) + ((long)g_ViewX << 8), &g_camEyeFracX);
+                g_camEyeY = eyeFromQ8(cosMulQ8(g_viewHeading + 0x8000, camOffset) + ((long)g_ViewY << 8), &g_camEyeFracY);
+                g_camEyeZ = (int16)eyeFromQ8(sinMulQ8(g_viewPitch, 0x18 << camDist) + ((long)((4 << camDist) + g_viewZ) << 8), &g_camEyeFracZ);
                 g_viewPitch = -g_viewPitch;
             } else {
-                g_camEyeX = sinMul(g_viewHeading, camOffset) + g_viewTargetX;
-                g_camEyeY = cosMul(g_viewHeading, camOffset) - g_viewTargetY + 0x100000;
-                g_camEyeZ = (4 << camDist) - sinMul(g_viewPitch, 0x18 << camDist) + g_viewTargetAlt;
+                g_camEyeX = eyeFromQ8(sinMulQ8(g_viewHeading, camOffset) + ((long)g_viewTargetX << 8), &g_camEyeFracX);
+                g_camEyeY = eyeFromQ8(cosMulQ8(g_viewHeading, camOffset) + (((long)0x100000 - (long)g_viewTargetY) << 8), &g_camEyeFracY);
+                g_camEyeZ = (int16)eyeFromQ8((((long)(4 << camDist) + g_viewTargetAlt) << 8) - sinMulQ8(g_viewPitch, 0x18 << camDist), &g_camEyeFracZ);
                 if (g_viewTargetObj & 0x40 && g_planeTable.planes[g_viewTargetObj & 0x3f].flags & 0x200 && g_camEyeZ < 132) {
                     g_camEyeZ = 132;
+                    g_camEyeFracZ = 0;
                 }
                 g_viewHeading += 0x8000;
             }
@@ -916,9 +943,9 @@ void renderFrame() {
             g_viewHeading = g_projectiles[g_viewTargetObj].worldX;
             g_viewPitch = g_projectiles[g_viewTargetObj].worldY - 0x400;
             camOffset = cosMul(g_viewPitch, 0x10 << camDist);
-            g_camEyeX = g_viewTargetX - sinMul(g_viewHeading, camOffset);
-            g_camEyeY = 0x100000 - (cosMul(g_viewHeading, camOffset) + g_viewTargetY);
-            g_camEyeZ = g_viewTargetAlt - sinMul(g_viewPitch, 0x10 << camDist);
+            g_camEyeX = eyeFromQ8(((long)g_viewTargetX << 8) - sinMulQ8(g_viewHeading, camOffset), &g_camEyeFracX);
+            g_camEyeY = eyeFromQ8(((long)0x100000 << 8) - (cosMulQ8(g_viewHeading, camOffset) + ((long)g_viewTargetY << 8)), &g_camEyeFracY);
+            g_camEyeZ = (int16)eyeFromQ8(((long)g_viewTargetAlt << 8) - sinMulQ8(g_viewPitch, 0x10 << camDist), &g_camEyeFracZ);
         }
         break;
     case 0x8c:
@@ -939,7 +966,10 @@ void renderFrame() {
     } else {
         buildRotationMatrixFar(g_camRotMatrix, g_viewHeading, g_viewPitch, g_viewRoll);
     }
-    g_camEyeZ = g_camEyeZ < 0x10 ? 0x10 : g_camEyeZ;
+    if (g_camEyeZ < 0x10) {
+        g_camEyeZ = 0x10;
+        g_camEyeFracZ = 0;
+    }
     tmp = g_hudVisible;
     g_hudVisible = (keyValue & 0xc0) == 0;
     if (tmp != g_hudVisible) {

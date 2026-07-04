@@ -11,6 +11,8 @@ int clampRange(int value, int minVal, int maxVal);
 int egClampValue(int value, int minVal, int maxVal);
 int computeBearing(int deltaX, int deltaY);
 int cosMul(int angle, int value);
+long sinMulQ8(int angle, int value);
+long cosMulQ8(int angle, int value);
 int signOf(int value);
 void seedRng(void);
 int readAxisInput(int axisIdx);

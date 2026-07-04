@@ -151,6 +151,8 @@ int main() {
     g_simObjects[0].flags.b[0] = kAliveFlag;
     g_projectiles[kProjectileSlot].mapX = 100;
     g_projectiles[kProjectileSlot].mapY = 200;
+    g_projectiles[kProjectileSlot].fineX = 100 << 5;
+    g_projectiles[kProjectileSlot].fineY = 200 << 5;
     g_projectiles[kProjectileSlot].alt = 300;
     g_projectiles[kProjectileSlot].worldX = 0x0100;
     g_projectiles[kProjectileSlot].worldY = 0x0200;
@@ -168,6 +170,8 @@ int main() {
     g_simObjects[0].flags.b[0] = kAliveFlag;
     g_projectiles[kProjectileSlot].mapX = 300;
     g_projectiles[kProjectileSlot].mapY = 600;
+    g_projectiles[kProjectileSlot].fineX = 300 << 5;
+    g_projectiles[kProjectileSlot].fineY = 600 << 5;
     g_projectiles[kProjectileSlot].alt = 900;
     g_projectiles[kProjectileSlot].worldX = 0x0300;
     g_projectiles[kProjectileSlot].worldY = 0x0400;

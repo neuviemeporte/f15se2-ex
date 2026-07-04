@@ -1915,9 +1915,19 @@ static int transformAndCullObject(int relY, int relZ, int relX) {
 
     g_camBaseX = (imul16(m[6], relY) + imul16(m[3], relZ) + imul16(m[0], relX)) << 1;
     camX = (imul16(m[7], relY) + imul16(m[4], relZ) + imul16(m[1], relX)) << 1;
+    camY = (imul16(m[8], relY) + imul16(m[5], relZ) + imul16(m[2], relX)) << 1;
+    /* Sub-unit viewer fraction (setViewPositionFrac, Q8): the int16 rel inputs
+     * quantize the viewer to whole units, but the camera-space origin is 32-bit
+     * Q16, so rotate the fraction and fold it in here. true rel = rel - frac/256,
+     * and each unit of rel contributes imul16(m,rel)<<1, hence >>7. */
+    if (g_viewPosFracX | g_viewPosFracY | g_viewPosFracZ) {
+        int fy = g_viewPosFracY, fz = g_viewPosFracZ, fx = g_viewPosFracX;
+        g_camBaseX -= (imul16(m[6], fy) + imul16(m[3], fz) + imul16(m[0], fx)) >> 7;
+        camX -= (imul16(m[7], fy) + imul16(m[4], fz) + imul16(m[1], fx)) >> 7;
+        camY -= (imul16(m[8], fy) + imul16(m[5], fz) + imul16(m[2], fx)) >> 7;
+    }
     g_camTransXLo = (int16)camX;
     g_camTransXHi = HI16(camX);
-    camY = (imul16(m[8], relY) + imul16(m[5], relZ) + imul16(m[2], relX)) << 1;
     g_camTransYLo = (int16)camY;
     g_camTransYHi = HI16(camY);
 

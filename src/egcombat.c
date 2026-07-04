@@ -1,5 +1,6 @@
 // seg000 optimized code (/Ot)
 #include "eg3dmap.h"
+#include "egcode.h"
 #include "egcombat.h"
 #include "egdata.h"
 #include "egframe.h"
@@ -67,6 +68,10 @@ void fireAirThreat(int objIdx) {
                                 idx = idx;
                                 g_projectiles[slot].mapX = g_simObjects[objIdx].posX;
                                 g_projectiles[slot].mapY = g_simObjects[objIdx].posY;
+                                /* seed the fine position from the launcher's fine
+                                 * coords (posX/Y are worldX/Y>>5, so fine>>5 == map) */
+                                g_projectiles[slot].fineX = g_simObjects[objIdx].worldX & 0x1FFFFF;
+                                g_projectiles[slot].fineY = g_simObjects[objIdx].worldY & 0x1FFFFF;
                                 slot = slot;
                                 objIdx = objIdx;
                                 g_projectiles[slot].alt = g_simObjects[objIdx].alt - 25;
@@ -310,7 +315,11 @@ void updateThreatTargeting(void) {
                     g_projectiles[slot].worldY = g_projectiles[slot].targetRef;
             }
 
-            step = (cosMul(g_projectiles[slot].worldY, g_projectiles[slot].speed) << 3) / g_frameRateScaling;
+            /* Advance the position at fine (mapX<<5) scale, keeping the fraction
+             * the original truncated twice per step (step's <<3/scaling divide and
+             * sinMul's whole-map-unit result) — slow or oblique flight otherwise
+             * stair-steps a map unit at a time. mapX/mapY are derived (fine>>5). */
+            step = (int)(((long)cosMul(g_projectiles[slot].worldY, g_projectiles[slot].speed) << 8) / g_frameRateScaling);
             if (mode == 30) {
                 step /= 2;
                 g_projectiles[slot].alt += sinMul(g_projectiles[slot].worldY,
@@ -319,8 +328,12 @@ void updateThreatTargeting(void) {
                 g_projectiles[slot].alt += sinMul(g_projectiles[slot].worldY,
                                                   (int)(*(uint8 *)&g_projectiles[slot].speed << 8) / g_frameRateScaling);
             }
-            g_projectiles[slot].mapX += sinMul(g_projectiles[slot].worldX, step);
-            g_projectiles[slot].mapY -= cosMul(g_projectiles[slot].worldX, step);
+            g_projectiles[slot].fineX = (g_projectiles[slot].fineX +
+                                         (int32)(((int64)sine(g_projectiles[slot].worldX) * step) >> 15)) & 0x1FFFFF;
+            g_projectiles[slot].fineY = (g_projectiles[slot].fineY -
+                                         (int32)(((int64)cosine(g_projectiles[slot].worldX) * step) >> 15)) & 0x1FFFFF;
+            g_projectiles[slot].mapX = (uint16)(g_projectiles[slot].fineX >> 5);
+            g_projectiles[slot].mapY = (uint16)(g_projectiles[slot].fineY >> 5);
             (g_projectiles + slot)->ttl--;
             if (slot < 8) {
                 if (locked == 0)
@@ -672,6 +685,12 @@ void fireMissile() {
 
     g_projectiles[slot].mapX = g_viewX_;
     g_projectiles[slot].mapY = g_viewY_;
+    /* Seed the fine position with the player's sub-map-unit remainder so the
+     * missile doesn't visibly snap to the 32-fine-unit map grid on the first
+     * frame. Both keep fine>>5 == the coarse coord set above (g_viewX_ =
+     * (g_ViewX+0x10)>>5, g_viewY_ = 0x8000-((g_ViewY+0x10)>>5)). */
+    g_projectiles[slot].fineX = (((int32)(uint16)g_viewX_ << 5) + ((g_ViewX + 0x10) & 0x1f)) & 0x1FFFFF;
+    g_projectiles[slot].fineY = (((int32)(uint16)g_viewY_ << 5) + (0x1f - ((g_ViewY + 0x10) & 0x1f))) & 0x1FFFFF;
     g_projectiles[slot].alt = g_viewZ - 20;
     g_projectiles[slot].speed = (unsigned int)g_velocity >> 11;
     slot = slot;

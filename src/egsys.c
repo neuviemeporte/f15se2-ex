@@ -110,13 +110,40 @@ static int32 lerpAngle(int32 a, int32 b, int64 num, int64 den) {
     return a + (int32)(((int64)d * num) / den);
 }
 
+static int angleSnaps(int32 a, int32 b) {
+    int16 d = (int16)(b - a);
+    return d >= 0x4000 || d <= -0x4000;
+}
+
+/* Interpolate a heading/pitch/roll pose. The gimbal flip changes the
+ * REPRESENTATION of all three components at once (head/roll jump 0x8000 while
+ * pitch reflects with a small delta); snapping only the offending component
+ * while the others keep tweening mixes two representations into a visibly
+ * wrong pose (the "90deg flip-flop" when pulling through the vertical), so a
+ * flip in any component snaps the whole triple to the new pose. */
+static void lerpPose(int32 h0, int32 p0, int32 r0, int32 h1, int32 p1, int32 r1,
+                     int64 num, int64 den, int32 *h, int32 *p, int32 *r) {
+    if (angleSnaps(h0, h1) || angleSnaps(p0, p1) || angleSnaps(r0, r1)) {
+        *h = h1;
+        *p = p1;
+        *r = r1;
+    } else {
+        *h = lerpAngle(h0, h1, num, den);
+        *p = lerpAngle(p0, p1, num, den);
+        *r = lerpAngle(r0, r1, num, den);
+    }
+}
+
 static void camApplyInterp(const CamSnapshot *p, const CamSnapshot *n, int64 num, int64 den) {
+    int32 poseH, poseP, poseR;
     g_ViewX = lerpLinear(p->viewX, n->viewX, num, den);
     g_ViewY = lerpLinear(p->viewY, n->viewY, num, den);
     g_viewZ = (int16)lerpLinear(p->viewZ, n->viewZ, num, den);
-    g_ourHead = (int16)lerpAngle(p->head, n->head, num, den);
-    g_ourPitch = lerpAngle(p->pitch, n->pitch, num, den);
-    g_ourRoll = (int16)lerpAngle(p->roll, n->roll, num, den);
+    lerpPose(p->head, p->pitch, p->roll, n->head, n->pitch, n->roll,
+             num, den, &poseH, &poseP, &poseR);
+    g_ourHead = (int16)poseH;
+    g_ourPitch = poseP;
+    g_ourRoll = (int16)poseR;
     g_viewX_ = (int16)lerpLinear(p->mapX, n->mapX, num, den);
     g_viewY_ = (int16)lerpLinear(p->mapY, n->mapY, num, den);
     g_crashCamX = (int16)lerpLinear(p->crashX, n->crashX, num, den);
@@ -164,8 +191,8 @@ typedef struct {
 } SimObjSnap;
 
 typedef struct {
-    int32 mapX, mapY, alt;
-    int16 head, pitch; /* g_projectiles[].worldX/worldY hold the missile yaw/pitch */
+    int32 fineX, fineY, alt; /* fineX/fineY: authoritative mapX<<5-scale position */
+    int16 head, pitch;       /* g_projectiles[].worldX/worldY hold the missile yaw/pitch */
     int16 ttl;
 } ProjSnap;
 
@@ -190,8 +217,8 @@ static void objCapture(SimObjSnap *sim, ProjSnap *proj) {
         sim[i].alive = (g_simObjects[i].flags.b[0] & 2) ? 1 : 0;
     }
     for (i = 0; i < PROJ_MAX; i++) {
-        proj[i].mapX = g_projectiles[i].mapX;
-        proj[i].mapY = g_projectiles[i].mapY;
+        proj[i].fineX = g_projectiles[i].fineX;
+        proj[i].fineY = g_projectiles[i].fineY;
         proj[i].alt = g_projectiles[i].alt;
         proj[i].head = g_projectiles[i].worldX;
         proj[i].pitch = g_projectiles[i].worldY;
@@ -204,7 +231,7 @@ static void objApplyInterp(const SimObjSnap *sp, const SimObjSnap *sn,
                            int64 num, int64 den) {
     int i, n = simObjCount();
     for (i = 0; i < n; i++) {
-        int32 wx, wy;
+        int32 wx, wy, poseH, poseP, poseR;
         if (!sp[i].alive || !sn[i].alive)
             continue;
         if (iabs32(sn[i].worldX - sp[i].worldX) >= OBJ_TELEPORT_GUARD ||
@@ -217,23 +244,27 @@ static void objApplyInterp(const SimObjSnap *sp, const SimObjSnap *sn,
         g_simObjects[i].posX = (uint16)(wx >> 5);
         g_simObjects[i].posY = (uint16)(wy >> 5);
         g_simObjects[i].alt = (int16)lerpLinear(sp[i].alt, sn[i].alt, num, den);
-        g_simObjects[i].heading.w = (int16)lerpAngle(sp[i].head, sn[i].head, num, den);
-        g_simObjects[i].pitch = (int16)lerpAngle(sp[i].pitch, sn[i].pitch, num, den);
-        g_simObjects[i].bank.w = (int16)lerpAngle(sp[i].bank, sn[i].bank, num, den);
+        /* enemy AI flips its pose representation the same way as the player
+         * (egthreat pitch>0x4000: head+=0x8000, bank+=0x8000, pitch reflected) */
+        lerpPose(sp[i].head, sp[i].pitch, sp[i].bank, sn[i].head, sn[i].pitch, sn[i].bank,
+                 num, den, &poseH, &poseP, &poseR);
+        g_simObjects[i].heading.w = (int16)poseH;
+        g_simObjects[i].pitch = (int16)poseP;
+        g_simObjects[i].bank.w = (int16)poseR;
     }
     for (i = 0; i < PROJ_MAX; i++) {
-        /* Default the fine position to the authoritative (next) coarse position so
-         * a just-fired / non-interpolated slot still has a valid fine value. */
-        g_projInterpX[i] = pn[i].mapX << 5;
-        g_projInterpY[i] = pn[i].mapY << 5;
+        /* Default to the authoritative (next) position so a just-fired /
+         * non-interpolated slot still has a valid fine value. */
+        g_projInterpX[i] = pn[i].fineX;
+        g_projInterpY[i] = pn[i].fineY;
         if (pp[i].ttl <= 0 || pn[i].ttl != pp[i].ttl - 1)
             continue;
-        g_projectiles[i].mapX = (uint16)lerpLinear(pp[i].mapX, pn[i].mapX, num, den);
-        g_projectiles[i].mapY = (uint16)lerpLinear(pp[i].mapY, pn[i].mapY, num, den);
-        /* Fine (mapX<<5-scale) interpolated position — keeps the sub-mapX-unit
-         * precision the coarse fields above discard, for the model + director cam. */
-        g_projInterpX[i] = lerpLinear(pp[i].mapX << 5, pn[i].mapX << 5, num, den);
-        g_projInterpY[i] = lerpLinear(pp[i].mapY << 5, pn[i].mapY << 5, num, den);
+        g_projectiles[i].fineX = lerpLinear(pp[i].fineX, pn[i].fineX, num, den);
+        g_projectiles[i].fineY = lerpLinear(pp[i].fineY, pn[i].fineY, num, den);
+        g_projectiles[i].mapX = (uint16)(g_projectiles[i].fineX >> 5);
+        g_projectiles[i].mapY = (uint16)(g_projectiles[i].fineY >> 5);
+        g_projInterpX[i] = g_projectiles[i].fineX;
+        g_projInterpY[i] = g_projectiles[i].fineY;
         /* alt's low bit is the track-state flag (radar draws gray when clear),
          * not real altitude — interpolate the altitude but keep the authoritative
          * flag bit so "lost track" stays gray. */
@@ -256,10 +287,12 @@ static void objRestore(const SimObjSnap *sn, const ProjSnap *pn) {
         g_simObjects[i].bank.w = sn[i].bank;
     }
     for (i = 0; i < PROJ_MAX; i++) {
-        g_projectiles[i].mapX = (uint16)pn[i].mapX;
-        g_projectiles[i].mapY = (uint16)pn[i].mapY;
-        g_projInterpX[i] = pn[i].mapX << 5;
-        g_projInterpY[i] = pn[i].mapY << 5;
+        g_projectiles[i].fineX = pn[i].fineX;
+        g_projectiles[i].fineY = pn[i].fineY;
+        g_projectiles[i].mapX = (uint16)(pn[i].fineX >> 5);
+        g_projectiles[i].mapY = (uint16)(pn[i].fineY >> 5);
+        g_projInterpX[i] = pn[i].fineX;
+        g_projInterpY[i] = pn[i].fineY;
         g_projectiles[i].alt = (int16)pn[i].alt;
         g_projectiles[i].worldX = pn[i].head;
         g_projectiles[i].worldY = pn[i].pitch;
