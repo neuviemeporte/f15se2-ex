@@ -6,18 +6,18 @@
 
 #include <dos.h>
 
-extern int far gfx_setFont(uint16 ch, uint16 font);
+extern int16 far gfx_setFont(uint16 ch, uint16 font);
 
-void drawStringCentered(int16 *page, const char *str, int startx, int y, int endx) {
-    int width;
+void drawStringCentered(int16 *page, const char *str, int16 startx, int16 y, int16 endx) {
+    int16 width;
     width = stringWidth(page, str);
     drawStringAt(page, str, (endx - width) / 2 + startx, y);
 }
 
-int stringWidth(int16 *page, const char *str) {
-    int n;
+int16 stringWidth(int16 *page, const char *str) {
+    int16 n;
     const char *l;
-    int j;
+    int16 j;
     l = str;
     j = page[6];
     n = 0;
@@ -64,7 +64,7 @@ void my_ltoa(int32 value, char *buf) {
     *p = '\0';
 }
 
-void my_itoa(int value, char *buf) {
+void my_itoa(int16 value, char *buf) {
     int8 n[6];
     int8 i, k;
     char *p;

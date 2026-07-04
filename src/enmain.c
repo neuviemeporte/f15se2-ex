@@ -55,7 +55,7 @@ void checkQuitFlag(void) {
 }
 
 void enInitGraphics(void) {
-    int a, b, c, d, e, f, g, h;
+    int16 a, b, c, d, e, f, g, h;
     (void)a;
     (void)b;
     (void)c;

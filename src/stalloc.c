@@ -9,7 +9,7 @@
 
 #include <dos.h>
 
-void *allocBuffer(int size) {
+void *allocBuffer(int16 size) {
     void *segment;
     if ((segment = dos_alloc(size)) == nullptr) {
         cleanup();

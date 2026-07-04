@@ -5,7 +5,7 @@
 #include "enfile.h"
 #include "shared/common.h"
 
-void srandInit(int seed) {
+void srandInit(int16 seed) {
     randSeed = seed;
     randState = 0;
 }

@@ -47,13 +47,13 @@ struct SREGS {
     unsigned short ds;
 };
 
-inline int int86(int intno, union REGS *inregs, union REGS *outregs) {
+inline int int86(int16 intno, union REGS *inregs, union REGS *outregs) {
     (void)intno;
     (void)inregs;
     (void)outregs;
     return 0;
 }
-inline int int86x(int intno, union REGS *inregs, union REGS *outregs, struct SREGS *segregs) {
+inline int16 int86x(int16 intno, union REGS *inregs, union REGS *outregs, struct SREGS *segregs) {
     (void)intno;
     (void)inregs;
     (void)outregs;
@@ -79,14 +79,14 @@ inline void movedata(uint16 srcseg, uint16 srcoff, uint16 dstseg, uint16 dstoff,
 #include <io.h>
 #endif
 
-inline int putch(int c) {
+inline int16 putch(int16 c) {
     (void)c;
     return 0;
 }
 /* Backed by the SDL keyboard layer in eginput.c (egame flight loop). */
-int kbhit(void);
+int16 kbhit(void);
 
-inline char *itoa(int value, char *str, int base) {
+inline char *itoa(int16 value, char *str, int16 base) {
     if (base == 10) {
         sprintf(str, "%d", value);
     } else if (base == 16) {

@@ -9,15 +9,14 @@
 #include "enmisc.h"
 
 /* Private helpers for this translation unit. */
-void drawStringAtPos(int16 *s, const char far *str, int x, int y);
+void drawStringAtPos(int16 *s, const char far *str, int16 x, int16 y);
 void drawFarString(int16 *s, const char far *str);
 void farStrcpy(char *dst, const char far *src);
 void restoreVideoMode(void);
 void restoreInterrupts(void);
 
 void loadWorldStrings(void) {
-    int strIdx;
-    int pos;
+    int16 strIdx, pos;
     /* World data is already in the END globals (worldExportToEnd, at mission end);
      * just (re)build the place-name pointer table over worldStringBuf. */
     worldStrings[0] = worldStringBuf;
@@ -31,7 +30,7 @@ void loadWorldStrings(void) {
     }
 }
 
-void drawStringAtPos(int16 *s, const char far *str, int x, int y) {
+void drawStringAtPos(int16 *s, const char far *str, int16 x, int16 y) {
     s[4] = x;
     s[5] = y;
     drawFarString(s, str);

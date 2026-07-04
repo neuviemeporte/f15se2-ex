@@ -54,7 +54,7 @@ static uint8 dictChar[2048];
 static uint8 lzwOutBuf[4096]; /* must cover the stackTop<4096 traversal guard */
 static uint16 lzwOutPos;
 static uint16 lzwOutLen;
-static int lzwFirstCode; /* flag: first code after init/reset */
+static int16 lzwFirstCode; /* flag: first code after init/reset */
 
 static void read512FromFile(void) {
     fileReadRaw(picFileHandle, picFileReadBuf, 512);

@@ -25,40 +25,40 @@ extern char blinkMarker; /* debriefPresent blinks the current-event map marker *
  * up to this record every frame. */
 extern int pathExtent;
 extern int32 missionScore;
-extern int popupX;
-extern int popupY;
+extern int16 popupX;
+extern int16 popupY;
 extern char scoreString[];
 extern TargetBlock targetBlock;
 extern int16 randSeed;
 extern int16 randState;
-extern const int mapViewX1;
-extern const int mapViewY1;
-extern const int mapViewX2;
-extern const int mapViewY2;
+extern const int16 mapViewX1;
+extern const int16 mapViewY1;
+extern const int16 mapViewX2;
+extern const int16 mapViewY2;
 extern uint16 cursorX;
 extern uint16 cursorY;
 extern struct GameComm far *commData;
 extern uint8 quitFlag;
 extern uint16 *colorTablePtr;
 extern char inputChanged;
-extern int colorAnimIdx;
-extern int colorAnimEnabled;
+extern int16 colorAnimIdx;
+extern int16 colorAnimEnabled;
 extern uint8 joyRepeatFlag;
 extern char spriteToggle;
 extern char animDone;
 extern uint8 timerCounter2;
 extern uint8 timerCounter3;
 extern char enterPressed;
-extern int colorStyleTable[];
+extern int16 colorStyleTable[];
 extern struct SpriteParams *spriteAirBlink;
 extern struct SpriteParams *spriteSamBlink;
 extern struct SpriteParams *spriteGroundBlink;
 extern struct SpriteParams *spriteWaypointBlink;
-extern int curRecordIdx;
+extern int16 curRecordIdx;
 extern char slotInfoTable[]; /* slot info table, 16 bytes per slot */
 extern char ejectedFlag;
-extern const int popupSpriteY[];
-extern const int popupSpriteX[];
+extern const int16 popupSpriteY[];
+extern const int16 popupSpriteX[];
 extern int g_dbiconsBuf; /* sprite buffer holding the decoded dbicons.spr popup icon sheet */
 extern struct SpriteParams *spriteAir;
 extern struct SpriteParams *spriteSam;
@@ -98,7 +98,7 @@ extern uint8 worldMiscHeader[];
 extern struct WeaponDataBlock weaponDataBlock;
 extern uint16 worldObjectCount;
 extern uint16 worldSamCount;
-extern int totalFlightRecords;
+extern int16 totalFlightRecords;
 
 /* The flight recording read back from the COMM block is one contiguous 0x600
  * block. The DOS build viewed it as a 2-byte time head plus a FlightRecord
@@ -119,23 +119,23 @@ extern const char *rankNames[];
 extern const long promoThresholds[];
 extern const char *medalNames[];
 extern const long medalThresholds[];
-extern int secondaryHit;
-extern int primaryHit;
-extern int airMissed;
-extern int airKilled;
-extern int groundMissed;
-extern int samMissed;
-extern int groundKilled;
-extern int samKilled;
+extern int16 secondaryHit;
+extern int16 primaryHit;
+extern int16 airMissed;
+extern int16 airKilled;
+extern int16 groundMissed;
+extern int16 samMissed;
+extern int16 groundKilled;
+extern int16 samKilled;
 extern char unitTypeTable[];
 extern char gridFlags[];
 extern struct Game far *gameData;
 extern char hercFlag;
 extern uint8 joyAxisY;
 extern uint8 joyAxisX;
-extern int spriteBufSeg;
-extern int missionResult;
-extern int selectedMenuItem;
+extern int16 spriteBufSeg;
+extern int16 missionResult;
+extern int16 selectedMenuItem;
 
 /* Named views into weaponDataBlock[] (offsets documented in endata.c):
  *   planeArray     +0x156  SamDataEntry[] — enemy aircraft specs

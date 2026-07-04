@@ -8,7 +8,7 @@ void seedRandom() {
     srand(getTimeOfDay());
 }
 
-int randMul(uint16 arg) {
+int16 randMul(uint16 arg) {
     /* DOS rand() is 15-bit (RAND_MAX 0x7fff); mask to match so the >>15 scaling yields [0, arg). */
     return ((rand() & 0x7fff) * (long)arg) >> 0xf;
 }

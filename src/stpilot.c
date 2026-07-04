@@ -19,21 +19,21 @@
 #include <string.h>
 
 /* Private helpers for this translation unit. */
-int doFcbSearch();
+int16 doFcbSearch();
 void updateHallfame();
 void displayPilots(void);
-void printPilot(int);
+void printPilot(int16);
 void processPilotInput();
 void gameDataToPilot(struct Pilot *pilot);
 void pilotToGameData(const uint8 *pilotData);
-void pilotNameInput(int16 *, int, int, int, struct Pilot *);
+void pilotNameInput(int16 *, int16, int16, int16, struct Pilot *);
 void loadHallfame(void);
 void saveHallfame();
-int getJoyKey();
-int readInputKey();
+int16 getJoyKey();
+int16 readInputKey();
 
 void pilotSelect(int16 needSplash) {
-    int unused;
+    int16 unused;
     gfx_waitRetrace();
     loadHallfame();
     if (needSplash == 0) {
@@ -53,7 +53,7 @@ void pilotSelect(int16 needSplash) {
 }
 
 void updateHallfame() {
-    int shiftIdx;
+    int16 shiftIdx;
     if (gameData->hallOfFameEligible != 0) {
         selectedPilotIdx = HALLFAME_SLOTS - 2;
         for (; selectedPilotIdx >= 0; selectedPilotIdx--) {
@@ -84,7 +84,7 @@ void updateHallfame() {
 }
 
 void displayPilots(void) {
-    int pilotIdx;
+    int16 pilotIdx;
     screenBuf[3] = 0;
     pilotIdx = 0;
     do {
@@ -95,12 +95,10 @@ void displayPilots(void) {
     gfx_commitPage();
 }
 
-void printPilot(int pilotIdx) {
+void printPilot(int16 pilotIdx) {
     struct Pilot *pilot;
-    int xPos;
-    int yPos;
-    int medalIdx;
-    int totalMedalWidth;
+    int16 xPos, yPos, medalIdx, totalMedalWidth;
+
     pilot = &hallfameBuf[pilotIdx];
     xPos = (pilotIdx < PILOTS_PER_COLUMN) ? PILOT_COL_LEFT : PILOT_COL_RIGHT;
     yPos = ((pilotIdx & (PILOTS_PER_COLUMN - 1)) * PILOT_ROW_HEIGHT) + PILOT_TOP_MARGIN;
@@ -134,10 +132,7 @@ void printPilot(int pilotIdx) {
 
 /* ---- merged from stpinp.c ---- */
 void processPilotInput() {
-    int prevIdx;
-    int xPos;
-    int shiftIdx;
-    int yPos;
+    int16 prevIdx, xPos, shiftIdx, yPos;
     pilotSelectFlag = 1;
     setTimerIrqHandler();
     while (prevIdx = selectedPilotIdx, true) switch (pollMenuInput()) {
@@ -201,7 +196,7 @@ void blinkPilot() {
 
 void gameDataToPilot(struct Pilot *pilot) {
     // uint16 var_4;
-    int charIdx;
+    int16 charIdx;
     for (charIdx = 0; (pilot->name[charIdx] = gameData->pilotName[charIdx]); charIdx++) {
     }
     pilot->total_score = gameData->totalScore;
@@ -214,7 +209,7 @@ void gameDataToPilot(struct Pilot *pilot) {
 
 // TODO: change argument to struct Pilot
 void pilotToGameData(const uint8 *pilotData) {
-    int charIdx;
+    int16 charIdx;
     for (charIdx = 0; 1; charIdx++) {
         if ((gameData->pilotName[charIdx] = pilotData[charIdx]) == '\0') break;
     }
@@ -229,13 +224,10 @@ void pilotToGameData(const uint8 *pilotData) {
     gameData->pilotIdx = selectedPilotIdx;
 }
 
-void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
-    int blinkToggle;
-    int xPos, yPos;
-    int nameLen;
-    int cursorX;
+void pilotNameInput(int16 *page, int16 a, int16 b, int16 c, struct Pilot *pilot) {
+    int16 blinkToggle, xPos, yPos, nameLen, cursorX;
     uint16 keyCode;
-    int rankWidth;
+    int16 rankWidth;
     blinkToggle = 0;
     xPos = (selectedPilotIdx < PILOTS_PER_COLUMN) ? PILOT_COL_LEFT : PILOT_COL_RIGHT;
     yPos = ((selectedPilotIdx & (PILOTS_PER_COLUMN - 1)) * PILOT_ROW_HEIGHT) + PILOT_TOP_MARGIN;
@@ -299,7 +291,7 @@ void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
 }
 
 void loadHallfame(void) {
-    int slotIdx;
+    int16 slotIdx;
     SDL_IOStream *handle;
     handle = openFile("HallFame", 0);
     fileRead(&selectedPilotIdx, 2, 1, handle);
@@ -313,7 +305,7 @@ void loadHallfame(void) {
 
 void saveHallfame() {
     SDL_IOStream *fp;
-    int idx;
+    int16 idx;
     fp = createFile("HallFame", 0);
     fileWrite(&selectedPilotIdx, 2, 1, fp);
     idx = 0;
@@ -323,7 +315,7 @@ void saveHallfame() {
     fileClose(fp);
 }
 
-int getJoyKey() {
+int16 getJoyKey() {
     if (commData->setupUseJoy == 1) {
         if (misc_readJoystick(0) != 0) return 1;
     }
@@ -336,8 +328,8 @@ int getJoyKey() {
 }
 
 /* ---- merged from stinkey.c ---- */
-int readInputKey() {
-    int key;
+int16 readInputKey() {
+    int16 key;
     if (commData->setupUseJoy == 1) {
         do {
             if (misc_checkKeyBuf() == 0) break;
