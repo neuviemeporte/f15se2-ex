@@ -554,6 +554,7 @@ struct R3DScene;
 struct R3DSubmit;
 struct R3DLine;
 void setViewPosition(int, int, int) {}
+void setViewPositionFrac(int, int, int) {}
 int fixedMulQ14(int, int) { return 0; }
 int sine(int) { return 0; }
 void shiftLongLeftInPlace(int, long *) {}
