@@ -5,13 +5,8 @@
 // dynamic tile overrides, world<->tile index math, nearest-tile / waypoint
 // selection, model vertex sign-mask + screen projection, aspect scaling, tac-map
 // screen mapping, radar-scope + world->HUD projection, target range/bearing/loft,
-// target-symbol category remap, and viewport setup. Golden values were hand-checked
-// against the current source. The original auto-generated suite spied on the
-// rendering pipeline (projectObjects/drawWorldObject/drawTargetView/renderHudFrame/
-// drawTacticalMap/tac-map draw + palette + line/blit/copyRect calls) through inline
-// gfx/projectSceneObject stubs; those collide with the real symbols under LINK_CORE
-// and assert on draw-call mechanics, so they were dropped (see
-// docs/test-migration.md "Future tests").
+// target-symbol category remap, and viewport setup. Golden values were
+// hand-checked against the current source.
 #include "egdata.h"
 #include "egtypes.h"
 #include "inttype.h"

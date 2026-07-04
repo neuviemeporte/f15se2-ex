@@ -22,6 +22,11 @@ enum LogBehaviorConstant : int {
     kExpectedOneCall = 1,
     kCriticalExitStatus = 1,
     kTestFailureExitCode = 1,
+    // Distinct from kCriticalExitStatus so the child's fall-through after
+    // log_critical maps to a DIFFERENT status: if log_critical ever returned
+    // instead of exiting, the child would exit with this and the assertion
+    // (which expects kCriticalExitStatus) would fail rather than falsely pass.
+    kCriticalReturnedSentinel = 42,
 };
 
 struct CapturedLog {
@@ -117,7 +122,7 @@ int main() {
         if (pid == 0) {
             SDL_SetLogOutputFunction(captureLog, nullptr);
             log_critical("fatal");
-            std::exit(kTestFailureExitCode);
+            std::exit(kCriticalReturnedSentinel); /* only reached if it wrongly returned */
         }
         int status = 0;
         require(waitpid(pid, &status, 0) == pid,

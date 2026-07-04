@@ -48,6 +48,14 @@ int main() {
     require(g_frameTimingAccum == kFrameTimingAfter,
             "egAdvanceFrameTick increments the original frame timing accumulator");
 
+    // The tick byte is a uint8 that waitFrameSync busy-waits on; it must wrap
+    // 0xFF -> 0x00 (not saturate or widen), or the pacing compare after a wrap
+    // would never match. Drive it across the boundary.
+    g_timerTickByte[0] = 0xFF;
+    egAdvanceFrameTick();
+    require(g_timerTickByte[0] == 0x00,
+            "egAdvanceFrameTick wraps the uint8 tick byte 0xFF -> 0x00");
+
     std::cout << "tick_behavior_tests passed\n";
     return 0;
 }

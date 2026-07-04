@@ -1,3 +1,8 @@
+// LINK_CORE + headless. END's per-tick quit guard checkQuitFlag(): when quitFlag
+// is set it tears down (cleanup + restoreCbreakHandler) and exit(0)s; when clear
+// it must return to the caller. Both branches are observed in forked children so
+// the "returns without exiting" case is actually verified (not just asserted) —
+// the child reaching a distinct sentinel code proves control flow returned.
 #include "endata.h"
 #include "headless.h"
 
@@ -11,11 +16,31 @@ void checkQuitFlag(void);
 
 namespace {
 
+// Distinct from exit(0) (the quit path) and from 1 (require's failure code), so
+// each observed child status maps to exactly one branch.
+enum { kReturnedSentinel = 7, kTestFailureExitCode = 1 };
+
 void require(bool condition, const char *message) {
     if (!condition) {
         std::cerr << "failed: " << message << '\n';
-        std::exit(1);
+        std::exit(kTestFailureExitCode);
     }
+}
+
+// Run checkQuitFlag() in a child with the given quitFlag and return the child's
+// exit status. If checkQuitFlag returns, the child reaches exit(kReturnedSentinel).
+int runInChild(int flag) {
+    const pid_t child = fork();
+    require(child >= 0, "test should be able to fork for checkQuitFlag behavior");
+    if (child == 0) {
+        quitFlag = flag;
+        checkQuitFlag();
+        std::exit(kReturnedSentinel); /* only reached if checkQuitFlag returned */
+    }
+    int status = 0;
+    require(waitpid(child, &status, 0) == child, "parent should wait for checkQuitFlag child");
+    require(WIFEXITED(status), "checkQuitFlag child should exit normally, not signal");
+    return WEXITSTATUS(status);
 }
 
 } // namespace
@@ -23,24 +48,10 @@ void require(bool condition, const char *message) {
 int main() {
     test_headless_init();
 
-    /* quitFlag clear: checkQuitFlag returns to its caller without tearing down. */
-    quitFlag = 0;
-    checkQuitFlag();
-    require(true, "checkQuitFlag returns without exiting when quitFlag is clear");
-
-    /* quitFlag set: checkQuitFlag cleans up and exits(0). Observe via a child. */
-    quitFlag = 1;
-    const pid_t child = fork();
-    require(child >= 0, "test should be able to fork for END quitFlag exit behavior");
-    if (child == 0) {
-        checkQuitFlag();
-        std::exit(2); /* must not be reached */
-    }
-    int status = 0;
-    require(waitpid(child, &status, 0) == child,
-            "parent should wait for END quitFlag exit child");
-    require(WIFEXITED(status) && WEXITSTATUS(status) == 0,
-            "checkQuitFlag cleans up and exits(0) when quitFlag is set");
+    require(runInChild(/*quitFlag=*/0) == kReturnedSentinel,
+            "checkQuitFlag returns to its caller (no teardown/exit) when quitFlag is clear");
+    require(runInChild(/*quitFlag=*/1) == 0,
+            "checkQuitFlag cleans up and exit(0)s when quitFlag is set");
 
     std::cout << "end_runtime_behavior_tests passed\n";
     return 0;

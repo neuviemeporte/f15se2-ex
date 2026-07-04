@@ -244,7 +244,7 @@ int r3dmesh_decode(const uint8 *model, const uint8 *limit,
      * to a sibling/shared header, possibly forward or backward). The finest LOD
      * is the near branch at every header, so we never follow a skip here -- which
      * sidesteps the signed/shared-skip graph entirely. The GPU backend uses the
-     * finest LOD always (docs/render-3d-backend.md, resolved Q3). */
+     * finest LOD always. */
     int bits = -1;
     while (p < limit && (p[0] & 0x80)) {
         bits = p[0] & 7; /* innermost header's distance gate */

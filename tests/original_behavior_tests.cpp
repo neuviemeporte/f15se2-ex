@@ -4,14 +4,9 @@
 // trig/fixed-point primitives (sine/cosine/fixedMulQ14/shiftLong*/clamp/bearing/
 // signedRatio16/valueToAngle/complementAngle/isqrt/hudPitchScale/randomRange) and
 // the orientation pipeline (rebuildOrientation/computeAttitudeAngles/
-// applyRotationDelta), all pure functions of game state whose golden values were
-// hand-verified against the current source. The original auto-generated suite also
-// pinned the HUD gauges (UpdateThrottleState/drawFuelGauge/drawVectorShape), the
-// full stepFlightModel physics loop, renderFrame camera dispatch, and
-// waitForKeyPress through inline draw/audio/input/joystick spies; those collide
-// with the real symbols under LINK_CORE and drive the flight sim / camera / input
-// which are not deterministically runnable headless, so they were dropped (see
-// docs/test-migration.md "Future tests").
+// applyRotationDelta), all pure functions of game state. Golden values are
+// cross-checked against independent reimplementations that deliberately hit the
+// DOS edge cases (0x8000 abs-overflow, 16-bit wraparound, Q15 rounding).
 #include "egcode.h"
 #include "egdata.h"
 #include "egmath.h"
