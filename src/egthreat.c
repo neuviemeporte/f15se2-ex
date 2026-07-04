@@ -374,7 +374,7 @@ void updateObjects(void) {
                     }
                     aspect = (((g_simObjects[objIdx].heading.w - hdg) >> 13) + 4) & 7;
                     {
-                        register int maneuver;
+                        int maneuver;
                         maneuver = g_maneuverTable[aggrIdx][relBearing][aspect];
                         rollCmd = (maneuver & 0xf) << 12;
                         if (maneuver == 0x100) {
@@ -451,7 +451,7 @@ void updateObjects(void) {
                 }
 
                 {
-                    register int u = objIdx * 36;
+                    int u = objIdx * 36;
                     g_simObjects[objIdx].bank.w += (rollCmd * (g_missionStatus + 2)) / g_frameRateScaling;
                     g_simObjects[objIdx].heading.w += (g_simObjects[objIdx].bank.w >> 3) / g_frameRateScaling;
 
@@ -463,8 +463,8 @@ void updateObjects(void) {
                     g_particles[smokeSlot].posX = *(int16 *)((char *)g_simObjects + u + 2);
                 }
                 {
-                    register int t = smokeSlot * 8;
-                    register int v = objIdx * 36;
+                    int t = smokeSlot * 8;
+                    int v = objIdx * 36;
                     /* g_particles[ma] via register offset t: idiomatic g_particles[ma].field_N
                        recomputes ma*8 and shifts register allocation (verify mismatch). */
                     *(int16 *)((char *)g_particles + t + 2) = *(int16 *)((char *)g_simObjects + v + 4);
@@ -562,7 +562,7 @@ void updateObjects(void) {
                 }
 
                 {
-                    register char o;
+                    char o;
                     o = g_simObjects[objIdx].flags.b[0];
                     if ((o & 2) &&
                         (fireOffset = (((uint8)objIdx & 8) >> 3) + (objIdx & 7) * 2,

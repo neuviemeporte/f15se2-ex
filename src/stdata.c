@@ -94,26 +94,10 @@ struct PageDesc page1Desc = {
     1,                        /* font (fontIndex) */
     {0, 0, 0, 0, 0, 0, 0, 0}  /* pad3 */
 };
-int16 *page1NumPtr = (int16 *)&page1Desc;
-struct PageDesc page2Desc = {
-    2,                        /* pageNum */
-    {0, 0},                   /* pad1 */
-    0,                        /* color */
-    0x0B,                     /* byte6 */
-    {0, 0, 0, 0, 0},          /* pad2 */
-    1,                        /* font */
-    {0, 0, 0, 0, 0, 0, 0, 0}  /* pad3 */
-};
+/* These word-view aliases must keep pointer-natural alignment: macOS ld rejects
+ * a pointer global left at a non-8-aligned offset by an odd-sized packed neighbour. */
+alignas(void *) int16 *page1NumPtr = (int16 *)&page1Desc;
 struct R2DImage *g_stBacking;
-struct PageDesc page3Desc = {
-    3,                        /* pageNum */
-    {0, 0},                   /* pad1 */
-    0,                        /* color */
-    0x0B,                     /* byte6 */
-    {0, 0, 0, 0, 0},          /* pad2 */
-    1,                        /* font */
-    {0, 0, 0, 0, 0, 0, 0, 0}  /* pad3 */
-};
 struct PageDesc screenDesc = {
     0,                        /* pageNum */
     {0, 0},                   /* pad1 */
@@ -123,7 +107,7 @@ struct PageDesc screenDesc = {
     1,                        /* font */
     {0, 0, 0, 0, 0, 0, 0, 0}  /* pad3 */
 };
-int16 *screenBuf = (int16 *)&screenDesc;
+alignas(void *) int16 *screenBuf = (int16 *)&screenDesc;
 struct PageDesc pageNumPageDesc = {
     0,                        /* pageNum */
     {0, 0},                   /* pad1 */
@@ -133,7 +117,7 @@ struct PageDesc pageNumPageDesc = {
     3,                        /* font */
     {0, 0, 0, 0, 0, 0, 0, 0}  /* pad3 */
 };
-int16 *pageNumPtr = (int16 *)&pageNumPageDesc;
+alignas(void *) int16 *pageNumPtr = (int16 *)&pageNumPageDesc;
 
 int16 nightMissionFlag = 0;
 char bufCoordStr[5] = {0};
@@ -185,7 +169,7 @@ uint8 cbreakHit = 0;
 
 /* Page descriptor for buffer page 0 (color=0x0F, font=0x0100) */
 int16 bufPageDesc[7] = {0, 0, 0x0F, 0, 0, 0, 0x0100};
-int16 *bufPtr = bufPageDesc;
+alignas(void *) int16 *bufPtr = bufPageDesc;
 
 /* Weapon table (struct Weapon, 14 bytes/entry, 23 entries) */
 extern const struct Weapon aNone[] = {

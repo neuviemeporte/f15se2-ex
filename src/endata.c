@@ -4410,7 +4410,6 @@ MenuItem debriefMenuItems[2] = {
         0,                            /* state */
         0x080F                        /* flags */
     }};
-char *menuItemsBase = (char *)&debriefMenuItems[1];
 
 /* Debrief main loop strings */
 char str_insertScenario[] = "Please insert scenario disk";

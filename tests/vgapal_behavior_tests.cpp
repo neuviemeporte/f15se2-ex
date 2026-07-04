@@ -6,8 +6,10 @@
 #include <sstream>
 #include <string>
 #include <csignal>
+#if !defined(_WIN32)
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 #include <vector>
 
 int vgapal_program_main(int argc, char *argv[]);
@@ -17,6 +19,10 @@ int vgapal_program_main(int argc, char *argv[]);
 #ifdef main
 #undef main
 #endif
+
+// Every check drives vgapal through a forked child (fork/waitpid/signal, dup2 and
+// /tmp/ capture), so the whole suite is POSIX-only.
+#if !defined(_WIN32)
 
 namespace {
 
@@ -195,3 +201,9 @@ int main() {
     std::cout << "vgapal behavior tests passed\n";
     return 0;
 }
+#else
+int main() {
+    std::cout << "vgapal behavior tests: skipped on Windows (POSIX fork required)\n";
+    return 0;
+}
+#endif

@@ -4,8 +4,10 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#if !defined(_WIN32)
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 /* file_io helpers not surfaced through common.h. */
 extern int fileReadRaw(SDL_IOStream *io, void *dst, int count);
@@ -102,6 +104,8 @@ int main() {
     fileClose(nullptr);
 
     // errorAndExit prints its '$'-terminated message and exits with the fatal status.
+    // fork/waitpid observe the child's exit code, so this subtest is POSIX-only.
+#if !defined(_WIN32)
     {
         const pid_t pid = fork();
         require(pid >= 0, "test should be able to fork for errorAndExit behavior");
@@ -116,6 +120,9 @@ int main() {
         require(WIFEXITED(status) && WEXITSTATUS(status) == kErrorExitStatus,
                 "errorAndExit preserves the original fatal exit status");
     }
+#else
+    std::cout << "file_io_behavior_tests: skipping errorAndExit fork check on Windows\n";
+#endif
 
     std::filesystem::current_path(oldCwd);
     std::filesystem::remove_all(testDir);

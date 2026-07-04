@@ -39,8 +39,8 @@ void drawProjectionSphere(int skyColor) {
         radiusScale >>= 1;
     }
     {
-        register int i;
-        register int j;
+        int i;
+        int j;
         for (ringIx = 0; ringIx < 17; ringIx++) {
             if (ringIx < 16) {
                 ringRad = g_sphereRingRadii[ringIx] + radiusScale;
@@ -78,8 +78,8 @@ void drawProjectionSphere(int skyColor) {
     } while (ringIx < 16);
     g_sphereRingRadii[0] = 0;
     {
-        register int i;
-        register int j;
+        int i;
+        int j;
         for (ringIx = 0; ringIx < 17; ringIx++) {
             if (ringIx < 16) {
                 ringRad = radiusScale - g_sphereRingRadii[ringIx];

@@ -540,10 +540,34 @@ void drawStringBothPages(const char *text, int x, int y, int color) {
 }
 
 void gfx_flipPage(void) { ++g_flipCalls; }
-void misc_getKey(void) { ++g_keyCalls; }
+int misc_getKey(void) { ++g_keyCalls; return 0; }
 void gfx_waitRetrace(void) { ++g_waitRetraceCalls; }
 void setDrawColor(int) {}
 void fillRectBoth(int, int, int, int) {}
+
+// egmath.c is linked for load15Flt3d3(), but its other functions
+// (drawWorldObject/drawWorldLine/drawTargetView/…) are never reached here and
+// reference symbols from TUs this isolation target doesn't compile. GNU/Clang
+// drop that dead code via --gc-sections; MSVC links whole objects, so the
+// references need definitions. These stubs are never called.
+struct R3DScene;
+struct R3DSubmit;
+struct R3DLine;
+void setViewPosition(int, int, int) {}
+int fixedMulQ14(int, int) { return 0; }
+int sine(int) { return 0; }
+void shiftLongLeftInPlace(int, long *) {}
+void shiftLongRightInPlace(int, long *) {}
+void r3d_worldPointToCameraFar(int, int, int, long *, long *, long *) {}
+int fillSpanRect(const int16 *, int, int, int, int) { return 0; }
+int getTimeOfDay() { return 0; }
+void drawStringActivePage(const char *, int, int, int) {}
+int misc_readJoystick(int16) { return 0; }
+void r3d_beginScene(const R3DScene *) {}
+void r3d_submit(const R3DSubmit *) {}
+void r3d_submitLine(const R3DLine *) {}
+void r3d_endScene(void) {}
+struct GameComm *commData = nullptr;
 
 int main() {
     resetLoadState();

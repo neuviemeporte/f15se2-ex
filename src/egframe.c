@@ -479,7 +479,7 @@ void tickMessageTimers(void) {
 }
 
 void updateBulletsAndFire(void) {
-    register int off;
+    int off;
     int firing;
     int unused;
     int i;

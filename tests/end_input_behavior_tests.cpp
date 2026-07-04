@@ -7,8 +7,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#if !defined(_WIN32)
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 extern void waitForKeyOrJoy(void);
 
@@ -144,6 +146,8 @@ int main() {
     require(g_joystickCalls == kExpectedTwoCalls && g_getKeyCalls == kExpectedSingleCall,
             "waitForKeyOrJoy polls joystick while original key-buffer check stays nonzero");
 
+    // The Alt-Q / quitFlag exit paths call exit(); observing them needs forked children (POSIX-only).
+#if !defined(_WIN32)
     resetInputState(comm);
     g_getKeyResult = KEYCODE_ALTQ;
     pid_t child = fork();
@@ -192,6 +196,7 @@ int main() {
             "parent should wait for joystick buffered quit child");
     require(WIFEXITED(status) && WEXITSTATUS(status) == kChildExitOk,
             "waitForKeyOrJoy preserves original joystick buffered goto-done quit path");
+#endif
 
     std::cout << "end_input_behavior_tests passed\n";
     return 0;

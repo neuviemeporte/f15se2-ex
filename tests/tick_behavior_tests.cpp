@@ -7,6 +7,10 @@
 
 extern void far egAdvanceFrameTick(void);
 
+/* Backs egdata.c's regnStr global (defined in stdata.c, not linked here). MSVC
+ * links whole objects so this reference needs a definition; unused by the test. */
+char aRegn_xxx[] = "regn.xxx";
+
 namespace {
 
 // Behavior-sensitive constants are named here or explained at the use site.

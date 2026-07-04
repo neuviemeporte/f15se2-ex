@@ -7,6 +7,21 @@
 #include <cstring>
 #include <iostream>
 
+// egsys.c is linked for the tested functions, but gameMainLoop() (also in egsys.c)
+// is never reached here and references render/timer/flight symbols from TUs this
+// isolation target doesn't compile. GNU/Clang drop that dead code via
+// --gc-sections; MSVC links whole objects, so the references need definitions.
+// aRegn_xxx backs egdata.c's regnStr global. None of these are ever called.
+char aRegn_xxx[] = "regn.xxx";
+void drawInstrumentGaugesFar(void) {}
+void timerPump(void) {}
+uint64 timerNowNs(void) { return 0; }
+void gfx_dacAnimate(void) {}
+void renderFrame(void) {}
+void renderHudFrame(int) {}
+void stepFlightModel(void) {}
+void updateFrame(void) {}
+
 namespace {
 
 // Behavior-sensitive constants are named here or explained at the use site.

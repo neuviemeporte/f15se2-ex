@@ -7,8 +7,10 @@
 #include <cstdlib>
 #include <iostream>
 #include <cstddef>
+#if !defined(_WIN32)
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 namespace {
 
@@ -96,6 +98,8 @@ int main() {
                 g_printCalls == kExpectedNoCalls,
             "allocBuffer forwards the original allocation size and returns the allocated buffer");
 
+    // allocBuffer's failure path calls exit(); observing that needs a forked child (POSIX-only).
+#if !defined(_WIN32)
     resetRuntimeState();
     g_allocResult = nullptr;
     const pid_t child = fork();
@@ -109,6 +113,7 @@ int main() {
             "parent should wait for allocBuffer failure child");
     require(WIFEXITED(status) && WEXITSTATUS(status) == kChildExitOk,
             "allocBuffer failure path preserves original cleanup/print/exit behavior");
+#endif
 
     resetRuntimeState();
     showSprite(kSpritePage, kSpriteDstX, kSpriteDstY,

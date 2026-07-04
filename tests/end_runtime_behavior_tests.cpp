@@ -8,8 +8,10 @@
 
 #include <cstdlib>
 #include <iostream>
+#if !defined(_WIN32)
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 /* END's per-tick quit guard (file-scope in enmain.c). */
 void checkQuitFlag(void);
@@ -29,6 +31,8 @@ void require(bool condition, const char *message) {
 
 // Run checkQuitFlag() in a child with the given quitFlag and return the child's
 // exit status. If checkQuitFlag returns, the child reaches exit(kReturnedSentinel).
+// Observing exit() vs return requires forked children, so this is POSIX-only.
+#if !defined(_WIN32)
 int runInChild(int flag) {
     const pid_t child = fork();
     require(child >= 0, "test should be able to fork for checkQuitFlag behavior");
@@ -42,9 +46,11 @@ int runInChild(int flag) {
     require(WIFEXITED(status), "checkQuitFlag child should exit normally, not signal");
     return WEXITSTATUS(status);
 }
+#endif
 
 } // namespace
 
+#if !defined(_WIN32)
 int main() {
     test_headless_init();
 
@@ -56,3 +62,9 @@ int main() {
     std::cout << "end_runtime_behavior_tests passed\n";
     return 0;
 }
+#else
+int main() {
+    std::cout << "end_runtime_behavior_tests: skipped on Windows (POSIX fork required)\n";
+    return 0;
+}
+#endif
