@@ -32,7 +32,6 @@
 #include "gfx.h"
 #include "r2d.h"
 #include "inttype.h"
-#include "pointers.h"
 
 /* ---- scratch globals defined in egdata.c but not declared in a header ---- */
 extern int16 g_dirtyRectMinY, g_dirtyRectMaxY;

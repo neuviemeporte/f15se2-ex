@@ -13,7 +13,6 @@
  */
 
 #include "inttype.h"
-#include "pointers.h"
 #include "log.h"
 #include "comm.h"
 #include "offsets.h"

@@ -2,7 +2,6 @@
 #include "gfx.h"
 #include <string.h>
 #include "offsets.h"
-#include "pointers.h"
 #include "log.h"
 #include "shared/common.h"
 #include "entext.h"

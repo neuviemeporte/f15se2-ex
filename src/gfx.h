@@ -2,7 +2,7 @@
 #define F15_SE2_GFX
 
 #include "inttype.h"
-#include "pointers.h"
+#include <dos.h>
 
 #define INT_VID_MODESET 0
 #define MODE_640_350 0x10

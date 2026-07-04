@@ -4,7 +4,6 @@
  */
 
 #include "inttype.h"
-#include "pointers.h"
 #include "comm.h"
 #include "const.h"
 #include "input.h"

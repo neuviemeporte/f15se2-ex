@@ -2,7 +2,6 @@
 #define F15_SE2_STCODE
 /* assembly routines in stcode.asm called from C */
 #include "inttype.h"
-#include "pointers.h"
 #include <dos.h>
 
 typedef struct SDL_IOStream SDL_IOStream;

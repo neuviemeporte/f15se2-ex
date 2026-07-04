@@ -1,6 +1,5 @@
 /* enaward.c — memory/pics/awards, compiled with /Gs */
 #include "gfx.h"
-#include "pointers.h"
 #include "log.h"
 #include "endata.h"
 #include "endcode.h"

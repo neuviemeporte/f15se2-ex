@@ -1,5 +1,4 @@
 #include "common.h"
-#include "pointers.h"
 
 #include <dos.h>
 

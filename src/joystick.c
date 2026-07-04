@@ -32,7 +32,6 @@
 #include "inttype.h"
 #include "comm.h"
 #include "log.h"
-#include "pointers.h"
 #include <dos.h>
 
 /* joyAxes[0] = X (roll), joyAxes[1] = Y (pitch); 0x80 = centred. Defined in

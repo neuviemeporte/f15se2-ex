@@ -2,7 +2,6 @@
 #include "gfx.h"
 #include <dos.h>
 #include "offsets.h"
-#include "pointers.h"
 #include "log.h"
 #include "shared/common.h"
 #include <stdlib.h>

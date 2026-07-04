@@ -9,8 +9,6 @@
 
 /* file_io helpers not surfaced through common.h. */
 extern int fileReadRaw(SDL_IOStream *io, void *dst, int count);
-extern int readFileAt(SDL_IOStream *io, int count, int offset, int segment);
-extern int writeFile(SDL_IOStream *io, int count, int offset, int segment, int unused);
 extern void errorAndExit(const char *msg);
 
 namespace {
@@ -97,10 +95,6 @@ int main() {
     // Null/zero-size guards: the I/O helpers reject bad streams before dereferencing.
     require(fileReadRaw(nullptr, buf, kSingleByte) == kNullStreamError,
             "fileReadRaw reports null stream");
-    require(readFileAt(nullptr, kSingleByte, 0, 0) == kNullStreamError,
-            "readFileAt reports null stream before resolving its buffer");
-    require(writeFile(nullptr, kSingleByte, 0, 0, 0) == kNullStreamError,
-            "writeFile reports null stream before resolving its buffer");
     require(fileRead(buf, kNullTransferItemSize, kNullTransferItemCount, nullptr) == kZeroSizedTransferResult,
             "fileRead handles null/zero-size reads");
     require(fileWrite(buf, kNullTransferItemSize, kNullTransferItemCount, nullptr) == kZeroSizedTransferResult,

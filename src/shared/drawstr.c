@@ -4,7 +4,6 @@
 
 #include "common.h"
 
-#include "../pointers.h"
 #include <dos.h>
 
 extern void far gfx_drawString(int16 *pageNum, const char *string);

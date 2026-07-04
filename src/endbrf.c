@@ -3,7 +3,6 @@
 #include "slot.h"
 #include <stdio.h>
 #include "offsets.h"
-#include "pointers.h"
 #include "log.h"
 #include "shared/common.h"
 #include "endata.h"

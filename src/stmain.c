@@ -1,7 +1,6 @@
 #include "SDL3/SDL_oldnames.h"
 #include "inttype.h"
 #include "offsets.h"
-#include "pointers.h"
 #include "comm.h"
 #include "gfx.h"
 #include "slot.h"

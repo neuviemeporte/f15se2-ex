@@ -4,7 +4,6 @@
 
 #include "common.h"
 
-#include "../pointers.h"
 #include <dos.h>
 
 extern int far gfx_setFont(uint16 ch, uint16 font);

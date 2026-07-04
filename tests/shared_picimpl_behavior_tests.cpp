@@ -1,5 +1,5 @@
 #include "inttype.h"
-#include "pointers.h"
+#include <dos.h>
 
 #include <SDL3/SDL.h>
 

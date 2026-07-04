@@ -3,7 +3,6 @@
  */
 
 #include "inttype.h"
-#include "pointers.h"
 #include "log.h"
 #include <SDL3/SDL.h>
 #include <quickdigest5.hpp>
@@ -96,20 +95,6 @@ int fileReadRaw(SDL_IOStream *io, void *dst, int count) {
     if (!io) return -1;
     if (count < 0) count = 0xFFFF;
     return (int)SDL_ReadIO(io, dst, (size_t)count);
-}
-
-/* readFileAt/writeFile still resolve their buffer through MK_FP: the
- * segment:offset addressing is the next thing to be ported away, but it is not
- * on the PIC/title path and is left intact for now. */
-int readFileAt(SDL_IOStream *io, int count, int offset, int segment) {
-    return fileReadRaw(io, (void *)MK_FP(segment, offset), count);
-}
-
-int writeFile(SDL_IOStream *io, int count, int offset, int segment, int unused) {
-    (void)unused;
-    if (!io) return -1;
-    if (count < 0) count = 0xFFFF;
-    return (int)SDL_WriteIO(io, (const void *)MK_FP(segment, offset), (size_t)count);
 }
 
 /* Print a '$'-terminated DOS string (INT 21h/09h) to the log. */

@@ -4,12 +4,20 @@
 #ifndef _DOS_H_COMPAT64
 #define _DOS_H_COMPAT64
 
+// 16-bit calling-convention / pointer-size decorations. All no-ops natively;
+// kept only so the ported DOS signatures still parse. Single source for the
+// whole tree (uppercase FAR/NEAR/CDECL were formerly duplicated in pointers.h,
+// the __far/__cdecl forms in egtypes.h).
 #define cdecl
 #define far
-#define FAR
 #define near
 #define pascal
 #define register
+#define FAR
+#define NEAR
+#define CDECL
+#define __cdecl
+#define __far
 
 // FP_SEG/FP_OFF: In 64-bit builds, far pointers don't exist.
 // Use reinterpret_cast to provide lvalue access to the high/low 16-bit words of a 32-bit-sized pointer slot.

@@ -5,7 +5,6 @@
 
 #include "common.h"
 
-#include "../pointers.h"
 #include <dos.h>
 
 /* extern declarations needed by these functions */

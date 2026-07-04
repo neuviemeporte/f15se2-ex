@@ -7,7 +7,6 @@
 #include "egtypes.h"
 #include "egui.h"
 #include "offsets.h"
-#include "pointers.h"
 #include "log.h"
 #include "gfx.h"
 #include "r2d.h"

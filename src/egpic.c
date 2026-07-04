@@ -4,7 +4,6 @@
 #include "egpic.h"
 #include "egtypes.h"
 #include "offsets.h"
-#include "pointers.h"
 #include "log.h"
 #include "const.h"
 

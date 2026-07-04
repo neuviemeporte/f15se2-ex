@@ -8,7 +8,6 @@
 #include "egtarget.h"
 #include "egtypes.h"
 #include "offsets.h"
-#include "pointers.h"
 #include "log.h"
 #include "gfx_impl.h"
 #include "const.h"

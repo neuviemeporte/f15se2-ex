@@ -7,7 +7,6 @@
 #include "egcode.h"
 #include "egdata.h"
 #include "inttype.h"
-#include "pointers.h"
 #include "gfx.h"
 
 /* per-frame work reconstructed in their own TUs (egflight/egtacmap/egframe),

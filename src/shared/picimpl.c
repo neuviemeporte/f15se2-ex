@@ -6,7 +6,6 @@
  */
 
 #include "inttype.h"
-#include "pointers.h"
 #include <SDL3/SDL.h>
 
 /* Page backbuffers (gfx_impl.c): the decoder writes palette indices into these

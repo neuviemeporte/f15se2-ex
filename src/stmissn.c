@@ -1,6 +1,5 @@
 #include "inttype.h"
 #include "offsets.h"
-#include "pointers.h"
 #include "comm.h"
 #include "shared/common.h"
 #include "gfx.h"

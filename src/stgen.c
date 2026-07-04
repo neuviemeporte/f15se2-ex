@@ -7,7 +7,6 @@
 #include "stparse.h"
 #include "strand.h"
 #include "stterr.h"
-#include "pointers.h"
 #include "comm.h"
 #include "log.h"
 #include "const.h"

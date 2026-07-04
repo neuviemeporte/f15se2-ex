@@ -4,7 +4,6 @@
  */
 
 #include "inttype.h"
-#include "pointers.h"
 #include <dos.h>
 #include <string.h>
 #include <stdio.h>

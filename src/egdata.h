@@ -4,7 +4,6 @@
 #include "inttype.h"
 #include "struct.h"
 #include "comm.h"
-#include "pointers.h"
 #include <stdio.h>
 #include "egtypes.h"
 

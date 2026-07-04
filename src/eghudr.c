@@ -21,7 +21,7 @@
 #include "inttype.h"
 #include "struct.h"
 #include "gfx.h"
-#include "pointers.h"
+#include <dos.h>
 
 /* --- C-defined egame globals not surfaced in a header --- */
 extern uint8 g_tapeColumn;

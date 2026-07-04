@@ -12,7 +12,7 @@
 
 #include "gfx.h"
 #include "inttype.h"
-#include "pointers.h"
+#include <dos.h>
 
 /* Forward declaration so GfxState can hold SDL backbuffers without pulling the
  * full SDL header. */

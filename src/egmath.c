@@ -10,7 +10,6 @@
 #include "egthreat.h"
 #include "egtypes.h"
 #include "offsets.h"
-#include "pointers.h"
 #include "log.h"
 #include "slot.h"
 #include "const.h"
