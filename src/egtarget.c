@@ -30,13 +30,13 @@ void drawMissileLock(void);
 void drawTargetLabel(const char *, int16, int16);
 void buildRangeString(int16 rangeRaw);
 void projectWorldToHud(int16 worldX, int16 worldY, int16 worldZ);
-long rotateVectorComponent(int16 axis, int16 vecX, int16 vecY, int16 vecZ);
+int32 rotateVectorComponent(int16 axis, int16 vecX, int16 vecY, int16 vecZ);
 int16 computeMapTargetRange(int16 targetIdx);
 int16 computeSimObjectRange(int16 objIdx);
 int16 computeTargetBearing(int16 targetX, int16 targetY, int16 wantBearing);
 
 void projectWorldToHud(int16 worldX, int16 worldY, int16 worldZ);
-long rotateVectorComponent(int16 axis, int16 vecX, int16 vecY, int16 vecZ);
+int32 rotateVectorComponent(int16 axis, int16 vecX, int16 vecY, int16 vecZ);
 int16 computeMapTargetRange(int16 targetIdx);
 int16 computeSimObjectRange(int16 objIdx);
 int16 computeTargetBearing(int16 targetX, int16 targetY, int16 wantBearing);
@@ -51,7 +51,7 @@ void updateTargetLock(void) {
 
     /* Fire at keyValue == 0x8b (sidewinder lock) */
     if (keyValue == 0x8b) {
-        drawWorldObject(6, (long)g_ViewX, 0x01000000L - g_ViewY,
+        drawWorldObject(6, (int32)g_ViewX, 0x01000000L - g_ViewY,
                         g_viewZ + 0x10, g_ourHead, g_ourPitch, g_ourRoll, 2);
     }
 
@@ -133,8 +133,8 @@ skip_aam:
             if (g_projDepth < 0 && g_projDepth > -0x100) {
                 drawWorldObject(
                     (uint8)(((uint8)g_smokeParticleSlot - (uint8)idx) & 7) < 4 ? 3 : 17,
-                    (long)(uint16)g_particles[idx].posX << 5,
-                    (long)(uint16)g_particles[idx].posY << 5,
+                    (int32)(uint16)g_particles[idx].posX << 5,
+                    (int32)(uint16)g_particles[idx].posY << 5,
                     g_particles[idx].alt, 0,
                     g_particles[idx].spin, 0, 0);
             }
@@ -274,8 +274,8 @@ skip_aam:
         projectWorldToHud(g_wreckX, g_wreckY, g_wreckAlt);
         if (g_projDepth < 0 && g_projDepth > -0x100) {
             drawWorldObject(14,
-                            (long)(uint16)g_wreckX << 5,
-                            (long)(uint16)g_wreckY << 5,
+                            (int32)(uint16)g_wreckX << 5,
+                            (int32)(uint16)g_wreckY << 5,
                             g_wreckAlt, 0, 0, 0,
                             g_wreckFallVel > 0 ? 4 : 3);
         }
@@ -286,12 +286,12 @@ skip_aam:
     if (keyValue == 0x8b) goto done;
     if (g_viewZ == 0 && g_ejectState != 0) goto done;
 
-    drawWorldObject(((g_playerPlaneFlags & 1) == 0) + 6, (long)g_ViewX,
+    drawWorldObject(((g_playerPlaneFlags & 1) == 0) + 6, (int32)g_ViewX,
                     0x01000000L - g_ViewY, g_viewZ + 0x10, g_ourHead, g_ourPitch, g_ourRoll,
                     2 - depthShift);
 
     if ((uint16)g_viewZ < 1000 && g_nightMode == 0) {
-        drawWorldObject(21, (long)g_ViewX, 0x01000000L - g_ViewY,
+        drawWorldObject(21, (int32)g_ViewX, 0x01000000L - g_ViewY,
                         g_groundAltitude, g_ourHead, 0, 0, 2);
     }
 
@@ -654,7 +654,7 @@ void drawHudWorldOverlay(void) {
 
         if (g_detailLevel != 0 && (frameTick & 1)) {
             g_aamLeadDist = (int16)(((uint32)(uint16)(0x8000 - g_simObjects[wpIdx].pitch) *
-                                   (long)g_simObjects[wpIdx].speed) >>
+                                   (int32)g_simObjects[wpIdx].speed) >>
                                   15);
             g_aamLeadDist -= abs(sinMul(g_simObjects[wpIdx].bank.w, g_aamLeadDist)) >> 1;
         }

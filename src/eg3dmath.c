@@ -24,8 +24,8 @@ static int16 sineInterp(uint16 angle) {
     int16 frac = angle & 0xFF;
     int16 v0 = g_angleLut[idx];
     int16 v1 = g_angleLut[idx + 1];
-    long step = (long)(v1 - v0) * frac;
-    return v0 + (int)((step + 0x80) >> 8);
+    int32 step = (int32)(v1 - v0) * frac;
+    return v0 + (int16)((step + 0x80) >> 8);
 }
 
 int sine(int angle) {
@@ -40,22 +40,18 @@ int cosine(int angle) {
 /* Q15-style fixed multiply: returns round((a*b) >> 15).
  * Replicates the exact shl/rcl/adc sequence of the ASM fixedMulQ14:
  *   P = a*b; result = (P>>15) + (bit14 of P). */
-int fixedMulQ14(int a, int b) {
-    long p = (long)a * (long)b;
-    return (int)((p >> 15) + ((p >> 14) & 1L));
+int16 fixedMulQ14(int16 a, int16 b) {
+    int32 p = (int32)a * (int32)b;
+    return (int16)((p >> 15) + ((p >> 14) & 1L));
 }
 
 /* In-place 32-bit shifts (pascal: args pushed left-to-right, callee cleans up).
- * The ASM dispatches to the MSC long-shift helpers; >>= on a signed long is the
+ * The ASM dispatches to the MSC long-shift helpers; >>= on a signed int32 is the
  * arithmetic shift those helpers perform. */
-void pascal shiftLongLeftInPlace(int count, long *ptr) {
-    /* DOS long is always 32-bit; host long may be 64-bit, so truncate before
-     * shifting and store back the original signed 32-bit result pattern. */
-    uint32 bits = (uint32)(int32)*ptr;
-    *ptr = (int32)(bits << count);
+void pascal shiftLongLeftInPlace(int16 count, int32 *ptr) {
+    *ptr <<= count;
 }
 
-void pascal shiftLongRightInPlace(int count, long *ptr) {
-    /* MSC's signed long right shift is arithmetic on a 32-bit value. */
-    *ptr = (int32)((int32)*ptr >> count);
+void pascal shiftLongRightInPlace(int16 count, int32 *ptr) {
+    *ptr >>= count;
 }

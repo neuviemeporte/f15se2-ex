@@ -29,9 +29,14 @@ int16 readFile1(int16 handle, int16 count, int16 bufOffset);
 int16 readFile2(int16 handle, int16 count, int16 bufOffset, int16 bufSegment);
 int16 writeFileAtRaw(int16 handle, int16 count, int16 bufOffset, int16 bufSegment, int16 offsetAddend);
 void picBlit(int16 handle, int16 unk);
+<<<<<<< HEAD
 >>>>>>> accc598 (more int->int16)
 void pascal shiftLongLeftInPlace(int16 count, long *ptr);
 void pascal shiftLongRightInPlace(int16 count, long *ptr);
+=======
+void pascal shiftLongLeftInPlace(int16 count, int32 *ptr);
+void pascal shiftLongRightInPlace(int16 count, int32 *ptr);
+>>>>>>> 07ad338 (long->int32)
 int16 far drawPolygonOutline(int16 fillColor, int16 pointCount, int16 *points, int16 edgeColor);
 int16 far drawFlatHorizon(int16);
 void storeObjTransformByOpcode();
@@ -81,7 +86,7 @@ void far copyJoystickData(uint8 FAR *ptr);
 int16 far setInt9Handler();
 int16 far restoreInt9Handler();
 int16 int9Handler();
-extern long _aNlmul(long, long);
+extern int32 _aNlmul(int32, int32);
 
 void installCBreakHandler();
 void setTimerIrqHandler();

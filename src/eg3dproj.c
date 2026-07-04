@@ -116,20 +116,9 @@ static void renderGridTile(int lod, int tileX, int tileY, int gridX, int gridY, 
     }
 }
 
-void projectObjects(int heading, int rangeGate, long worldX, long worldY, long worldZ) {
-    int gridX;
-    int gridY;
-    int dirSector;
-    int fracX;
-    int subIdx;
-    int fracY;
-    int sampleIdx;
-    int tmp0;
-    int tileX;
-    int tileY;
-    int tmp1;
-    long scaled;
-    int cell;
+void projectObjects(int16 heading, int16 rangeGate, int32 worldX, int32 worldY, int32 worldZ) {
+    int16 gridX, gridY, dirSector, fracX, subIdx, fracY, sampleIdx, tmp0, tileX, tileY, tmp1, cell;
+    int32 scaled;
 
     g_proj3d.x = worldX;
     g_proj3d.y = worldY;
