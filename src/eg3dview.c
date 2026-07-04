@@ -30,7 +30,7 @@ void render3DView(int16 camX, int16 camY, int16 camZ, long worldX, long worldY, 
     /* The view descriptor's page field is inert — all 3D composites into the
      * single hidden back buffer. */
     *g_viewParams = 0;
-    g_viewParams[2] = (unsigned char)((char *)colorLut)[g_skyColorIndex & 0xFF];
+    g_viewParams[2] = (uint8)((char *)colorLut)[g_skyColorIndex & 0xFF];
     {
         R3DScene scene = {g_viewParams, camX, camY, camZ, 0, 0, (int16)worldZ, 1};
         r3d_beginScene(&scene);

@@ -59,7 +59,7 @@ static string resolveCasePath(const char *filename, const bool require = false) 
 }
 
 /* Open an asset for reading. Returns the stream, or NULL on failure. */
-SDL_IOStream *openFile(const char *filename, int mode) {
+SDL_IOStream *openFile(const char *filename, int16 mode) {
     (void)mode; /* the resident open service only distinguished read vs. write;
                  * every openFile caller in the game opens an asset for reading */
     return SDL_IOFromFile(resolveCasePath(filename).c_str(), "rb");

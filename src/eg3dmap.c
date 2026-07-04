@@ -275,7 +275,7 @@ void drawMapTileObject(char far *modelData, int screenX, int screenY) {
         if ((**(char far **)&g_modelStreamPtr & 0x40) != g_modelEvenOddBit)
             return;
     }
-    switch ((unsigned)(unsigned char)**(char far **)&g_modelStreamPtr & 0x3f) {
+    switch ((unsigned)(uint8)**(char far **)&g_modelStreamPtr & 0x3f) {
     case 0x3e:
         return;
     case 0x3f:
@@ -293,7 +293,7 @@ void drawModelPoint(int x, int y) {
     g_lineX2 = g_lineX1 = x + g_viewCenterX;
     g_lineY2 = g_lineY1 = -y + g_viewCenterY;
     ++g_modelStreamPtr;
-    gfx_setColor((unsigned char)*g_modelStreamPtr++);
+    gfx_setColor((uint8)*g_modelStreamPtr++);
     drawClipLineGlobal();
 }
 
@@ -303,7 +303,7 @@ void buildVertexSignMask(int screenX, int screenY) {
     int edgeIdx;
 
     bit = 1L;
-    g_modelEdgeCount = (int)(unsigned char)(*((*(char far **)&g_modelStreamPtr)++)) & 0x1f;
+    g_modelEdgeCount = (int16)(uint8)(*((*(char far **)&g_modelStreamPtr)++)) & 0x1f;
     g_vtxSignMaskLo = -1;
     g_vtxSignMaskHi = -1;
     *(char *)&g_modelWideVtxFlag = (g_modelEdgeCount > 16) ? 1 : 0;
@@ -329,12 +329,12 @@ void projectModelVertices(int screenX, int screenY) {
     int screenVtxX;
     int screenVtxY;
 
-    packed = (int)(unsigned char)**(char far **)&g_modelStreamPtr & 0x80;
-    g_modelVtxCount = (int)(unsigned char)(*(*(char far **)&g_modelStreamPtr)++) & 0x7F;
+    packed = (int16)(uint8)**(char far **)&g_modelStreamPtr & 0x80;
+    g_modelVtxCount = (int16)(uint8)(*(*(char far **)&g_modelStreamPtr)++) & 0x7F;
     for (vtxIdx = 0; vtxIdx < g_modelVtxCount; vtxIdx++) {
-        g_modelStreamPtr += (unsigned char)g_modelWideVtxFlag * 2 + 2;
+        g_modelStreamPtr += (uint8)g_modelWideVtxFlag * 2 + 2;
         if (packed != 0) {
-            vtxRef = (int)(unsigned char)(*(*(char far **)&g_modelStreamPtr)++);
+            vtxRef = (int16)(uint8)(*(*(char far **)&g_modelStreamPtr)++);
             screenVtxX = (g_replayLog.vertexX[buf3d3_1[vtxRef]] >> g_tileZoomShift) + screenX;
             screenVtxY = (((int16 *)g_modelVertY)[buf3d3_2[vtxRef]] >> g_tileZoomShift) + screenY;
         } else {

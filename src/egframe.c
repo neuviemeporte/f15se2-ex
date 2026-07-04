@@ -43,22 +43,7 @@ void updateFrame(void) {
     int16 tmp, unused;
     uint16 val;
     uint16 screenY;
-<<<<<<< HEAD
-    int i;
-    int objIdx;
-=======
     int16 i, objIdx;
-#ifdef DEBUG
-    {
-        static int16 sig_was_ok = 1;
-        int16 s4 = *(int16 far *)((char far *)commData - 4);
-        if (sig_was_ok && (unsigned)s4 != 0xca01) {
-            sig_was_ok = 0;
-            LogError(("SIG CORRUPTED at frame %d: commData-4(MCB)=%04x", frameTick, s4));
-        }
-    }
-#endif
->>>>>>> accc598 (more int->int16)
 
     g_viewX_ = (int16)((g_ViewX + 0x10L) >> 5);
     g_viewY_ = -((int16)((g_ViewY + 0x10L) >> 5) - 0x8000);
@@ -433,16 +418,7 @@ skip_autopilot:
 
 // ==== seg000:0x14e8 ====
 void dispatchKeyScancode(void) {
-<<<<<<< HEAD
-    int unused0, unused1, unused2, unused3, unused4, unused5, unused6, unused7;
-=======
     int16 unused0, unused1, unused2, unused3, unused4, unused5, unused6, unused7;
-#ifdef DEBUG
-    if (keyScancode != 0)
-        LogInfo(("KEY scancode=%04x  dot joyAxes[0/1]=%d/%d  ISR raw axes=%d/%d",
-                 (unsigned)keyScancode, (int16)joyAxes[0], (int16)joyAxes[1], (int16)g_joyRawX, (int16)g_joyRawY));
-#endif
->>>>>>> accc598 (more int->int16)
     keyDispatch(keyScancode);
 }
 
@@ -500,17 +476,7 @@ void tickMessageTimers(void) {
 }
 
 void updateBulletsAndFire(void) {
-<<<<<<< HEAD
-    int off;
-    int firing;
-    int unused;
-    int i;
-    int mag;
-    int slot;
-=======
-    register int16 off;
-    int16 firing, unused, i, mag, slot;
->>>>>>> accc598 (more int->int16)
+    int16 off, firing, unused, i, mag, slot;
 
     for (i = 0; i < g_bulletTrackCount + 4; i++) {
         off = i * 12;
@@ -601,13 +567,6 @@ void initFrameRandom(void) {
 
 // ==== seg000:0x1971 ====
 void resetSimObjectLocks() {
-<<<<<<< HEAD
-=======
-    int16 i;
-    for (i = 0; i < g_groundUnitCount; i++) {
-        g_simObjects[i].terrainColor = -1;
-    }
->>>>>>> accc598 (more int->int16)
     g_trackedEnemyIdx = -1;
 }
 
@@ -659,12 +618,7 @@ void drawWeaponSelectMarker(int16 weaponIdx) {
 }
 
 // ==== seg000:0x1b37 routine_148 ====
-<<<<<<< HEAD
-void finalizeMission(int outcome) {
-=======
 void finalizeMission(int16 outcome) {
-    LogInfo(("DEATH/END finalizeMission: outcome=%d, g_ejectState=%d, tick=%d", outcome, g_ejectState, frameTick));
->>>>>>> accc598 (more int->int16)
     if (g_ejectState != 0 && outcome != 0) {
         return;
     }

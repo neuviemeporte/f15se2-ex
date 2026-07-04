@@ -325,14 +325,8 @@ extern uint8 g_shapeTargetCategory[UNIT_STATE_COUNT];
 extern int16 g_flightPathMarkerY;
 extern int16 g_aamLockActive;
 extern int16 g_unusedSavedWord;
-<<<<<<< HEAD
-extern int g_rollInput;
-extern uint16 keyScancode;
-=======
 extern int16 g_rollInput;
-extern int16 flagFarToNear;
-extern int16 keyScancode;
->>>>>>> accc598 (more int->int16)
+extern uint16 keyScancode;
 extern int16 g_unusedEventHist2;
 extern int16 g_projDepth;
 extern int16 g_scopeClipLeft;
