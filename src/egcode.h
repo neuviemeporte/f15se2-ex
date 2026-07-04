@@ -2,37 +2,37 @@
 #define F15_SE2_EGCODE
 /* assembly routines (egcode.asm/egseg*.asm) called from C */
 #include "inttype.h"
-#include <dos.h>
+#include <dos. h>
 #include "egtypes.h"
 #include <stddef.h>
 
 typedef struct SDL_IOStream SDL_IOStream;
 
-int loadF15DgtlBin();
+int16 loadF15DgtlBin();
 void setupDac();
-int fixedMulQ14(int a, int b);
-int cosine(int angle);
-int sine(int angle);
+int16 fixedMulQ14(int16 a, int16 b);
+int16 cosine(int16 angle);
+int16 sine(int16 angle);
 void restoreCbreakHandler();
 void runGameLoop();
 void gameMainLoop();
 void advanceFrameTick();
-int __cdecl drawCenteredLabelBox(int panel, const char *text);
-SDL_IOStream *createFile(const char *path, int attr);
-void picBlit(SDL_IOStream *handle, int unk);
-void pascal shiftLongLeftInPlace(int count, long *ptr);
-void pascal shiftLongRightInPlace(int count, long *ptr);
-int far drawPolygonOutline(int fillColor, int pointCount, int *points, int edgeColor);
-int far drawFlatHorizon(int);
+int16 __cdecl drawCenteredLabelBox(int16 panel, const char *text);
+SDL_IOStream *createFile(const char *path, int16 attr);
+void picBlit(SDL_IOStream *handle, int16 unk);
+void pascal shiftLongLeftInPlace(int16 count, long *ptr);
+void pascal shiftLongRightInPlace(int16 count, long *ptr);
+int16 far drawPolygonOutline(int16 fillColor, int16 pointCount, int16 *points, int16 edgeColor);
+int16 far drawFlatHorizon(int16);
 void storeObjTransformByOpcode();
-int far advanceModelPointerLod();
-int far renderSortedListFar();
-int far rotatePoint3dFar();
+int16 far advanceModelPointerLod();
+int16 far renderSortedListFar();
+int16 far rotatePoint3dFar();
 void rotatePoint3d();
-int far transformModelVerticesFar();
-int far projectModelEdgesFar();
-int far buildRotationMatrixFar(int16 *matrix, int angleX, int angleY, int angleZ);
-int far multiplyMatrix3x3Far(const int16 *matA, const int16 *matB, int16 *result);
+int16 far transformModelVerticesFar();
+int16 far projectModelEdgesFar();
+int16 far buildRotationMatrixFar(int16 *matrix, int16 angleX, int16 angleY, int16 angleZ);
+int16 far multiplyMatrix3x3Far(const int16 *matA, const int16 *matB, int16 *result);
 int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
                             int posX, int posY, int posZ,
                             int16 *combined, long *camBase, long *camX, long *camY,
@@ -53,24 +53,24 @@ void far r3d_submitLineFar(long baseXA, long camXA, long camYA,
  * Only the angular cull is widened; the near/far depth and max-distance gates are
  * unchanged. The GL backend sets this per scene in gl_beginScene. */
 void r3d_setObjCullWiden(int numX, int denX, int numY, int denY);
-int far drawModelDisplayList();
-int far fillSpanRect(const int16 *dst, int left, int top, int right, int bottom);
-int far drawClipLineGlobal();
-int far flushSpanDirtyRect();
-int far resetScanlineSpans();
-int far clipAndRasterizeEdge();
+int16 far drawModelDisplayList();
+int16 far fillSpanRect(const int16 *dst, int16 left, int16 top, int16 right, int16 bottom);
+int16 far drawClipLineGlobal();
+int16 far flushSpanDirtyRect();
+int16 far resetScanlineSpans();
+int16 far clipAndRasterizeEdge();
 void __cdecl __far setupInstrumentLayoutFar();
 void __cdecl __far drawInstrumentGaugesFar();
-int far initJoystickCalibration();
+int16 far initJoystickCalibration();
 void seedJoystickBaseline();
-int far readCalibratedJoystick();
+int16 far readCalibratedJoystick();
 void readJoystickHardware();
 void computeJoystickAxis();
-int far restoreJoystickData(uint8 FAR *ptr);
+int16 far restoreJoystickData(uint8 FAR *ptr);
 void far copyJoystickData(uint8 FAR *ptr);
-int far setInt9Handler();
-int far restoreInt9Handler();
-int int9Handler();
+int16 far setInt9Handler();
+int16 far restoreInt9Handler();
+int16 int9Handler();
 extern long _aNlmul(long, long);
 
 void installCBreakHandler();
@@ -85,12 +85,12 @@ void far egAdvanceFrameTick(void);
 void timerPump(void);
 void timerYield(void);
 uint64 timerNowNs(void);
-int getTimeOfDay();
-SDL_IOStream *__cdecl openFile(const char *path, int mode);
+int16 getTimeOfDay();
+SDL_IOStream *__cdecl openFile(const char *path, int16 mode);
 void fileClose(SDL_IOStream *handle);
 size_t fileRead(void *ptr, size_t size, size_t count, SDL_IOStream *handle);
 size_t fileWrite(const void *ptr, size_t size, size_t count, SDL_IOStream *handle);
 
-void far projectSceneObject(char far *model, int yaw, int pitch, int roll, int posX, int posY, int posZ);
+void far projectSceneObject(char far *model, int16 yaw, int16 pitch, int16 roll, int16 posX, int16 posY, int16 posZ);
 
 #endif /* F15_SE2_EGCODE */

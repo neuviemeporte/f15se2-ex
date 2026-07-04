@@ -5,7 +5,7 @@
 
 // ==== seg000:0x39c0 ====
 void setupViewport(const int16 *rect) {
-    int height, width;
+    int16 height, width;
     /* The clip-rect fields are 16-bit words (descriptor indices 7..10). */
     width = rect[10] - rect[9] + 1;
     height = rect[8] - rect[7] + 1;
