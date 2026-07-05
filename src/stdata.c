@@ -1,4 +1,5 @@
 #include "inttype.h"
+#include "pointers.h"
 #include "struct.h"
 #include "comm.h"
 #include <stdio.h>
@@ -490,8 +491,8 @@ extern const int16 targetCoordsCount[9] = {3, 2, 2, 3, 4, 1, 8, 3, 0};
 /* === BSS variables === */
 
 struct Pilot hallfameBuf[8];
-struct GameComm far *commData;
-struct Game far *gameData;
+struct GameComm FAR *commData;
+struct Game FAR *gameData;
 SDL_IOStream *fileHandle;
 int16 selectedPilotIdx;
 int16 readItemSize;

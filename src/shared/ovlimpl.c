@@ -22,7 +22,7 @@ extern int16 fileHandle;
  * `& 0xff` for text and compares the full word against KEYCODE_UPARROW etc. */
 
 /* Original MISC.EXE slot 0x5a: 0 if a key is waiting, 0xFFFF if empty. */
-int far cdecl misc_checkKeyBuf(void) {
+int FAR cdecl misc_checkKeyBuf(void) {
     input_setMode(INPUT_MODE_MENU);
     /* Callers poll this in tight wait loops; yield a sub-tick slice so those
      * waits advance the clock (via the pump) without pegging a core. egame's
@@ -33,14 +33,14 @@ int far cdecl misc_checkKeyBuf(void) {
 }
 
 /* Original: GetKey. Blocking read: scan code in AH, ASCII in AL. */
-int far cdecl misc_getKey(void) {
+int FAR cdecl misc_getKey(void) {
     input_setMode(INPUT_MODE_MENU);
     return input_readKey();
 }
 
 /* misc_readJoystick lives in joystick.c (SDL gamepad/joystick buttons). */
 
-void far cdecl misc_clearKeyFlags(void) {
+void FAR cdecl misc_clearKeyFlags(void) {
     input_setMode(INPUT_MODE_MENU);
     input_ringReset();
 }

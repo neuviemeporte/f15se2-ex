@@ -6,7 +6,7 @@
 
 #include <dos.h>
 
-extern void far gfx_drawString(int16 *pageNum, const char *string);
+extern void FAR gfx_drawString(int16 *pageNum, const char *string);
 
 void drawStringAt(int16 *pageNum, const char *string, int16 x, int16 y) {
     pageNum[4] = x;

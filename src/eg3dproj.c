@@ -19,7 +19,7 @@
 #include <string.h>
 
 /* Private helpers for this translation unit. */
-int far transformAndCullObjectFar(int, int, int);
+int16 FAR transformAndCullObjectFar(int16, int16, int16);
 
 /* Q8 sub-LOD-unit remainder scaleCoordToLod discards (signed, around its
  * round-to-nearest bias). Without it the viewer position feeding the terrain
@@ -201,7 +201,7 @@ void projectObjects(int16 heading, int16 rangeGate, int32 worldX, int32 worldY, 
                     for (subIdx = 0; subIdx < matrix3dt[g_curLod][cell]; subIdx++) {
                         if (g_curTileEntry->shape & 0x80) {
                             g_modelStreamPtr = g_world3dData + lookupTileEntry(g_curLod, subIdx, tileX + gridX, tileY + gridY);
-                            if (g_modelStreamPtr == (char far *)g_world3dData) {
+                            if (g_modelStreamPtr == (char FAR *)g_world3dData) {
                                 g_modelStreamPtr = g_world3dData + buf3d3[g_curTileEntry->shape & 0x7f];
                             }
                         } else {

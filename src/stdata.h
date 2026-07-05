@@ -110,7 +110,7 @@ extern uint8 missionStrTruncEnd[];
 extern int16 escortMissionFlag;
 typedef struct SDL_IOStream SDL_IOStream;
 extern SDL_IOStream *fileHandle;
-extern struct Game far *gameData;
+extern struct Game FAR *gameData;
 extern int16 groundUnitCount;
 extern uint8 gridBuf5[];
 extern uint8 gridBuf4[];
@@ -144,7 +144,7 @@ extern char wldReadBuf11[];
 extern struct TerrainPtrTable terrainTilePtrs[];
 extern struct TerrainTile *tileDataPtr;
 extern uint16 worldObjectCount;
-extern struct GameComm far *commData;
+extern struct GameComm FAR *commData;
 extern struct Pilot hallfameBuf[];
 extern uint16 menuSprites;
 

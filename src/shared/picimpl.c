@@ -330,7 +330,7 @@ void decodePic(SDL_IOStream *handle, int segment) {
     picDecodeToSurface(handle, dst ? dst : picScratchSurface());
 }
 
-void decodePicRaw(SDL_IOStream *handle, int segment) {
+void decodePicRaw(SDL_IOStream *handle, uint16 segment) {
     (void)segment;
     picDecodeToSurface(handle, picScratchSurface());
 }
@@ -348,7 +348,7 @@ void decodePicRaw(SDL_IOStream *handle, int segment) {
  * present it (the original wrote to visible VRAM, needing no explicit present).
  * The pageIndex arg selected the EGA page in the original; the port has a single
  * hi-res surface, so it is ignored. */
-void picBlit(SDL_IOStream *handle, int pageIndex) {
+void picBlit(SDL_IOStream *handle, int16 pageIndex) {
     SDL_Surface *dst;
     uint8 *base;
     int pitch;

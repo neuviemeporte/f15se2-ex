@@ -62,12 +62,3 @@ int16 loadOverlay(const char *filename) {
 int16 doFcbSearch(void) {
     return -1;
 }
-<<<<<<< HEAD
-=======
-
-#if !defined(MSDOS)
-uint16 dos_alloc(int16 size) {
-    return 0;
-}
-#endif
->>>>>>> c2da053 (last big int->int16)

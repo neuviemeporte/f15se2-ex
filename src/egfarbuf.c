@@ -15,4 +15,4 @@
 #include "egtypes.h"
 #include "egdata.h"
 
-char far g_world3dData[WORLD3D_DATA_SIZE];
+char FAR g_world3dData[WORLD3D_DATA_SIZE];

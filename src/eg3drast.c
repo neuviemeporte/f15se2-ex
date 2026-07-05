@@ -286,7 +286,7 @@ static void buildRotationMatrix(int16 *m, int angleX, int angleY, int angleZ) {
     m[8] = q15hi(CY, D);
 }
 
-int far buildRotationMatrixFar(int16 *matrix, int angleX, int angleY, int angleZ) {
+int16 FAR buildRotationMatrixFar(int16 *matrix, int16 angleX, int16 angleY, int16 angleZ) {
     buildRotationMatrix(matrix, angleX, angleY, angleZ);
     return 0;
 }
@@ -294,8 +294,8 @@ int far buildRotationMatrixFar(int16 *matrix, int angleX, int angleY, int angleZ
 /* ===================================================================== */
 /* seg001 0x0A09 — skip the model display list down to the active LOD.   */
 /* ===================================================================== */
-static void skipDisplayListByLod(uint8 far **pp) {
-    uint8 far *p = *pp;
+static void skipDisplayListByLod(uint8 FAR **pp) {
+    uint8 FAR *p = *pp;
     int16 al;
     while ((al = p[0]) & 0x80) {
         int bx = (al & 7) << 1;
@@ -310,16 +310,16 @@ static void skipDisplayListByLod(uint8 far **pp) {
 }
 
 /* seg001 0x0CFB — advance g_modelStreamPtr to the LOD-selected display list. */
-int16 far advanceModelPointerLod(void) {
-    uint8 far *p = (uint8 far *)g_modelStreamPtr;
+int16 FAR advanceModelPointerLod(void) {
+    uint8 FAR *p = (uint8 FAR *)g_modelStreamPtr;
     skipDisplayListByLod(&p);
-    g_modelStreamPtr = (char far *)p;
+    g_modelStreamPtr = (char FAR *)p;
     return 0;
 }
 
 /* seg001 0x0A36 — storeObjTransformByOpcode: g_objTransform[opcode] = spinAngle */
 void storeObjTransformByOpcode(void) {
-    uint8 far *p = (uint8 far *)g_modelStreamPtr;
+    uint8 FAR *p = (uint8 FAR *)g_modelStreamPtr;
     int16 idx = (*p) & 3;
     g_objTransform[idx] = g_spinAngle;
 }
@@ -328,15 +328,15 @@ void storeObjTransformByOpcode(void) {
 /* seg001 0x1BA2 — testVisibilityMask: read 1 (or 2) mask words from the */
 /* stream, AND against the vertex sign masks. Returns 0 => not visible.  */
 /* ===================================================================== */
-static int16 testVisibilityMask(uint8 far **pp) {
-    uint8 far *p = *pp;
-    int16 lo = *(int16 far *)p;
+static int16 testVisibilityMask(uint8 FAR **pp) {
+    uint8 FAR *p = *pp;
+    int16 lo = *(int16 FAR *)p;
     int16 r;
     p += 2;
     if (g_modelWideVtxFlag == 0) {
         r = lo & g_vtxSignMaskLo;
     } else {
-        int hi = rdI16(p);
+        int16 hi = rdI16(p);
         p += 2;
         r = (lo & g_vtxSignMaskLo) | (hi & g_vtxSignMaskHi);
     }
@@ -873,7 +873,7 @@ static void resetScanlineSpansImpl(void) {
     g_dirtyRectMaxY = 0;
 }
 
-int far resetScanlineSpans(void) {
+int16 FAR resetScanlineSpans(void) {
     resetScanlineSpansImpl();
     return 0;
 }
@@ -923,7 +923,7 @@ static void clampSpansForFill(void) {
     }
 }
 
-int far flushSpanDirtyRect(void) {
+int16 FAR flushSpanDirtyRect(void) {
     clampSpansForFill();
     gfx_dirtyRect(g_spanBuf.minX,
                   g_dirtyRectMinY, g_dirtyRectMaxY);
@@ -1062,7 +1062,7 @@ static void drawPrimitiveEdges(struct EdgeRec *rec) {
 /* table into a flat sequence at DI, terminated by 0xFF. Depth-first walk   */
 /* of the adjacency table at g_rleRowBase using an explicit stack.          */
 /* ===================================================================== */
-static void decodeRleEdgeRow(const uint8 far *src, uint8 *dst, unsigned char *base) {
+static void decodeRleEdgeRow(const uint8 FAR *src, uint8 *dst, unsigned char *base) {
     /* explicit stack of (state, parentValue) frames replacing the asm's
      * PUSH AX / POP AX recursion. The asm pushes onto the hardware stack with
      * no fixed bound; the DFS walks a binary-tree adjacency whose nodes are
@@ -1136,8 +1136,8 @@ static void decodeRleEdgeRow(const uint8 far *src, uint8 *dst, unsigned char *ba
 /* seg001 0x17F5 — renderPrimitiveCommand: decode one display-list command */
 /* (filled face or line) and emit it. Walks ES:SI via *pp.                 */
 /* ===================================================================== */
-static void renderPrimitiveCommand(uint8 far **pp) {
-    uint8 far *p = *pp;
+static void renderPrimitiveCommand(uint8 FAR **pp) {
+    uint8 FAR *p = *pp;
     int16 opcode = *p++;
     int16 bl = opcode;
 
@@ -1303,7 +1303,7 @@ static void renderPrimitiveCommand(uint8 far **pp) {
 /* ===================================================================== */
 /* seg001 0x176A — renderPrimitiveList: iterate the display-list commands. */
 /* ===================================================================== */
-static void renderPrimitiveList(uint8 far *p) {
+static void renderPrimitiveList(uint8 FAR *p) {
     int16 count = *p++;
     if (count == 0) return;
     if (count != 0xff) {
@@ -1322,16 +1322,16 @@ static void renderPrimitiveList(uint8 far *p) {
         decodeRleEdgeRow(p, byte_36BAE + 1, byte_36BAE + 0x42);
         {
             int16 edgeWords = g_modelEdgeCount * 2;
-            uint8 far *coord = p + edgeWords + 1;
-            uint8 far *cnts = coord + edgeWords;
-            uint8 far *dataBase = cnts + g_modelEdgeCount;
+            uint8 FAR *coord = p + edgeWords + 1;
+            uint8 FAR *cnts = coord + edgeWords;
+            uint8 FAR *dataBase = cnts + g_modelEdgeCount;
             uint8 *order = byte_36BAE + 1;
             int16 ai = *order++;
             g_primCoordPtr = (int16)(uint16)(size_t)coord;
             g_primCountPtr = (int16)(uint16)(size_t)cnts;
             g_primDataBase = (int16)(uint16)(size_t)dataBase;
             for (;;) {
-                uint8 far *runp;
+                uint8 FAR *runp;
                 g_primRunCount = cnts[ai];
                 runp = dataBase + rdI16(coord + ai * 2);
                 do {
@@ -1345,8 +1345,8 @@ static void renderPrimitiveList(uint8 far *p) {
 }
 
 /* seg001 0x1764 — drawModelDisplayList. */
-int16 far drawModelDisplayList(void) {
-    renderPrimitiveList((uint8 far *)g_modelStreamPtr);
+int16 FAR drawModelDisplayList(void) {
+    renderPrimitiveList((uint8 FAR *)g_modelStreamPtr);
     return 0;
 }
 
@@ -1354,8 +1354,8 @@ int16 far drawModelDisplayList(void) {
 /* seg001 0x11D8 — projectModelEdges: build clipped 2D edge records from    */
 /* the projected vertex arrays (vproj.x/y), near-clipping behind vertices.  */
 /* ===================================================================== */
-static void projectModelEdges(uint8 far **pp) {
-    uint8 far *p = *pp;
+static void projectModelEdges(uint8 FAR **pp) {
+    uint8 FAR *p = *pp;
     int16 count = *p++;
     int16 i;
     struct EdgeRec *rec = (struct EdgeRec *)flt15_buf2;
@@ -1405,10 +1405,10 @@ static void projectModelEdges(uint8 far **pp) {
     *pp = p;
 }
 
-int16 far projectModelEdgesFar(void) {
-    uint8 far *p = (uint8 far *)g_modelStreamPtr;
+int16 FAR projectModelEdgesFar(void) {
+    uint8 FAR *p = (uint8 FAR *)g_modelStreamPtr;
     projectModelEdges(&p);
-    g_modelStreamPtr = (char far *)p;
+    g_modelStreamPtr = (char FAR *)p;
     return 0;
 }
 
@@ -1450,7 +1450,7 @@ static int clipMulDiv(int a, int b, int d) {
     return (int)sdiv32by16(imul16(a, b), d);
 }
 
-int16 far clipAndRasterizeEdge(void) {
+int16 FAR clipAndRasterizeEdge(void) {
     int16 cx = g_lineX1, dx = g_lineY1; /* CX/DX = the anchor (kept) endpoint */
     int16 si = g_lineX2, di = g_lineY2; /* SI/DI = the endpoint being clipped */
     int16 flags = crOutcode(cx, dx);    /* g_rasterClipFlags: anchor outcode  */
@@ -1720,7 +1720,7 @@ static void renderHorizonSky(void) {
     gfx_nop22();
 }
 
-int far drawFlatHorizon(int skyColor) {
+int16 FAR drawFlatHorizon(int16 skyColor) {
     g_horizonSkyColor = (uint8)skyColor;
     renderHorizonSky();
     return 0;
@@ -1735,10 +1735,10 @@ int far drawFlatHorizon(int skyColor) {
 /* +0x70 per ring). gfx_setColor (0x21) sets the same MGRAPHIC fill colour  */
 /* as the register-only gfx_setDrawColor (0x20), so no new shim is needed.  */
 /* ===================================================================== */
-int far drawPolygonOutline(int fillColor, int pointCount, int *points, int edgeColor) {
-    int n = pointCount - 1;
-    int *pt = points;
-    int firstX, firstY;
+int16 FAR drawPolygonOutline(int16 fillColor, int16 pointCount, int16 *points, int16 edgeColor) {
+    int16 n = pointCount - 1;
+    int16 *pt = points;
+    int16 firstX, firstY;
     (void)fillColor;
     gfx_setColor(edgeColor);
     resetScanlineSpansImpl();
@@ -1800,7 +1800,7 @@ static int32 g_camBaseX;              /* word_3424C / word_3424E */
  * (index 0) to nearest; the records carry the per-object transform state. */
 struct SortRec {
     int16 depthLo, depthHi;
-    char far *model;
+    char FAR *model;
     int16 relX, relY;
     int16 transform[4];
     int32 baseX;
@@ -1967,8 +1967,8 @@ static int transformAndCullObject(int relY, int relZ, int relX) {
  * in camera space, then read the per-face visibility table and build the vertex
  * sign masks (g_vtxSignMask*) that gate back-facing primitives. Advances *pp
  * past the face-visibility records. */
-static void rotatePoint3d(int16 relZ, int16 relY, int16 relX, uint8 far **pp) {
-    uint8 far *p = *pp;
+static void rotatePoint3d(int16 relZ, int16 relY, int16 relX, uint8 FAR **pp) {
+    uint8 FAR *p = *pp;
     int16 cnt, i, flipped;
     relX = -relX;
     relY = -relY;
@@ -2035,8 +2035,8 @@ static void emitModelVertex(int bx, int vx, int vy, int vz) {
  * encodings: 0x80 + precomputed shared verts (dword_34C2C, transformModelVertices
  * filled them), 0x80 + on-the-fly indexed verts (offscreen render), or explicit
  * inline coords. */
-static void transformVertexList(uint8 far **pp) {
-    uint8 far *p = *pp;
+static void transformVertexList(uint8 FAR **pp) {
+    uint8 FAR *p = *pp;
     int16 al = *p++;
     int16 bx;
 
@@ -2070,10 +2070,10 @@ static void transformVertexList(uint8 far **pp) {
         /* loc_10F0 body — explicit inline coords (X,Y,Z words) */
         int loopEnd = (al & 0x7f) * 4;
         for (bx = 0; bx < loopEnd; bx += 4) {
-            int vis = testVisibilityMask(&p);
-            int vx = rdI16(p);
-            int vy = rdI16(p + 2);
-            int vz = rdI16(p + 4);
+            int16 vis = testVisibilityMask(&p);
+            int16 vx = rdI16(p);
+            int16 vy = rdI16(p + 2);
+            int16 vz = rdI16(p + 4);
             p += 6;
             if (!vis) continue;
             emitModelVertex(bx, vx, vy, vz);
@@ -2085,7 +2085,7 @@ static void transformVertexList(uint8 far **pp) {
 /* seg001 0x0DF4 — transformModelVertices: precompute camera-space coordinates
  * for the shared vertex pool (the X/Y/Z coordinate tables indexed via buf3d3),
  * caching matrix*coordinate products so each tile object reuses them. */
-int far transformModelVerticesFar(void) {
+int16 FAR transformModelVerticesFar(void) {
     int16 *m = g_viewRotMatrix;
     int i;
     if (size3d3_3 == 0) return 0;
@@ -2120,7 +2120,7 @@ int far transformModelVerticesFar(void) {
 
 /* seg001 0x198A — processSceneObject opcode 0x3F: draw the object origin as a
  * single shaded point. */
-static void sceneObjPoint(uint8 far *p) {
+static void sceneObjPoint(uint8 FAR *p) {
     if (g_camTransYHi < 1) return;
     setVtxDepth(0, JOIN32(g_camTransYLo, g_camTransYHi));
     VCAMX(0) = g_camBaseX;
@@ -2147,7 +2147,7 @@ static int edgeRunColor(int depthHi) {
 
 /* seg001 0x1AF4 — processSceneObject opcode 0x3E: a run of distance-shaded
  * points. Two encodings, precomputed (loc_1B06) and on-the-fly (loc_19E8). */
-static void sceneObjEdgeRun(uint8 far *p) {
+static void sceneObjEdgeRun(uint8 FAR *p) {
     p += 2;
     g_edgeRunCount = *p++;
     if (g_offscreenRender != 0) {
@@ -2187,7 +2187,7 @@ static void sceneObjEdgeRun(uint8 far *p) {
  * its shade, build its combined orientation*view matrix, rotate+cull its faces,
  * project its vertices and draw its display list. */
 static void processSceneObject(void) {
-    uint8 far *p = (uint8 far *)g_modelStreamPtr;
+    uint8 FAR *p = (uint8 FAR *)g_modelStreamPtr;
     int16 op;
 
     if (g_dacSupported == 0) {
@@ -2235,13 +2235,13 @@ static void processSceneObject(void) {
 
 /* seg001 0x0A80 — insertSortedObject: store the current object's transform state
  * into a record and insert it into the depth-sorted list (farthest first). */
-static void insertSortedObject(uint8 far *p) {
+static void insertSortedObject(uint8 FAR *p) {
     int16 slot, i, pos;
     int32 depth;
     int16 dLo, dHi, shift;
     struct SortRec *r;
 
-    g_modelStreamPtr = (char far *)p;
+    g_modelStreamPtr = (char FAR *)p;
     if (g_sortedObjCount >= 35) {
         slot = g_sortList[0];
         for (i = 0; i < 34; i++) g_sortList[i] = g_sortList[i + 1];
@@ -2295,16 +2295,16 @@ static void insertSortedObject(uint8 far *p) {
 /* seg001 0x0BE7 thunk path — projectSceneObject: entry from the scene walk.
  * Transforms+culls the object origin, then either renders it immediately (when
  * coplanar with the viewer Z) or queues it into the depth-sorted list. */
-void far projectSceneObject(char far *model, int16 yaw, int16 pitch, int16 roll,
+void FAR projectSceneObject(char FAR *model, int16 yaw, int16 pitch, int16 roll,
                             int16 posX, int16 posY, int16 posZ) {
-    uint8 far *p;
+    uint8 FAR *p;
     int16 opcode, cl;
 
     g_objTransform[1] = yaw;
     g_objTransform[2] = pitch;
     g_objTransform[3] = roll;
     g_modelStreamPtr = model;
-    p = (uint8 far *)model;
+    p = (uint8 FAR *)model;
     g_objRenderMode = *p++; /* render-mode byte */
     g_objRelY = posY - g_viewPosY;
     g_objTransform[0] = posZ - g_viewPosZ;
@@ -2321,7 +2321,7 @@ void far projectSceneObject(char far *model, int16 yaw, int16 pitch, int16 roll,
         p++;
         g_objTransform[idx] = g_spinAngle;
     }
-    g_modelStreamPtr = (char far *)p;
+    g_modelStreamPtr = (char FAR *)p;
     if (cl & 0x40) {
         insertSortedObject(p);
     } else if (-g_viewPosZ == g_objTransform[0]) {
@@ -2415,21 +2415,21 @@ void far r3d_worldPointToCameraFar(int relY, int relZ, int relX,
 
 /* seg001 0x0CB4 thunk — rotatePoint3dFar: rotate the object origin on the
  * g_modelStreamPtr stream (used by the tac-map nearest-tile path). */
-int16 far rotatePoint3dFar(void) {
-    uint8 far *p = (uint8 far *)g_modelStreamPtr;
+int16 FAR rotatePoint3dFar(void) {
+    uint8 FAR *p = (uint8 FAR *)g_modelStreamPtr;
     rotatePoint3d(g_objTransform[0], g_objRelY, g_objRelX, &p);
-    g_modelStreamPtr = (char far *)p;
+    g_modelStreamPtr = (char FAR *)p;
     return 0;
 }
 
 /* seg001 0x1562 — transformAndCullObjectFar: cdecl entry (relX, relY, relZ). */
-int far transformAndCullObjectFar(int a, int b, int c) {
+int16 FAR transformAndCullObjectFar(int16 a, int16 b, int16 c) {
     return transformAndCullObject(b, c, a);
 }
 
-/* seg001 0x2853 — multiplyMatrix3x3Far: cdecl entry. matA/matB are pointers to
- * 9-element matrices. */
-int far multiplyMatrix3x3Far(const int16 *matA, const int16 *matB, int16 *result) {
+/* seg001 0x2853 — multiplyMatrix3x3Far: cdecl entry. matA/matB are near
+ * pointers to 9-element matrices; result is a near pointer. */
+int16 FAR multiplyMatrix3x3Far(const int16 *matA, const int16 *matB, int16 *result) {
     multiplyMatrix3x3(matA, matB, result);
     return 0;
 }

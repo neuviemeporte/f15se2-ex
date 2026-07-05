@@ -54,7 +54,7 @@ void updateFrame(void) {
             gameData->difficulty = 2;
             g_autopilotEngaged = 1;
             g_playerPlaneFlags |= 0x1000;
-            *(char far *)&commData->trainingFlag |= 1;
+            *(char FAR *)&commData->trainingFlag |= 1;
         }
         findWaypointFeatures();
         g_threatActiveTimer = 0;

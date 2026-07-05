@@ -8,6 +8,7 @@
  */
 #include "egtypes.h"
 #include "inttype.h"
+#include "pointers.h"
 #include "struct.h"
 #include "comm.h"
 #include <stdio.h>
@@ -699,7 +700,7 @@ int16 g_posVisibleFlag = 0;
 /* g_modelStreamPtr: model-data read cursor (far pointer into the loaded 3D model data).
  * egseg1/egcode advance it through the model byte stream as they decode shapes;
  * eg3dmap.c/eg3dproj.c walk it the same way. */
-char far *g_modelStreamPtr = 0;
+char FAR *g_modelStreamPtr = 0;
 int16 g_objRelX = 0;
 int16 g_objRelY = 0;
 /* g_objTransform: head of a 4-word run that storeObjTransformByOpcode indexes by a model opcode

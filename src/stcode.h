@@ -16,7 +16,7 @@ void clearRect(int16 *buf, int16 x, int16 y, int16 maxx, int16 maxy);
 void drawLineWrapper();
 void decodePic(SDL_IOStream *handle, int16 segment);
 void doNothing2(const char *msg, int16 a, int16 b, int16 c);
-void far pollJoystick();
-void far copyJoystickData(uint8 FAR *ptr);
+void FAR pollJoystick();
+void FAR copyJoystickData(uint8 FAR *ptr);
 
 #endif /* F15_SE2_STCODE */

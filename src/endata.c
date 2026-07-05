@@ -1,6 +1,7 @@
 /* endata.c — Data definitions
  */
 #include "inttype.h"
+#include "pointers.h"
 #include "struct.h"
 #include "endtypes.h"
 #include "comm.h"

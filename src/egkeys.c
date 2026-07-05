@@ -131,7 +131,7 @@ void keyDispatch(uint16 scanCode) {
     case SCAN_ALT_T:
         g_playerPlaneFlags ^= 0x1000;
         if (g_playerPlaneFlags & 0x1000) {
-            *(char far *)&commData->trainingFlag |= 1;
+            *(char FAR *)&commData->trainingFlag |= 1;
         }
         break;
     case SCAN_S:

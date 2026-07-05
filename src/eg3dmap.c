@@ -21,14 +21,14 @@
 #include <string.h>
 
 /* Private helpers for this translation unit. */
-void drawMapTiles(int originX, int originY, int zoomShift);
-void computeTileBounds(int *, int *, int *, int *);
-void worldToTileIndex(int, int, int *, int *);
-void drawMapTileObject(char far *, int, int);
-void drawModelPoint(int x, int y);
-void buildVertexSignMask(int screenX, int screenY);
-void projectModelVertices(int screenX, int screenY);
-int aspectScaleY(int screenY);
+void drawMapTiles(int16 originX, int16 originY, int16 zoomShift);
+void computeTileBounds(int16 *, int16 *, int16 *, int16 *);
+void worldToTileIndex(int16, int16, int16 *, int16 *);
+void drawMapTileObject(char FAR *, int16, int16);
+void drawModelPoint(int16 x, int16 y);
+void buildVertexSignMask(int16 screenX, int16 screenY);
+void projectModelVertices(int16 screenX, int16 screenY);
+int16 aspectScaleY(int16 screenY);
 
 // ==== seg000:0x2fda ====
 
@@ -177,7 +177,7 @@ void drawNearestTileObject(uint32 coord1, uint32 coord2, uint32 coord3) {
     }
     if (nearestTile.dist != 0x7fff) {
         g_curTileEntry = nearestTile.entry;
-        g_modelStreamPtr = (char far *)(g_world3dData + buf3d3[nearestTile.entry->shape]);
+        g_modelStreamPtr = (char FAR *)(g_world3dData + buf3d3[nearestTile.entry->shape]);
         g_objRelX = g_curTileEntry->x - g_viewPosX;
         g_objRelY = g_curTileEntry->y - g_viewPosY;
         g_objTransform[0] = g_curTileEntry->z - g_viewPosZ;
@@ -227,7 +227,7 @@ void drawMapTiles(int originX, int originY, int zoomShift) {
                         g_curTileEntry = matrix3dt_2[g_curLod][cell];
                         for (subIdx = 0; matrix3dt[g_curLod][cell] > subIdx; subIdx++) {
                             if (g_curTileEntry->z == 0) {
-                                g_modelStreamPtr = (char far *)(g_world3dData + buf3d3[g_curTileEntry->shape]);
+                                g_modelStreamPtr = (char FAR *)(g_world3dData + buf3d3[g_curTileEntry->shape]);
                                 drawMapTileObject(g_modelStreamPtr,
                                                   (g_curTileEntry->x >> (char)g_tileZoomShift) + screenX,
                                                   (g_curTileEntry->y >> (char)g_tileZoomShift) + screenY);
@@ -266,16 +266,16 @@ void worldToTileIndex(int worldX, int worldY, int *outCol, int *outRow) {
 }
 
 // ==== seg000:0x36d2 ====
-void drawMapTileObject(char far *modelData, int screenX, int screenY) {
-    *(char far **)&g_modelStreamPtr = modelData;
+void drawMapTileObject(char FAR *modelData, int16 screenX, int16 screenY) {
+    *(char FAR **)&g_modelStreamPtr = modelData;
     g_modelStreamPtr++;
     g_objDistance = 0;
     advanceModelPointerLod();
     if (g_curLod >= 3) {
-        if ((**(char far **)&g_modelStreamPtr & 0x40) != g_modelEvenOddBit)
+        if ((**(char FAR **)&g_modelStreamPtr & 0x40) != g_modelEvenOddBit)
             return;
     }
-    switch ((uint16)(uint8)**(char far **)&g_modelStreamPtr & 0x3f) {
+    switch ((uint16)(uint8)**(char FAR **)&g_modelStreamPtr & 0x3f) {
     case 0x3e:
         return;
     case 0x3f:
@@ -303,7 +303,7 @@ void buildVertexSignMask(int16 screenX, int16 screenY) {
     int16 edgeIdx;
 
     bit = 1L;
-    g_modelEdgeCount = (int16)(uint8)(*((*(char far **)&g_modelStreamPtr)++)) & 0x1f;
+    g_modelEdgeCount = (int16)(uint8)(*((*(char FAR **)&g_modelStreamPtr)++)) & 0x1f;
     g_vtxSignMaskLo = -1;
     g_vtxSignMaskHi = -1;
     *(char *)&g_modelWideVtxFlag = (g_modelEdgeCount > 16) ? 1 : 0;
@@ -329,12 +329,12 @@ void projectModelVertices(int screenX, int screenY) {
     int screenVtxX;
     int screenVtxY;
 
-    packed = (int16)(uint8)**(char far **)&g_modelStreamPtr & 0x80;
-    g_modelVtxCount = (int16)(uint8)(*(*(char far **)&g_modelStreamPtr)++) & 0x7F;
+    packed = (int16)(uint8)**(char FAR **)&g_modelStreamPtr & 0x80;
+    g_modelVtxCount = (int16)(uint8)(*(*(char FAR **)&g_modelStreamPtr)++) & 0x7F;
     for (vtxIdx = 0; vtxIdx < g_modelVtxCount; vtxIdx++) {
         g_modelStreamPtr += (uint8)g_modelWideVtxFlag * 2 + 2;
         if (packed != 0) {
-            vtxRef = (int16)(uint8)(*(*(char far **)&g_modelStreamPtr)++);
+            vtxRef = (int16)(uint8)(*(*(char FAR **)&g_modelStreamPtr)++);
             screenVtxX = (g_replayLog.vertexX[buf3d3_1[vtxRef]] >> g_tileZoomShift) + screenX;
             screenVtxY = (((int16 *)g_modelVertY)[buf3d3_2[vtxRef]] >> g_tileZoomShift) + screenY;
         } else {

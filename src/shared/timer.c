@@ -32,12 +32,12 @@ extern uint8 timerHandlerInstalled;
 /* Optional per-tick game callback. egame registers egAdvanceFrameTick here (the
  * frame-sync + DAC colour-cycle tick); NULL for start/end, which need no extra
  * per-tick work. */
-static void(far *gameTickHook)(void) = 0;
+static void(FAR *gameTickHook)(void) = 0;
 
 static Uint64 nextTickNs; /* clock time the next pending tick is due */
 static bool timerRunning = false;
 
-void setTimerTickHook(void(far *fn)(void)) {
+void setTimerTickHook(void(FAR *fn)(void)) {
     gameTickHook = fn;
 }
 

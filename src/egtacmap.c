@@ -22,11 +22,7 @@
 #include <string.h>
 
 /* Private helpers for this translation unit. */
-<<<<<<< HEAD
-void __cdecl egDrawStringCentered(int16 *, const char *, int, int, int);
-=======
 void drawStringCentered(int16 *, const char *, int16, int16, int16);
->>>>>>> accc598 (more int->int16)
 void renderHudFrame();
 int16 mapXToScreen();
 int16 mapYToScreen();
@@ -208,11 +204,6 @@ void initTacMapView(void) {
 }
 
 // ==== seg000:0x95c9 ====
-<<<<<<< HEAD
-=======
-void redrawTacMap(int16 centerX, int16 centerY) {
-    int16 screenX, screenY, idx, c, savedPage;
->>>>>>> accc598 (more int->int16)
 
 /* Recompute the map centre and render the terrain + plane/waypoint markers into
  * the left-MFD region. Shared by redrawTacMap (which then caches the region to
@@ -251,7 +242,7 @@ static void renderTacMapContent(int centerX, int centerY) {
     }
 }
 
-void redrawTacMap(int centerX, int centerY) {
+void redrawTacMap(int16 centerX, int16 centerY) {
     g_mapMode = 0;
     if (g_hudVisible == 0) {
         return;
