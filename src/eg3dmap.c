@@ -275,7 +275,7 @@ void drawMapTileObject(char FAR *modelData, int16 screenX, int16 screenY) {
         if ((**(char FAR **)&g_modelStreamPtr & 0x40) != g_modelEvenOddBit)
             return;
     }
-    switch ((uint16)(uint8)**(char FAR **)&g_modelStreamPtr & 0x3f) {
+    switch ((uint16)(uint8) * *(char FAR **)&g_modelStreamPtr & 0x3f) {
     case 0x3e:
         return;
     case 0x3f:
@@ -329,7 +329,7 @@ void projectModelVertices(int screenX, int screenY) {
     int screenVtxX;
     int screenVtxY;
 
-    packed = (int16)(uint8)**(char FAR **)&g_modelStreamPtr & 0x80;
+    packed = (int16)(uint8) * *(char FAR **)&g_modelStreamPtr & 0x80;
     g_modelVtxCount = (int16)(uint8)(*(*(char FAR **)&g_modelStreamPtr)++) & 0x7F;
     for (vtxIdx = 0; vtxIdx < g_modelVtxCount; vtxIdx++) {
         g_modelStreamPtr += (uint8)g_modelWideVtxFlag * 2 + 2;
