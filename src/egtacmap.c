@@ -107,7 +107,10 @@ void renderHudFrame(int unused) {
                     setDrawColor(COLOR_LIGHTGRAY);
                     for (angle = 0; angle <= 0x100; angle += 0x10) {
                         angleFixed = angle << 8;
-                        circleX = sinMul(angleFixed, 40) + 159;
+                        /* X radius 42 (not the original 40) so the A2A ring reads as
+                         * a true circle on the non-square-pixel display: 84 wide x 70
+                         * tall x the 1.2 present aspect = round. */
+                        circleX = sinMul(angleFixed, 42) + 159;
                         circleY = -(cosMul(angleFixed, 35) - 56);
                         if (angle != 0) drawViewportLine(circleX, circleY, prevX, prevY);
                         prevX = circleX;

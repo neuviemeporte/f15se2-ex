@@ -383,7 +383,10 @@ static void gl_releaseMesh(R3DMesh mesh) { (void)mesh; }
 static void buildProjection(int Wv, int Hv, int cx, int cy, float fGate) {
     float ax = 1.0f / (128.0f * Wv);
     float az = 2.0f * (float)cx / Wv - 1.0f;
-    float by = 3.0f / (512.0f * Hv);
+    /* Y focal boosted from the original 3/(512 Hv) to 5/(768 Hv): the original baked
+     * a 3/4 grid Y-aspect (a DOS cost-saving) that left 3D ~10% wide even after the
+     * 1.2 aspect-corrected present. 5/6 grid x 1.2 present = geometrically round. */
+    float by = 5.0f / (768.0f * Hv);
     float bz = 1.0f - 2.0f * (float)cy / Hv;
     /* Depth: NDC_z = -1 at dNear, +1 at fGate (w = depth, ~= world forward
      * distance). Keep dNear as large as the closest geometry allows: with a tiny
