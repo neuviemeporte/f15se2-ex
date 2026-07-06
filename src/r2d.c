@@ -96,6 +96,15 @@ R2DImage *r2d_captureImage(SDL_Surface *src, int x, int y, int w, int h) {
     return img;
 }
 
+R2DImage *r2d_imageFromSurface(SDL_Surface *surf) {
+    R2DImage *img;
+    if (!surf) return NULL;
+    img = (R2DImage *)SDL_calloc(1, sizeof(*img));
+    if (!img) return NULL;
+    img->surf = surf;   /* adopted; any format (INDEX8 or RGBA) */
+    return img;
+}
+
 SDL_Surface *r2d_imageSurface(R2DImage *img) { return img ? img->surf : NULL; }
 
 void r2d_drawImage(R2DImage *img, int srcX, int srcY, int w, int h,
@@ -189,10 +198,29 @@ void r2d_submitImage(R2DImage *img, int srcX, int srcY, int w, int h,
         p->img = img;
         p->srcX = (short)srcX; p->srcY = (short)srcY;
         p->imgW = (short)w; p->imgH = (short)h;
+        p->x2 = (short)w; p->y2 = (short)h;   /* 1:1: dest footprint == source size */
         p->key = (short)key;
     } else if (s_swImage) {
         s_swImage(img, srcX, srcY, w, h, dstX, dstY, key);
     }
+}
+
+void r2d_submitImageScaled(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
+                           int dstX, int dstY, int dstW, int dstH, int key) {
+    R2DOverlayPrim *p;
+    /* GL-only (HD art). Off a vector frame there is nothing to record and no
+     * software scaled-blit, so drop — callers fall back to the legacy sprite. */
+    if (!img || !r2d_vectorActive()) return;
+    p = primGrow();
+    if (!p) return;
+    p->kind = R2D_PRIM_IMAGE;
+    p->color = 0;
+    p->x1 = (short)dstX; p->y1 = (short)dstY;
+    p->x2 = (short)dstW; p->y2 = (short)dstH;
+    p->img = img;
+    p->srcX = (short)srcX; p->srcY = (short)srcY;
+    p->imgW = (short)srcW; p->imgH = (short)srcH;
+    p->key = (short)key;
 }
 
 /* Set for the duration of a GL flight frame (between gl_beginScene's main 3D view

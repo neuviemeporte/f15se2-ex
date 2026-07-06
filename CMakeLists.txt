@@ -42,7 +42,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #==============================================================================
 if(DOWNLOAD_DEPENDENCIES)
     # Use a system SDL3 if one is available, otherwise build it from source.
-    find_package(SDL3 3.2.0 QUIET CONFIG COMPONENTS SDL3)
+    find_package(SDL3 3.4.0 QUIET CONFIG COMPONENTS SDL3)
 endif()
 
 if(SDL3_FOUND)
@@ -54,13 +54,13 @@ else()
         FetchContent_Declare(
             SDL3
             GIT_REPOSITORY "https://github.com/libsdl-org/SDL.git"
-            GIT_TAG "release-3.2.6"
+            GIT_TAG "release-3.4.12"
             UPDATE_DISCONNECTED TRUE
         )
         FetchContent_MakeAvailable(SDL3)
     else()
         # DOWNLOAD_DEPENDENCIES is off: a system SDL3 is mandatory.
-        find_package(SDL3 3.2.0 REQUIRED CONFIG COMPONENTS SDL3)
+        find_package(SDL3 3.4.0 REQUIRED CONFIG COMPONENTS SDL3)
     endif()
 endif()
 
@@ -113,6 +113,7 @@ set(F15SE2_SOURCES
     ${SRC_DIR}/log.c
     ${SRC_DIR}/gfx_impl.c
     ${SRC_DIR}/joystick.c
+    ${SRC_DIR}/hdsprite.c
 
     # start
     ${SRC_DIR}/stmain.c
@@ -332,6 +333,14 @@ if(WIN32)
         $<TARGET_FILE_DIR:f15se2>
     )
 endif()
+
+# HD assets (optional high-res sprite art, GPU backends only) live in assets/ and are
+# mirrored next to the binary so the runtime finds them relative to the working dir.
+add_custom_command(TARGET f15se2 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets
+    $<TARGET_FILE_DIR:f15se2>/assets
+)
 
 #==============================================================================
 # Behavior tests

@@ -10,6 +10,7 @@
 #include "log.h"
 #include "gfx.h"
 #include "r2d.h"
+#include "hdsprite.h"
 #include "const.h"
 
 #include "comm.h"
@@ -149,7 +150,9 @@ void drawTacticalMap(char page) {
     }
     projectMapPoint(g_viewX_, g_viewY_);
     if (g_projDepth != -1) {
-        blitGaugeSprite(0, 3, vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo);
+        if (!hdsprite_drawRadarOwnship(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo)) {
+            blitGaugeSprite(0, 3, vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo);
+        }
     }
     for (i = 0; i < 4; i++) {
         if (mapEvents[i].ttl != 0) {

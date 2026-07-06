@@ -76,6 +76,13 @@ R2DImage *r2d_registerImage(int w, int h);
  * later). NULL on failure. */
 R2DImage *r2d_captureImage(struct SDL_Surface *src, int x, int y, int w, int h);
 
+/* Adopt an already-decoded SDL surface as an image (takes ownership; freed by
+ * r2d_releaseImage). Unlike r2d_registerImage/r2d_captureImage — which make INDEX8
+ * paletted images — the surface may be any format, e.g. an RGBA HD sprite loaded
+ * from PNG; the GL backend uploads a non-INDEX8 surface directly (no palette). NULL
+ * on NULL input. */
+R2DImage *r2d_imageFromSurface(struct SDL_Surface *surf);
+
 /* The image's backing surface, for code that fills it directly (the PIC decoder
  * decodes into this). NULL if img is NULL. */
 struct SDL_Surface *r2d_imageSurface(R2DImage *img);
@@ -115,7 +122,9 @@ typedef struct {
     unsigned char kind;   /* R2D_PRIM_LINE / _POINT / _IMAGE / _POLY */
     unsigned char color;  /* VGA palette index (line / point / poly fill) */
     short x1, y1, x2, y2; /* line/point: absolute 320-space, clipped to the page.
-                           * image: (x1,y1) is the destination corner.
+                           * image: (x1,y1) is the destination corner; (x2,y2) is the
+                           * destination footprint (320-space) — equal to (imgW,imgH)
+                           * for a 1:1 sprite, smaller/larger for a scaled HD sprite.
                            * poly: unused (vertices live in the poly pool). */
     /* image submission (kind == R2D_PRIM_IMAGE): the sub-rect of `img` to draw.
      * poly submission (kind == R2D_PRIM_POLY): srcX = first vertex index into the
@@ -193,6 +202,15 @@ void r2d_registerSoftwarePrims(void (*line)(int x1, int y1, int x2, int y2, int 
  * as the lines, so sprites and vectors stay ordered. */
 void r2d_submitImage(R2DImage *img, int srcX, int srcY, int w, int h,
                      int dstX, int dstY, int key);
+
+/* Submit an image drawn into a destination footprint (dstW,dstH in 320-space) that
+ * may differ from the source sub-rect size — i.e. a scaled sprite. Used for HD art:
+ * a large RGBA source drawn into the small 320-space footprint of the legacy sprite
+ * it replaces, sharp at native window resolution. GL-only: records into the ordered
+ * overlay stream (a no-op when vector recording is inactive, since the software
+ * backend has no scaled-blit path and HD art is gated to GPU backends). */
+void r2d_submitImageScaled(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
+                           int dstX, int dstY, int dstW, int dstH, int key);
 
 /* The software backend registers how it rasterizes a submitted image into the
  * back buffer (r2d need not own the page surface). */

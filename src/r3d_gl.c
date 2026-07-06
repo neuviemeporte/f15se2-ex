@@ -1379,6 +1379,15 @@ static void gl_imageDestroyed(R2DImage *img) {
  * only when the palette generation moved since it was uploaded. Index 0 becomes
  * the transparent texel (alpha 0) — the sprite transparency key is always 0; an
  * opaque draw (key<0) disables blend at draw time so alpha is ignored. */
+/* HD (RGBA) sprites downscale from a large source into a small footprint, so they
+ * want smooth filtering rather than the pixel-art NEAREST of the paletted sprites. */
+static void setHdTexParams(void) {
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+}
+
 static GLuint imageTexture(R2DImage *img, SDL_Palette *pal, int palGen) {
     GLuint tex = (GLuint)r2d_imageCacheTex(img);
     SDL_Surface *surf = r2d_imageSurface(img);
@@ -1387,9 +1396,27 @@ static GLuint imageTexture(R2DImage *img, SDL_Palette *pal, int palGen) {
     int sw, sh, pitch, x, y;
 
     if (!surf) return 0;
-    if (tex && r2d_imageCacheGen(img) == palGen) return tex;
     sw = surf->w;
     sh = surf->h;
+    if (surf->format != SDL_PIXELFORMAT_INDEX8) {
+        /* HD RGBA sprite: palette-independent, so upload once and reuse (the cache
+         * gen is irrelevant — a nonzero tex means it is already built). Copy rows to
+         * a tight RGBA scratch in case the surface pitch is padded. */
+        if (tex) return tex;
+        rgba = ensureRgbaScratch(sw * sh * 4);
+        if (!rgba) return 0;
+        for (y = 0; y < sh; y++)
+            SDL_memcpy(rgba + (size_t)y * sw * 4,
+                       (const uint8 *)surf->pixels + (size_t)y * surf->pitch,
+                       (size_t)sw * 4);
+        glGenTextures(1, &tex);
+        glBindTexture(GL_TEXTURE_2D, tex);
+        setHdTexParams();
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, sw, sh, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+        r2d_imageSetCache(img, (unsigned int)tex, palGen);
+        return tex;
+    }
+    if (tex && r2d_imageCacheGen(img) == palGen) return tex;
     rgba = ensureRgbaScratch(sw * sh * 4);
     if (!rgba) return 0;
     src = (const uint8 *)surf->pixels;
@@ -1615,8 +1642,10 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
                     v1 = (float)(p->srcY + p->imgH) / (float)surf->h;
                     x0 = SDL_floorf((float)lbx + (float)p->x1 * scaleX - shake + 0.5f);
                     y0 = SDL_floorf((float)lby + (float)p->y1 * scaleY + 0.5f);
-                    x1q = x0 + SDL_floorf((float)p->imgW * scaleX + 0.5f);
-                    y1q = y0 + SDL_floorf((float)p->imgH * scaleY + 0.5f);
+                    /* Dest footprint (x2,y2) == source size for 1:1 sprites; smaller
+                     * for a scaled HD sprite. */
+                    x1q = x0 + SDL_floorf((float)p->x2 * scaleX + 0.5f);
+                    y1q = y0 + SDL_floorf((float)p->y2 * scaleY + 0.5f);
                     glBegin(GL_QUADS);
                     glTexCoord2f(u0, v0); glVertex2f(x0, y0);
                     glTexCoord2f(u1, v0); glVertex2f(x1q, y0);
