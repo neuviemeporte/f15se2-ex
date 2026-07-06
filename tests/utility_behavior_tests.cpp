@@ -182,7 +182,7 @@ int main() {
     strcpyFromDot(filenameWithDot, ".3D3");
     require(std::strcmp(filenameWithDot, "IRAN.3D3") == 0,
             "strcpyFromDot replaces from the first dot");
-    char filenameWithoutDot[] = "DESERT";
+    char filenameWithoutDot[12] = "DESERT";
     strcpyFromDot(filenameWithoutDot, ".3dG");
     require(std::strcmp(filenameWithoutDot, "DESERT.3dG") == 0,
             "strcpyFromDot appends when no dot is present");

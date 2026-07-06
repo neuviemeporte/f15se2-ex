@@ -161,7 +161,7 @@ int far misc_getKey(void) {
 
 int main() {
     char pathWithDot[] = "REGN.XYZ";
-    char pathWithoutDot[] = "REGN";
+    char pathWithoutDot[12] = "REGN";
 
     replaceExtension(pathWithDot, ".3dG");
     require(std::strcmp(pathWithDot, "REGN.3dG") == 0,
