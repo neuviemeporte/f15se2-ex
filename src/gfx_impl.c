@@ -394,17 +394,20 @@ static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake) {
     SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
 
     SDL_GetRenderOutputSize(sdlRenderer, &win_w, &win_h);
-    r2d_computeMapping(surf->w, surf->h, win_w, win_h, &m);
+    /* Square pixels: the software path presents the 320x200 page uniformly scaled
+     * (fast, "fat" look). Non-square aspect correction here is an opt-in later step
+     * (a present-time SDL stretch), not the default. */
+    r2d_computeMapping(surf->w, surf->h, win_w, win_h, 1, &m);
 
     SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 255);
     SDL_RenderClear(sdlRenderer);
     /* Explosion screen-shake: the original jittered the CRTC display-start byte
      * (gfx_dacCycle); natively we shift the presented frame left by the same 0-3
      * virtual pixels (scaled to window space). */
-    dst.x = (float)m.offX - (float)shake * m.scale;
+    dst.x = (float)m.offX - (float)shake * m.scaleX;
     dst.y = (float)m.offY;
-    dst.w = (float)surf->w * m.scale;
-    dst.h = (float)surf->h * m.scale;
+    dst.w = (float)surf->w * m.scaleX;
+    dst.h = (float)surf->h * m.scaleY;
     SDL_RenderTexture(sdlRenderer, tex, NULL, &dst);
     SDL_RenderPresent(sdlRenderer);
     SDL_DestroyTexture(tex);

@@ -35,16 +35,27 @@ struct SDL_Surface;
  * of-box pixels are clipped to the window, NOT to the virtual box. No stock call
  * site relies on this; the stock UI never leaves the box.
  */
+/* Target display aspect ratio of the virtual box. VGA 13h (320x200) and the EGA
+ * title (640x350) were both shown on a 4:3 CRT, so their pixels were non-square;
+ * aspect-correcting a mapping stretches the box to this ratio (see squarePixels). */
+#define TARGET_DAR (4.0f / 3.0f)
+
 typedef struct {
-    int   virtW, virtH;  /* virtual (authoring) resolution */
-    int   winW, winH;    /* real window framebuffer size in pixels */
-    float scale;         /* window pixels per virtual pixel (uniform) */
-    int   offX, offY;    /* top-left of the centred virtual box, window pixels */
+    int   virtW, virtH;    /* virtual (authoring) resolution */
+    int   winW, winH;      /* real window framebuffer size in pixels */
+    float scaleX, scaleY;  /* window pixels per virtual pixel, per axis. Equal when
+                            * squarePixels; scaleY = scaleX * parY when aspect-
+                            * corrected (parY = (virtW/virtH)/TARGET_DAR, = 1.2 for
+                            * 320x200) so the box displays at TARGET_DAR. */
+    int   offX, offY;      /* top-left of the centred virtual box, window pixels */
 } R2DMapping;
 
-/* Fit a virtW x virtH virtual box into a winW x winH window preserving aspect
- * (uniform scale, centred). The one place the letterbox math lives. */
-void r2d_computeMapping(int virtW, int virtH, int winW, int winH, R2DMapping *out);
+/* Fit a virtW x virtH virtual box into a winW x winH window (uniform DS scale,
+ * centred). The one place the letterbox math lives. When squarePixels is 0 the box
+ * is aspect-corrected to TARGET_DAR (non-square pixels, scaleY > scaleX); when 1 the
+ * pixels stay square (scaleX == scaleY) — the fast/legacy present. */
+void r2d_computeMapping(int virtW, int virtH, int winW, int winH,
+                        int squarePixels, R2DMapping *out);
 
 /*
  * Image submission API.

@@ -111,17 +111,24 @@ void r2d_releaseImage(R2DImage *img) {
     SDL_free(img);
 }
 
-void r2d_computeMapping(int virtW, int virtH, int winW, int winH, R2DMapping *out) {
+void r2d_computeMapping(int virtW, int virtH, int winW, int winH,
+                        int squarePixels, R2DMapping *out) {
+    /* parY stretches the box vertically so it displays at TARGET_DAR (the DS box is
+     * virtW x virtH*parY, square-pixel); 1.0 keeps square pixels (legacy present). */
+    float parY = squarePixels ? 1.0f
+                              : ((float)virtW / (float)virtH) / TARGET_DAR;
+    float dispH = (float)virtH * parY;
     float sw = (float)winW / (float)virtW;
-    float sh = (float)winH / (float)virtH;
-    float s = sw < sh ? sw : sh;
+    float sh = (float)winH / dispH;
+    float s = sw < sh ? sw : sh;  /* uniform DS scale that fits the window */
     out->virtW = virtW;
     out->virtH = virtH;
     out->winW = winW;
     out->winH = winH;
-    out->scale = s;
-    out->offX = (int)((winW - virtW * s) * 0.5f);
-    out->offY = (int)((winH - virtH * s) * 0.5f);
+    out->scaleX = s;
+    out->scaleY = s * parY;
+    out->offX = (int)((winW - virtW * out->scaleX) * 0.5f);
+    out->offY = (int)((winH - virtH * out->scaleY) * 0.5f);
 }
 
 static void (*s_swPresent)(struct SDL_Surface *page, int shakeOffset);

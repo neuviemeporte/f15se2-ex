@@ -536,7 +536,7 @@ static void beginModelPass(void) {
  * preserved; the model's blips/labels still draw into the page (over the model). */
 static void gl_beginSubScene(const R3DScene *s) {
     int win_w, win_h, vpTop, vpBot, vpLeft, vpRight, Wv, Hv, lbx, lby, gx, gy, gw, gh;
-    float scale, fGate;
+    float scaleX, scaleY, fGate;
     SDL_Surface *page;
     SDL_Palette *pal;
 
@@ -570,16 +570,17 @@ static void gl_beginSubScene(const R3DScene *s) {
     SDL_GetWindowSizeInPixels(s_win, &win_w, &win_h);
     {
         R2DMapping m;
-        r2d_computeMapping(LOGICAL_WIDTH, LOGICAL_HEIGHT, win_w, win_h, &m);
-        scale = m.scale;
+        r2d_computeMapping(LOGICAL_WIDTH, LOGICAL_HEIGHT, win_w, win_h, 0, &m);
+        scaleX = m.scaleX;
+        scaleY = m.scaleY;
         lbx = m.offX;
         lby = m.offY;
     }
-    s_pixelScale = scale;
-    gx = lbx + (int)(vpLeft * scale);
-    gw = (int)(Wv * scale);
-    gh = (int)(Hv * scale);
-    gy = win_h - (lby + (int)(vpTop * scale)) - gh;
+    s_pixelScale = scaleX;
+    gx = lbx + (int)(vpLeft * scaleX);
+    gw = (int)(Wv * scaleX);
+    gh = (int)(Hv * scaleY);
+    gy = win_h - (lby + (int)(vpTop * scaleY)) - gh;
 
     /* Snapshot the page's MFD region as the backdrop, THEN punch it show-through. */
     page = gfx_getCurPageSurface();
@@ -631,7 +632,7 @@ static void gl_beginSubScene(const R3DScene *s) {
 
 static void gl_beginScene(const R3DScene *s) {
     int win_w, win_h, vpTop, vpBot, vpLeft, vpRight, Wv, Hv, lbx, lby;
-    float scale, fGate, sphOrtho[4];
+    float scaleX, scaleY, fGate, sphOrtho[4];
     int16 skyIdx;
     SDL_Surface *page;
 
@@ -680,12 +681,13 @@ static void gl_beginScene(const R3DScene *s) {
      * the 3D viewport stays aligned with the pillarboxed HUD. */
     {
         R2DMapping m;
-        r2d_computeMapping(LOGICAL_WIDTH, LOGICAL_HEIGHT, win_w, win_h, &m);
-        scale = m.scale;
+        r2d_computeMapping(LOGICAL_WIDTH, LOGICAL_HEIGHT, win_w, win_h, 0, &m);
+        scaleX = m.scaleX;
+        scaleY = m.scaleY;
         lbx = m.offX;
         lby = m.offY;
     }
-    s_pixelScale = scale;
+    s_pixelScale = scaleX;
 
     /* Clear the whole window (including the letterbox bars) to black; the 3D
      * viewport region is re-cleared to the sky colour once scissored below. */
@@ -699,10 +701,10 @@ static void gl_beginScene(const R3DScene *s) {
      * uniform letterbox scale keeps the same proportions as 640x400 at any size.
      * gx/gw/gy/gh is the centred 4:3 sub-rect the letterboxed UI quad occupies. */
     {
-        int gx = lbx + (int)(vpLeft * scale);
-        int gw = (int)(Wv * scale);
-        int gh = (int)(Hv * scale);
-        int gy = win_h - (lby + (int)(vpTop * scale)) - gh;
+        int gx = lbx + (int)(vpLeft * scaleX);
+        int gw = (int)(Wv * scaleX);
+        int gh = (int)(Hv * scaleY);
+        int gy = win_h - (lby + (int)(vpTop * scaleY)) - gh;
         if (s_wide) {
             /* Render the 3D across the WHOLE window and remap the projection so the
              * central 320-space region still lands on exactly the gx/gw/gy/gh pixels
@@ -728,10 +730,10 @@ static void gl_beginScene(const R3DScene *s) {
             r3d_setObjCullWiden(win_w, gw, win_h, gh);
             /* Sphere ortho spanning the full window with the same central mapping:
              * window x=gx -> virtual 0, x=gx+gw -> virtual Wv (scale px/virtual). */
-            sphOrtho[0] = -(float)gx / scale;                                  /* left  */
-            sphOrtho[1] = sphOrtho[0] + (float)win_w / scale;                  /* right */
-            sphOrtho[3] = -((float)lby + (float)vpTop * scale) / scale;        /* top   */
-            sphOrtho[2] = ((float)win_h - ((float)lby + (float)vpTop * scale)) / scale; /* bottom */
+            sphOrtho[0] = -(float)gx / scaleX;                                  /* left  */
+            sphOrtho[1] = sphOrtho[0] + (float)win_w / scaleX;                  /* right */
+            sphOrtho[3] = -((float)lby + (float)vpTop * scaleY) / scaleY;       /* top   */
+            sphOrtho[2] = ((float)win_h - ((float)lby + (float)vpTop * scaleY)) / scaleY; /* bottom */
         } else {
             glViewport(gx, gy, gw, gh);
             glScissor(gx, gy, gw, gh);
@@ -1415,7 +1417,7 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
     const uint8 *src;
     int pitch;
     GLuint tex;
-    float shake, scale;
+    float shake, scaleX, scaleY;
 
     if (!page || !s_active) return;
     w = page->w;
@@ -1447,10 +1449,11 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
      * letterbox so the overlay stays aligned and unstretched. */
     {
         R2DMapping m;
-        r2d_computeMapping(w, h, win_w, win_h, &m);
-        scale = m.scale;
-        qw = (int)(w * scale);
-        qh = (int)(h * scale);
+        r2d_computeMapping(w, h, win_w, win_h, 0, &m);
+        scaleX = m.scaleX;
+        scaleY = m.scaleY;
+        qw = (int)(w * scaleX);
+        qh = (int)(h * scaleY);
         lbx = m.offX;
         lby = m.offY;
     }
@@ -1489,7 +1492,7 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    shake = shakeOffset * scale;
+    shake = shakeOffset * scaleX;
     {
         float x0 = lbx - shake, y0 = (float)lby;
         float x1 = lbx + qw - shake, y1 = (float)(lby + qh);
@@ -1517,7 +1520,7 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
         const short *polyV = r2d_overlayPolyVerts();
         SDL_Palette *vpal = gfx_getPalette();
         int palGen = gfx_paletteGeneration();
-        float lw = scale < 1.0f ? 1.0f : scale;
+        float lw = scaleY < 1.0f ? 1.0f : scaleY;
         for (i = 0; i < n && vpal; ) {
             unsigned char kind = prims[i].kind;
             int j = i;
@@ -1529,22 +1532,22 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
                     const R2DOverlayPrim *p = &prims[i];
                     SDL_Color c = vpal->colors[p->color];
                     glColor3ub(c.r, c.g, c.b);
-                    glVertex2f((float)lbx + ((float)p->x1 + 0.5f) * scale - shake,
-                               (float)lby + ((float)p->y1 + 0.5f) * scale);
-                    glVertex2f((float)lbx + ((float)p->x2 + 0.5f) * scale - shake,
-                               (float)lby + ((float)p->y2 + 0.5f) * scale);
+                    glVertex2f((float)lbx + ((float)p->x1 + 0.5f) * scaleX - shake,
+                               (float)lby + ((float)p->y1 + 0.5f) * scaleY);
+                    glVertex2f((float)lbx + ((float)p->x2 + 0.5f) * scaleX - shake,
+                               (float)lby + ((float)p->y2 + 0.5f) * scaleY);
                 }
                 glEnd();
             } else if (kind == R2D_PRIM_POINT) {
-                /* Points (pitch-ladder marks) as scale x scale cells so they keep
-                 * their pixel footprint at native size. */
+                /* Points (pitch-ladder marks) as one virtual-pixel cells (scaleX x
+                 * scaleY) so they keep their footprint at native, non-square size. */
                 glBegin(GL_QUADS);
                 for (; i < j; i++) {
                     const R2DOverlayPrim *p = &prims[i];
                     SDL_Color c = vpal->colors[p->color];
-                    float x0 = (float)lbx + (float)p->x1 * scale - shake;
-                    float y0 = (float)lby + (float)p->y1 * scale;
-                    float x1q = x0 + scale, y1q = y0 + scale;
+                    float x0 = (float)lbx + (float)p->x1 * scaleX - shake;
+                    float y0 = (float)lby + (float)p->y1 * scaleY;
+                    float x1q = x0 + scaleX, y1q = y0 + scaleY;
                     glColor3ub(c.r, c.g, c.b);
                     glVertex2f(x0, y0);
                     glVertex2f(x1q, y0);
@@ -1564,17 +1567,17 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
                     SDL_Color c = vpal->colors[p->color];
                     const short *v = polyV + (int)p->srcX * 2;
                     int k, nv = p->srcY;
-                    float sx0 = (float)lbx + (float)p->x1 * scale - shake;
-                    float sx1 = (float)lbx + (float)p->x2 * scale - shake;
-                    float sy1w = (float)lby + (float)p->y1 * scale;
-                    float sy2w = (float)lby + (float)p->y2 * scale;
+                    float sx0 = (float)lbx + (float)p->x1 * scaleX - shake;
+                    float sx1 = (float)lbx + (float)p->x2 * scaleX - shake;
+                    float sy1w = (float)lby + (float)p->y1 * scaleY;
+                    float sy2w = (float)lby + (float)p->y2 * scaleY;
                     glScissor((int)sx0, (int)((float)win_h - sy2w),
                               (int)(sx1 - sx0), (int)(sy2w - sy1w));
                     glColor3ub(c.r, c.g, c.b);
                     glBegin(GL_POLYGON);
                     for (k = 0; k < nv; k++)
-                        glVertex2f((float)lbx + ((float)v[k * 2] + 0.5f) * scale - shake,
-                                   (float)lby + ((float)v[k * 2 + 1] + 0.5f) * scale);
+                        glVertex2f((float)lbx + ((float)v[k * 2] + 0.5f) * scaleX - shake,
+                                   (float)lby + ((float)v[k * 2 + 1] + 0.5f) * scaleY);
                     glEnd();
                 }
                 glDisable(GL_SCISSOR_TEST);
@@ -1607,10 +1610,10 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
                     v0 = (float)p->srcY / (float)surf->h;
                     u1 = (float)(p->srcX + p->imgW) / (float)surf->w;
                     v1 = (float)(p->srcY + p->imgH) / (float)surf->h;
-                    x0 = SDL_floorf((float)lbx + (float)p->x1 * scale - shake + 0.5f);
-                    y0 = SDL_floorf((float)lby + (float)p->y1 * scale + 0.5f);
-                    x1q = x0 + SDL_floorf((float)p->imgW * scale + 0.5f);
-                    y1q = y0 + SDL_floorf((float)p->imgH * scale + 0.5f);
+                    x0 = SDL_floorf((float)lbx + (float)p->x1 * scaleX - shake + 0.5f);
+                    y0 = SDL_floorf((float)lby + (float)p->y1 * scaleY + 0.5f);
+                    x1q = x0 + SDL_floorf((float)p->imgW * scaleX + 0.5f);
+                    y1q = y0 + SDL_floorf((float)p->imgH * scaleY + 0.5f);
                     glBegin(GL_QUADS);
                     glTexCoord2f(u0, v0); glVertex2f(x0, y0);
                     glTexCoord2f(u1, v0); glVertex2f(x1q, y0);
