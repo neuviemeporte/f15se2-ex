@@ -22,7 +22,7 @@
 #include <string.h>
 
 /* Private helpers for this translation unit. */
-void drawStringCentered(int16 *, const char *, int16, int16, int16);
+void egDrawStringCentered(int16 *, const char *, int16, int16, int16);
 void renderHudFrame();
 int16 mapXToScreen();
 int16 mapYToScreen();

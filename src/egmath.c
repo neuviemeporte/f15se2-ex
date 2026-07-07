@@ -1,5 +1,4 @@
 // seg000 optimized code (/Ot)
-#include "inttype.h"
 #include "eg3dcam.h"
 #include "eg3dload.h"
 #include "eg3dmap.h"
@@ -16,13 +15,14 @@
 #include "const.h"
 #include "r3d.h"
 
-#include "dos_compat.h"
+#include <dos.h>
 #include <memory.h>
 
 // ==== seg000:0xc8de ====
 
 void load15Flt3d3() {
-    int16 bytesLeft, chunkSize;
+    int16 bytesLeft;
+    int16 chunkSize;
     struct SREGS segs;
     char FAR *dest;
     strcpyFromDot(a15flt_xxx, ".3D3");
@@ -50,10 +50,12 @@ void load15Flt3d3() {
 void drawWorldObject(int16 shapeId, int32 worldX, int32 worldY, int16 altitude, int16 objYaw, int16 objPitch, int16 objRoll, int16 scaleShift) {
     int16 *drawPg;
     int16 dataOff;
-    int32 relX, relY;
-    int16 altDiff, shiftAmt;
-    int efx = 0, efy = 0, efz = 0;
-    int vfx, vfy, vfz;
+    int32 relX;
+    int32 relY;
+    int16 altDiff;
+    int16 shiftAmt;
+    int16 efx = 0, efy = 0, efz = 0;
+    int16 vfx, vfy, vfz;
 
     dataOff = shapeDataOffset(shapeId);
     drawPg = g_pageFront;
@@ -79,9 +81,9 @@ void drawWorldObject(int16 shapeId, int32 worldX, int32 worldY, int16 altitude, 
         vfy = efy << scaleShift;
         vfz = efz << scaleShift;
     } else if (scaleShift < 0) {
-        /* full int, not just the low byte: native shift uses all 32 bits */
-        long preX = relX, preY = relY;
-        int preZ = altDiff;
+        /* full int16, not just the low byte: native shift uses all 32 bits */
+        int32 preX = relX, preY = relY;
+        int16 preZ = altDiff;
         shiftAmt = -scaleShift;
         shiftLongRightInPlace(shiftAmt, &relX);
         shiftLongRightInPlace(shiftAmt, &relY);
@@ -91,16 +93,16 @@ void drawWorldObject(int16 shapeId, int32 worldX, int32 worldY, int16 altitude, 
          * the eye remainder — close objects (own plane in chase view,
          * just-fired missiles) otherwise step. Signs follow the submit below:
          * posX carries +relX, posY carries −relY, viewPosZ = −altDiff. */
-        vfx = (efx - ((int)(preX - (relX << shiftAmt)) << 8)) >> shiftAmt;
-        vfy = (((int)(preY - (relY << shiftAmt)) << 8) + efy) >> shiftAmt;
+        vfx = (efx - ((int16)(preX - (relX << shiftAmt)) << 8)) >> shiftAmt;
+        vfy = (((int16)(preY - (relY << shiftAmt)) << 8) + efy) >> shiftAmt;
         vfz = (efz - ((preZ - (altDiff << shiftAmt)) << 8)) >> shiftAmt;
     } else {
         vfx = efx;
         vfy = efy;
         vfz = efz;
     }
-    if ((long)(int16)labs(relX) < (long)0x7FFF) {
-        if ((long)(int16)labs(relY) < (long)0x7FFF) {
+    if ((int32)(int16)labs(relX) < (int32)0x7FFF) {
+        if ((int32)(int16)labs(relY) < (int32)0x7FFF) {
             setViewPosition(0, 0, -altDiff);
             setViewPositionFrac(vfx, vfy, vfz);
             g_curLod = 1;
@@ -113,15 +115,15 @@ void drawWorldObject(int16 shapeId, int32 worldX, int32 worldY, int16 altitude, 
     }
 }
 
-/* Transform one world point (worldX/worldY in drawWorldObject's long convention,
+/* Transform one world point (worldX/worldY in drawWorldObject's int32 convention,
  * altitude) into scene camera space, mirroring drawWorldObject's origin math at
  * scaleShift 0. A bare origin's projected screen position is scaleShift-invariant,
  * so this lands exactly where a smoke particle at the point would. Returns 1 if
  * the relative offset overflows int16 (too far — drop the endpoint). */
-static int worldPointToCamera(long worldX, long worldY, int altitude,
-                              long *baseX, long *camX, long *camY) {
-    long relX, relY;
-    int altDiff, shiftAmt;
+static int16 worldPointToCamera(int32 worldX, int32 worldY, int16 altitude,
+                              int32 *baseX, int32 *camX, int32 *camY) {
+    int32 relX, relY;
+    int16 altDiff, shiftAmt;
 
     relX = worldX - g_ViewX;
     relY = worldY + g_ViewY - 0x01000000L;
@@ -136,8 +138,8 @@ static int worldPointToCamera(long worldX, long worldY, int altitude,
     shiftLongRightInPlace(shiftAmt, &relX);
     shiftLongRightInPlace(shiftAmt, &relY);
     altDiff >>= (char)shiftAmt;
-    if ((long)(int16)labs(relX) >= (long)0x7FFF) return 1;
-    if ((long)(int16)labs(relY) >= (long)0x7FFF) return 1;
+    if ((int32)(int16)labs(relX) >= (int32)0x7FFF) return 1;
+    if ((int32)(int16)labs(relY) >= (int32)0x7FFF) return 1;
     /* Matches projectSceneObject's inputs after setViewPosition(0,0,-altDiff):
      * g_objRelX = (int16)relX, g_objRelY = -(int16)relY, g_objTransform[0] = altDiff
      * (+1 when altitude != 0, from posZ). */
@@ -147,11 +149,11 @@ static int worldPointToCamera(long worldX, long worldY, int altitude,
 }
 
 /* Submit a world-space 3D line segment (cannon tracer / explosion spark) into the
- * current scene. worldX/worldY are in drawWorldObject's long convention (fine map
+ * current scene. worldX/worldY are in drawWorldObject's int32 convention (fine map
  * coord << 5), alt is altitude, color is a final palette index. Drawn like a model
  * line: depth-sorted + occluded (software), z-tested + fogged (GL). */
 void drawWorldLine(int32 worldX1, int32 worldY1, int16 alt1,
-                   int32 worldX2, int32 worldY2, int16 alt2, int color) {
+                   int32 worldX2, int32 worldY2, int16 alt2, int16 color) {
     R3DLine ln;
     if (worldPointToCamera(worldX1, worldY1, alt1, &ln.baseXA, &ln.camXA, &ln.camYA))
         return;
@@ -163,7 +165,20 @@ void drawWorldLine(int32 worldX1, int32 worldY1, int16 alt1,
 
 // ==== seg000:0xcb42 ====
 void drawTargetView(int16 shapeId, int16 worldX, int16 worldY, int16 altitude, int16 objYaw, int16 objPitch, int16 objRoll, int16 mode, int16 shift) {
-    int16 unused, horizonY, bearing, range, pitchDelta, category, pitch, dataOff, colorIdx, radius, bearingDelta, relX, relY, relZ;
+    int16 unused;
+    int16 horizonY;
+    int16 bearing;
+    int16 range;
+    int16 pitchDelta;
+    int16 category;
+    int16 pitch;
+    int16 dataOff;
+    int16 colorIdx;
+    int16 radius;
+    int16 bearingDelta;
+    int16 relX;
+    int16 relY;
+    int16 relZ;
     char categoryLow;
 
     g_targetInHudFlag = 1;
@@ -266,7 +281,7 @@ void drawTargetView(int16 shapeId, int16 worldX, int16 worldY, int16 altitude, i
 
     if (mode == 1) {
         strcpy(strBuf, "BRG ");
-        /* DOS `unsigned int` was 16-bit: a negative bearing wrapped into 0-359°.
+        /* DOS `unsigned int16` was 16-bit: a negative bearing wrapped into 0-359°.
          * Truncate to uint16 before the divide so the native 32-bit unsigned cast
          * doesn't blow a small negative up into millions. */
         strcat(strBuf, itoa((uint16)g_trkBearing / 0xb6, g_itoaScratch, 10));
@@ -300,7 +315,7 @@ int16 clampRange(int16 value, int16 minVal, int16 maxVal) { /* Original: rng(x,a
 }
 
 // ==== seg000:0xcf8e ====
-int16 clampValue(int16 value, int16 minVal, int16 maxVal) { /* Original: rng2(x,a,b). Plain clamp between min and max. */
+int16 egClampValue(int16 value, int16 minVal, int16 maxVal) { /* Original: rng2(x,a,b). Plain clamp between min and max. */
     if (value > maxVal) {
         return maxVal;
     }
@@ -310,10 +325,9 @@ int16 clampValue(int16 value, int16 minVal, int16 maxVal) { /* Original: rng2(x,
     return value;
 }
 
-#define XYDIST_MAX 0x7FFF
-
 // ==== seg000:0xcfa6 ====
 int16 rangeApprox(int16 deltaX, int16 deltaY) { /* Original: xydist(x,y). Fast 2D distance approximation capped at 0x7fff. */
+    enum { XYDIST_MAX = 0x7FFF };
     int32 dist;
     deltaX = abs16Compat(deltaX);
     deltaY = abs16Compat(deltaY);
@@ -380,11 +394,11 @@ int16 cosMul(int16 angle, int16 value) { /* Original: cosX(angle,x). Cosine via 
 /* sinMul/cosMul keeping 8 fractional bits (result = sinMul<<8 without the Q15
  * truncation) — for the external camera eye, where a whole-unit result makes
  * the view lurch as the offset rotates. */
-long sinMulQ8(int angle, int value) {
-    return ((long)sine(angle) * value) >> 7;
+int32 sinMulQ8(int16 angle, int16 value) {
+    return ((int32)sine(angle) * value) >> 7;
 }
 
-long cosMulQ8(int angle, int value) {
+int32 cosMulQ8(int16 angle, int16 value) {
     return sinMulQ8(angle + 0x4000, value);
 }
 
@@ -406,10 +420,9 @@ void seedRng(void) {
     srand(g_rngSeed);
 }
 
-#define RAND_SCALE_SHIFT 15
-
 // ==== seg000:0xd200 randomRange ====
-int16 randomRange(int16 maxVal) { /* Original: rnd(Max). Deterministic ((long)Max * rand()) >> 15 range scaling. */
+int16 randomRange(int16 maxVal) { /* Original: rnd(Max). Deterministic ((int32)Max * rand()) >> 15 range scaling. */
+    enum { RAND_SCALE_SHIFT = 15 };
     /* DOS rand() is 15-bit (RAND_MAX 0x7fff); mask to match so the >>15 scaling yields [0, maxVal). */
     return (int16)(((int32)(rand() & 0x7fff) * (int32)maxVal) >> RAND_SCALE_SHIFT);
 }

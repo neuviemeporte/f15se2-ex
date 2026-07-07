@@ -2,7 +2,6 @@
 #define F15_SE2_ENDATA
 /* Public data globals defined in endata.c (debrief state, strings, sprites). */
 #include "inttype.h"
-#include "pointers.h"
 #include "struct.h"
 #include "comm.h"
 #include "endtypes.h"
