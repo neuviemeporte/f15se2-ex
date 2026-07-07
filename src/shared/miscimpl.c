@@ -4,7 +4,7 @@
  */
 
 #include "inttype.h"
-#include <dos.h>
+#include "dos_compat.h"
 #include <string.h>
 #include <stdio.h>
 #include <time.h>

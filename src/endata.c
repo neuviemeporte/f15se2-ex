@@ -5,7 +5,7 @@
 #include "struct.h"
 #include "endtypes.h"
 #include "comm.h"
-#include <dos.h>
+#include "dos_compat.h"
 #include <stdio.h>
 
 /* Split into chunks due to MSC 5.1 initializer limits.

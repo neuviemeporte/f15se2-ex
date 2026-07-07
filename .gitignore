@@ -6,6 +6,7 @@ bin/
 *.err
 *.zip
 *.swp
+*.bak
 /*.bin
 /*.xxd
 /*.c

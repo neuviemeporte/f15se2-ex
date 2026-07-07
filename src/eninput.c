@@ -1,6 +1,6 @@
 /* eninput.c — input handling, compiled with /Gs */
 #include "slot.h"
-#include <dos.h>
+#include "dos_compat.h"
 #include "log.h"
 #include "endata.h"
 #include "eninput.h"

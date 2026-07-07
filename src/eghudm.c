@@ -22,7 +22,7 @@
 #include "struct.h"
 #include "gfx.h"
 #include "r2d.h"
-#include <dos.h>
+#include "dos_compat.h"
 
 #define W16(p) rdI16(p)            /* unaligned-safe 16-bit read */
 #define W16W(p, v) wrI16((p), (v)) /* unaligned-safe 16-bit write */

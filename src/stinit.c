@@ -12,7 +12,7 @@
 #include "strand.h"
 
 #include <stdio.h>
-#include <dos.h>
+#include "dos_compat.h"
 
 void initGraphics() {
     /* unused stack data eliminated by compiler, but original binary has sub sp,0xe in preamble - ??? */

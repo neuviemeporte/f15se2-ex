@@ -15,7 +15,7 @@
 #include "log.h"
 
 #include <stdio.h>
-#include <dos.h>
+#include "dos_compat.h"
 #include <string.h>
 
 /* Private helpers for this translation unit. */

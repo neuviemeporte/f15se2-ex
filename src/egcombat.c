@@ -15,7 +15,7 @@
 #include "const.h"
 #include "comm.h"
 
-#include <dos.h>
+#include "dos_compat.h"
 #include <memory.h>
 #include <stdio.h>
 #include <stdlib.h>

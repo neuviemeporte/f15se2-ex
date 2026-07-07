@@ -32,7 +32,7 @@
 #include "inttype.h"
 #include "comm.h"
 #include "log.h"
-#include <dos.h>
+#include "dos_compat.h"
 
 /* joyAxes[0] = X (roll), joyAxes[1] = Y (pitch); 0x80 = centred. Defined in
  * stdata.c, shared by all three former programs. */

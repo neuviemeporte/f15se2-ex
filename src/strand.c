@@ -2,7 +2,7 @@
 #include "strand.h"
 #include "shared/common.h"
 
-#include <dos.h>
+#include "dos_compat.h"
 
 void seedRandom() {
     srand(getTimeOfDay());

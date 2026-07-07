@@ -17,7 +17,7 @@
 #include "sttypes.h"
 
 #include <stdio.h>
-#include <dos.h>
+#include "dos_compat.h"
 
 /* Private helpers for this translation unit. */
 void waitJoyKey(void);

@@ -2,7 +2,7 @@
 #define F15_SE2_STCODE
 /* assembly routines in stcode.asm called from C */
 #include "inttype.h"
-#include <dos.h>
+#include "dos_compat.h"
 
 typedef struct SDL_IOStream SDL_IOStream;
 

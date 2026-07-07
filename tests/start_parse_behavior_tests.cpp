@@ -1,7 +1,7 @@
 #include "shared/common.h"
 #include "stdata.h"
 
-#include <dos.h>
+#include "dos_compat.h"
 
 #include <cstdlib>
 #include <cstring>

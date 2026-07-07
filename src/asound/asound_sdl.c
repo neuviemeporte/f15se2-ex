@@ -25,7 +25,7 @@ extern "C" {
 #include <stdint.h>
 
 #include "inttype.h"
-#include <dos.h>
+#include "dos_compat.h"
 #include "slot.h"
 #include "common.h" /* openFile */
 #include "input.h"  /* input_keyWaiting / input_setMode */

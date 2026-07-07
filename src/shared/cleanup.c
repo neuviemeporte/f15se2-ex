@@ -5,7 +5,7 @@
 
 #include "common.h"
 
-#include <dos.h>
+#include "dos_compat.h"
 
 /* extern declarations needed by these functions */
 extern int16 FAR gfx_drawString(int16 *pageNum, const char *string);

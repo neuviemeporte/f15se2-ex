@@ -8,7 +8,7 @@
 #include "gfx_impl.h"
 #include "const.h"
 
-#include <dos.h>
+#include "dos_compat.h"
 #include <memory.h>
 
 // ==== seg000:0x0334 ====

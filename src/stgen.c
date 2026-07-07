@@ -13,7 +13,7 @@
 #include "shared/common.h"
 
 #include <memory.h>
-#include <dos.h>
+#include "dos_compat.h"
 #include <stdarg.h>
 #include <time.h>
 #include <string.h>
@@ -344,7 +344,7 @@ int16 approxDistance(int16 dx, int16 dy) {
     int32 dist;
     dx = abs16Compat(dx);
     dy = abs16Compat(dy);
-    dist = (dx > dy) ? (int32)(dy >> 1) + (int23)dx : (int32)(dx >> 1) + (int32)dy;
+    dist = (dx > dy) ? (int32)(dy >> 1) + (int32)dx : (int32)(dx >> 1) + (int32)dy;
     if (dist > 0x7fff) {
         dist = 0x7fff;
     }

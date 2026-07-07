@@ -1,6 +1,6 @@
 #include "common.h"
 
-#include <dos.h>
+#include "dos_compat.h"
 
 #include <cstdlib>
 #include <cstring>

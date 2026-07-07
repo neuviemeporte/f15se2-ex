@@ -14,7 +14,7 @@
  */
 
 #include "inttype.h"
-#include <dos.h>
+#include "dos_compat.h"
 #include <SDL3/SDL.h>
 
 extern uint8 timerCounter;

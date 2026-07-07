@@ -4,7 +4,7 @@
 
 #include "common.h"
 
-#include <dos.h>
+#include "dos_compat.h"
 
 extern int16 FAR gfx_setFont(uint16 ch, uint16 font);
 

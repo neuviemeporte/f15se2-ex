@@ -15,7 +15,7 @@
 
 #include "comm.h"
 
-#include <dos.h>
+#include "dos_compat.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,16 +48,16 @@ struct TileObject *findNearestTileObject(uint32 worldX, uint32 worldY) {
     //   g = shape id/bits
     //   h = objDx     j = objDy          (query point -> candidate object)
     //   q = distance metric (best-so-far compare)    l = unused frame padding
-    int p, q, a, r, b, c, d, e, f, g, h, i, j, k, l, m, n, o;
+    int16 p, q, a, r, b, c, d, e, f, g, h, i, j, k, l, m, n, o;
 
     nearestTile.dist = 0x7fff;
     for (c = 1; c <= 2; c++) {
         for (e = 0; e < 9; e++) {
-            m = (int)scaleCoordToLod(c, worldX);
-            i = (unsigned)m >> 0xc;
+            m = (int16)scaleCoordToLod(c, worldX);
+            i = (uint32)m >> 0xc;
             r = m & 0xfff;
-            m = (int)scaleCoordToLod(c, worldY);
-            k = (unsigned)m >> 0xc;
+            m = (int16)scaleCoordToLod(c, worldY);
+            k = (uint32)m >> 0xc;
             d = m & 0xfff;
             a = g_neighborSampling.gridX[e];
             b = g_neighborSampling.gridY[e];
@@ -86,9 +86,9 @@ struct TileObject *findNearestTileObject(uint32 worldX, uint32 worldY) {
                             g = g_dynTileEntries[g_tileEntryIdx].shape;
                         }
                         if (q < nearestTile.dist) {
-                            g_modelStreamPtr = (char far *)(g_world3dData + buf3d3[g]);
+                            g_modelStreamPtr = (char FAR *)(g_world3dData + buf3d3[g]);
                             if (rdI16(g_modelStreamPtr) != 0 ||
-                                *((char far *)g_modelStreamPtr + 2) != 0 ||
+                                *((char FAR *)g_modelStreamPtr + 2) != 0 ||
                                 g_render3DTiles != 0) {
                                 nearestTile.lod = (uint8)c;
                                 nearestTile.subIndex = (uint8)f;
@@ -113,7 +113,7 @@ struct TileObject *findNearestTileObject(uint32 worldX, uint32 worldY) {
     return 0;
 }
 
-void addTileEntry(struct TileObject *rec, int value, char tag) {
+void addTileEntry(struct TileObject *rec, int16 value, char tag) {
     rec->shapeOff = value;
     rec->flag = tag;
     memcpy(&g_dynTileEntries[g_tileEntryCount++], &rec->lod, 8);
@@ -121,7 +121,7 @@ void addTileEntry(struct TileObject *rec, int value, char tag) {
 }
 
 // ==== seg000:0x3266 ====
-int lookupTileEntry(int lod, int subIndex, int tileX, int tileY) {
+int16 lookupTileEntry(int16 lod, int16 subIndex, int16 tileX, int16 tileY) {
     for (g_tileEntryIdx = g_tileEntryCount - 1; g_tileEntryIdx >= 0; g_tileEntryIdx--) {
         if (g_dynTileEntries[g_tileEntryIdx].lod == lod &&
             g_dynTileEntries[g_tileEntryIdx].subIndex == subIndex &&
@@ -134,29 +134,19 @@ int lookupTileEntry(int lod, int subIndex, int tileX, int tileY) {
 }
 
 void drawNearestTileObject(uint32 coord1, uint32 coord2, uint32 coord3) {
-    int yOff;
-    int fracX;
-    int lod;
-    int fracY;
-    int subIdx;
-    int relX;
-    int relY;
-    int tileX;
-    int tileY;
+    int16 yOff, fracX, lod, fracY, subIdx, relX, relY, tileX, tileY, cell, xOff;
     uint32 scaled;
-    int cell;
-    int xOff;
 
     *(char *)&g_posVisibleFlag = 0;
     nearestTile.dist = 0x7fff;
     lod = 4;
     scaled = scaleCoordToLod(lod, coord1);
-    tileX = (int)(scaled >> 12);
-    fracX = (int)scaled & 0xfff;
+    tileX = (int16)(scaled >> 12);
+    fracX = (int16)scaled & 0xfff;
     scaled = scaleCoordToLod(lod, coord2);
-    tileY = (int)(scaled >> 12);
-    fracY = (int)scaled & 0xfff;
-    g_viewPosZ = (int)scaleCoordToLod(lod, coord3);
+    tileY = (int16)(scaled >> 12);
+    fracY = (int16)scaled & 0xfff;
+    g_viewPosZ = (int16)scaleCoordToLod(lod, coord3);
     xOff = 0x800 - fracX;
     yOff = 0x800 - fracY;
     g_viewPosX = fracX - 0x800;
@@ -193,8 +183,8 @@ void drawNearestTileObject(uint32 coord1, uint32 coord2, uint32 coord3) {
 }
 
 // ==== seg000:0x345e ====
-void renderMapTerrain(const int16 *transform, int mapX, int mapY, int zoomShift) {
-    int tmp0, tmp1;
+void renderMapTerrain(const int16 *transform, int16 mapX, int16 mapY, int16 zoomShift) {
+    int16 tmp0, tmp1;
     g_objShade = 0;
     setup3DTransform(transform, 0, 0, 0, 0, 0, 0, 0);
     /* clip-left / clip-top are 16-bit descriptor words (see setupViewport). */
@@ -205,8 +195,8 @@ void renderMapTerrain(const int16 *transform, int mapX, int mapY, int zoomShift)
 
 // ==== seg000:0x51f9 ====
 
-void drawMapTiles(int originX, int originY, int zoomShift) {
-    int maxTileY, screenY, minTileX, minTileY, subIdx, col, row, cell, maxTileX, screenX;
+void drawMapTiles(int16 originX, int16 originY, int16 zoomShift) {
+    int16 maxTileY, screenY, minTileX, minTileY, subIdx, col, row, cell, maxTileX, screenX;
 
     g_mapOriginX = originX >> (char)zoomShift;
     g_mapOriginY = originY >> (char)zoomShift;
@@ -242,7 +232,7 @@ void drawMapTiles(int originX, int originY, int zoomShift) {
 }
 
 // ==== seg000:0x3638 ====
-void computeTileBounds(int *minTileX, int *maxTileX, int *minTileY, int *maxTileY) {
+void computeTileBounds(int16 *minTileX, int16 *maxTileX, int16 *minTileY, int16 *maxTileY) {
     worldToTileIndex(0, 0, minTileX, minTileY);
     if (*minTileX < 0) {
         *minTileX = 0;
@@ -260,7 +250,7 @@ void computeTileBounds(int *minTileX, int *maxTileX, int *minTileY, int *maxTile
 }
 
 // ==== seg000:0x3694 ====
-void worldToTileIndex(int worldX, int worldY, int *outCol, int *outRow) {
+void worldToTileIndex(int16 worldX, int16 worldY, int16 *outCol, int16 *outRow) {
     *outCol = (worldX - g_viewCenterX + g_mapOriginX) / g_tileWorldSize;
     *outRow = ((worldY - g_viewCenterY) * 4 / 3 + g_mapOriginY) / g_tileWorldSize;
 }
@@ -289,7 +279,7 @@ void drawMapTileObject(char FAR *modelData, int16 screenX, int16 screenY) {
 }
 
 // ==== seg000:0x374a ====
-void drawModelPoint(int x, int y) {
+void drawModelPoint(int16 x, int16 y) {
     g_lineX2 = g_lineX1 = x + g_viewCenterX;
     g_lineY2 = g_lineY1 = -y + g_viewCenterY;
     ++g_modelStreamPtr;
@@ -322,12 +312,8 @@ void buildVertexSignMask(int16 screenX, int16 screenY) {
 }
 
 // ==== seg000:0x3816 ====
-void projectModelVertices(int screenX, int screenY) {
-    int vtxIdx;
-    int vtxRef;
-    int packed;
-    int screenVtxX;
-    int screenVtxY;
+void projectModelVertices(int16 screenX, int16 screenY) {
+    int16 vtxIdx, vtxRef, packed, screenVtxX, screenVtxY;
 
     packed = (int16)(uint8) * *(char FAR **)&g_modelStreamPtr & 0x80;
     g_modelVtxCount = (int16)(uint8)(*(*(char FAR **)&g_modelStreamPtr)++) & 0x7F;
@@ -351,12 +337,12 @@ void projectModelVertices(int screenX, int screenY) {
 }
 
 // ==== seg000:0x3922 ====
-int aspectScaleY(int screenY) {
+int16 aspectScaleY(int16 screenY) {
     return screenY - (screenY >> 2);
 }
 
 // ==== seg000:0x3932 ====
-void setup3DTransform(const int16 *model, int angleX, int angleY, int angleZ, int posX, int posY, int posZ, int renderScene) {
+void setup3DTransform(const int16 *model, int16 angleX, int16 angleY, int16 angleZ, int16 posX, int16 posY, int16 posZ, int16 renderScene) {
     setupViewport(model);
     setViewRotation(angleX, angleY, angleZ);
     setViewPosition(posX, posY, posZ);

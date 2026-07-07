@@ -7,7 +7,7 @@
 #include "shared/common.h"
 #include "log.h"
 
-#include <dos.h>
+#include "dos_compat.h"
 
 void *allocBuffer(int16 size) {
     void *segment;

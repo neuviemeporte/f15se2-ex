@@ -18,7 +18,7 @@
 
 #include "comm.h"
 
-#include <dos.h>
+#include "dos_compat.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

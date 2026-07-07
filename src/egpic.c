@@ -7,7 +7,7 @@
 #include "log.h"
 #include "const.h"
 
-#include <dos.h>
+#include "dos_compat.h"
 #include <memory.h>
 
 void openBlitClosePic(const char *filename, int16 page) { /* Original chain: OpenFile + blit/decode + CloseFile. Open, blit PIC to page, then close. */

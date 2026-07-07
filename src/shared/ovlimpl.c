@@ -7,7 +7,7 @@
 #include "comm.h"
 #include "const.h"
 #include "input.h"
-#include <dos.h>
+#include "dos_compat.h"
 #include <SDL3/SDL.h>
 
 extern int16 exitCode;

@@ -8,11 +8,10 @@
  */
 #include "egtypes.h"
 #include "inttype.h"
-#include "pointers.h"
 #include "struct.h"
 #include "comm.h"
 #include <stdio.h>
-#include <dos.h>
+#include "dos_compat.h"
 
 /* Scenario region-data filenames (head of the original .DATA segment).
  * regnStr points at the regn.xxx buffer (the strcpy/fopen target that gets

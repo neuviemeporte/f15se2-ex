@@ -2,7 +2,7 @@
 #define F15_SE2_EGCODE
 /* assembly routines (egcode.asm/egseg*.asm) called from C */
 #include "inttype.h"
-#include <dos. h>
+#include "dos_compat.h"
 #include "egtypes.h"
 #include <stddef.h>
 

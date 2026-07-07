@@ -5,7 +5,7 @@
 /* DOS calling-convention / pointer-size decorations (far/near/pascal/__cdecl/
  * __far/FAR/…) come from the single source, compat64/dos.h; many egame TUs
  * pick them up transitively through this header. */
-#include <dos.h>
+#include "dos_compat.h"
 
 #define AIRCRAFT_MODELS_OFFSET 0xADD4
 /* Total size of the g_world3dData region (main + photo models + appended

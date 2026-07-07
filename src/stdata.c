@@ -1,9 +1,8 @@
 #include "inttype.h"
-#include "pointers.h"
 #include "struct.h"
 #include "comm.h"
 #include <stdio.h>
-#include <dos.h>
+#include "dos_compat.h"
 
 typedef struct SDL_IOStream SDL_IOStream;
 

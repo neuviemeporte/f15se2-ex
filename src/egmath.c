@@ -16,7 +16,7 @@
 #include "const.h"
 #include "r3d.h"
 
-#include <dos.h>
+#include "dos_compat.h"
 #include <memory.h>
 
 // ==== seg000:0xc8de ====

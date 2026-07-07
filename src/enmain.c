@@ -1,7 +1,7 @@
 /* enmain.c — main/init, compiled with /Gs */
 #include "gfx.h"
 #include "slot.h"
-#include <dos.h>
+#include "dos_compat.h"
 #include "offsets.h"
 #include "log.h"
 #include "shared/common.h"

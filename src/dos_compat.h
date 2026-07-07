@@ -22,8 +22,6 @@ typedef int8_t int8;
 #define FAR
 #define NEAR
 #define CDECL
-#define __cdecl
-#define __far
 
 struct WORDREGS {
     uint16 ax;
@@ -93,6 +91,7 @@ inline int16 putch(int16 c) {
 /* Backed by the SDL keyboard layer in eginput.c (egame flight loop). */
 int16 kbhit(void);
 
+#if 0
 inline char *itoa(int16 value, char *str, int16 base) {
     if (base == 10) {
         sprintf(str, "%d", value);
@@ -103,6 +102,7 @@ inline char *itoa(int16 value, char *str, int16 base) {
     }
     return str;
 }
+#endif
 
 inline char *strupr(char *s) {
     for (char *p = s; *p; p++) *p = toupper((uint8)*p);

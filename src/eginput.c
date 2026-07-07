@@ -11,7 +11,7 @@
  */
 #include "eginput.h"
 #include "input.h"
-#include <dos.h> /* far/cdecl macros, kbhit() prototype */
+#include "dos_compat.h" /* far/cdecl macros, kbhit() prototype */
 
 /* Blocking read, scan code in AH and ASCII in AL (INT 16h function 0). */
 int egReadKey(void) {
@@ -20,7 +20,7 @@ int egReadKey(void) {
 }
 
 /* Non-zero when a key word is waiting. */
-int kbhit(void) {
+int16 kbhit(void) {
     input_setMode(INPUT_MODE_FLIGHT);
     return input_keyWaiting();
 }

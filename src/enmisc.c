@@ -1,6 +1,6 @@
 /* enmisc.c — split from enmain.c (loadWorldStrings + helpers), compiled with /Gs */
 #include "gfx.h"
-#include <dos.h>
+#include "dos_compat.h"
 #include "offsets.h"
 #include "log.h"
 #include "shared/common.h"

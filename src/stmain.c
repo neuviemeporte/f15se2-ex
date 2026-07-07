@@ -16,7 +16,7 @@
 #include "sttypes.h"
 #include "shared/common.h"
 
-#include <dos.h>
+#include "dos_compat.h"
 
 int start_main(void) {
     uint8 introStage;

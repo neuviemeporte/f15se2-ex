@@ -4,7 +4,7 @@
 #include "inttype.h"
 #include "struct.h"
 #include "comm.h"
-#include <dos.h>
+#include "dos_compat.h"
 #include <stdio.h>
 
 extern int16 *bufPtr;

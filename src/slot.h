@@ -1,7 +1,7 @@
 #ifndef SLOT_H
 #define SLOT_H
 
-#include <dos.h>
+#include "dos_compat.h"
 #include "inttype.h"
 
 /* ---- misc / input (first slot 0x5a, 6 used) ----

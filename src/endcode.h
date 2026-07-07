@@ -1,7 +1,7 @@
 #ifndef F15_SE2_ENDCODE
 #define F15_SE2_ENDCODE
 #include "inttype.h"
-#include <dos.h>
+#include "dos_compat.h"
 /* assembly routines in endcode.asm called from C */
 
 typedef struct SDL_IOStream SDL_IOStream;

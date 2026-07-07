@@ -5,7 +5,7 @@
 #include "struct.h"
 #include "comm.h"
 #include <stdio.h>
-#include <dos.h>
+#include "dos_compat.h"
 
 /* Joystick input lives in joystick.c (SDL gamepad/joystick). */
 /* setInt9Handler/restoreInt9Handler (the keyboard ISR) live in eginput.c. */

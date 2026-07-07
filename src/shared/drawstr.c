@@ -4,7 +4,7 @@
 
 #include "common.h"
 
-#include <dos.h>
+#include "dos_compat.h"
 
 extern void FAR gfx_drawString(int16 *pageNum, const char *string);
 

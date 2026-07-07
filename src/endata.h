@@ -6,7 +6,7 @@
 #include "struct.h"
 #include "comm.h"
 #include "endtypes.h"
-#include <dos.h>
+#include "dos_compat.h"
 #include <stdio.h>
 
 typedef struct SDL_IOStream SDL_IOStream;
