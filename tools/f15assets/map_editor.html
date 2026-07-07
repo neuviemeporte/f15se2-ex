@@ -226,7 +226,7 @@
         <div class="stat" id="stats">0 objects</div>
       </div>
       <canvas id="map" width="900" height="900"></canvas>
-      <div class="map-attribution" id="map-attribution" hidden>© OpenStreetMap contributors © CARTO</div>
+      <div class="map-attribution" id="map-attribution" hidden>© OpenStreetMap contributors © OpenTopoMap</div>
     </section>
 
     <aside class="details-panel">
@@ -273,22 +273,29 @@
     const DRAG_START_PX = 6;
     const OSM_TILE_SIZE = 256;
     const OSM_TILE_ZOOM = 6;
-    const OSM_TILE_URL = "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png";
+    const OSM_TILE_URL = "https://a.tile.opentopomap.org/{z}/{x}/{y}.png";
     const osmTiles = new Map();
     const gameBackdropImages = new Map();
-    const THEATER_BOUNDS = {
-      CE: { label: "Central Europe", west: 5, east: 31, south: 45, north: 59 },
-      LB: { label: "Libya", west: 8, east: 26, south: 19, north: 35 },
-      LIBYA: { label: "Libya", west: 8, east: 26, south: 19, north: 35 },
-      PG: { label: "Persian Gulf", west: 42, east: 61, south: 18, north: 33 },
-      GULF: { label: "Persian Gulf", west: 42, east: 61, south: 18, north: 33 },
-      NC: { label: "North Cape", west: 8, east: 42, south: 62, north: 74 },
-      VN: { label: "Vietnam", west: 101, east: 110, south: 8, north: 23 },
-      ME: { label: "Middle East", west: 31, east: 47, south: 25, north: 38 },
-      JP: { label: "Iraq / Desert Storm", west: 42, east: 52, south: 18, north: 38 },
-      KO: { label: "Korea", west: 124, east: 132, south: 33, north: 43 },
-      CU: { label: "Cuba", west: -86, east: -73, south: 18, north: 24 },
-      KU: { label: "Kuwait", west: 43, east: 50, south: 27, north: 32 },
+    const OSM_GEOREFS = {
+      // Affine transforms from Web Mercator tile pixels at zoom 6 to WLD world
+      // coordinates. These are calibrated from named WLD objects against their
+      // real OSM positions, so OSM mode follows the same game-map placement as
+      // the cropped original PNG instead of using rough theater rectangles.
+      CE: { label: "Central Europe", t: { xx: 46.5901502, xy: 8.21176476, x0: -441929.809, yx: -2.73697415, yy: 38.4664406, y0: -166837.873 } },
+      LB: { label: "Libya", t: { xx: 57.0822995, xy: 0.471934471, x0: -500121.856, yx: 1.15314398, yy: 52.2583981, y0: -341038.931 } },
+      LIBYA: { label: "Libya", t: { xx: 57.0822995, xy: 0.471934471, x0: -500121.856, yx: 1.15314398, yy: 52.2583981, y0: -341038.931 } },
+      PG: { label: "Persian Gulf", t: { xx: 58.658527, xy: 6.5840118, x0: -648162.022, yx: -4.69869963, yy: 67.0544273, y0: -393265.79 } },
+      GULF: { label: "Persian Gulf", t: { xx: 58.658527, xy: 6.5840118, x0: -648162.022, yx: -4.69869963, yy: 67.0544273, y0: -393265.79 } },
+      NC: { label: "North Cape", t: { xx: 28.7141712, xy: -2.03884649, x0: -251855.929, yx: 0.273455292, yy: 31.1719053, y0: -106676.876 } },
+      VN: { label: "Vietnam", t: { xx: 41.1144272, xy: -42.6172157, x0: -200320.7, yx: 47.2476764, yy: 43.2960353, y0: -922104.446 } },
+      ME: { label: "Middle East", t: { xx: 36.1224386, xy: 54.2828602, x0: -699396.218, yx: -47.5308066, yy: 33.4667487, y0: 269941.475 } },
+      JP: { label: "Iraq / Desert Storm", t: { xx: 38.7844302, xy: 27.6607169, x0: -568556.48, yx: -24.5200657, yy: 47.7136059, y0: -54432.312 } },
+      // These theaters are not present in the current converted sample set, so
+      // keep north-up approximate transforms until their PNG/WLD pairs are
+      // available for calibration.
+      KO: { label: "Korea", t: northUpTransform(124, 132, 33, 43) },
+      CU: { label: "Cuba", t: northUpTransform(-86, -73, 18, 24) },
+      KU: { label: "Kuwait", t: northUpTransform(43, 50, 27, 32) },
     };
     const GAME_BACKDROPS = {
       CE: "CEUROPE.png",
@@ -304,7 +311,7 @@
       CU: "CUBA.png",
       KU: "KUWAIT.png",
     };
-    const GAME_BACKDROP_CROP = { x: 0, y: 0, w: 224, h: 166 };
+    const GAME_BACKDROP_CROP = { x: 0, y: 0, w: 224, h: 168 };
     const ICON_GLYPHS = {
       target: ["..#..", ".###.", "#####", ".###.", "..#.."],
       base: ["#...#", ".#.#.", "..#..", ".#.#.", "#...#"],
@@ -399,13 +406,13 @@
     }
     function theaterKey() {
       const raw = fileName.replace(/\..*$/, "").toUpperCase();
-      if (THEATER_BOUNDS[raw]) return raw;
+      if (OSM_GEOREFS[raw]) return raw;
       if (raw.includes("LIBYA")) return "LIBYA";
       if (raw.includes("GULF")) return "GULF";
       return raw.slice(0, 2);
     }
     function theaterBounds() {
-      return THEATER_BOUNDS[theaterKey()] || null;
+      return OSM_GEOREFS[theaterKey()] || null;
     }
     function gameBackdropName() {
       return GAME_BACKDROPS[theaterKey()] || null;
@@ -417,12 +424,26 @@
         `file:///home/xor/games/f15se2-re/converted_assets_all/${name}`,
       ];
     }
-    function lonToTileX(lon, zoom) {
-      return ((lon + 180) / 360) * 2 ** zoom;
+    function lonToTilePixelX(lon, zoom) {
+      return ((lon + 180) / 360) * 2 ** zoom * OSM_TILE_SIZE;
     }
-    function latToTileY(lat, zoom) {
+    function latToTilePixelY(lat, zoom) {
       const rad = lat * Math.PI / 180;
-      return (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * 2 ** zoom;
+      return (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * 2 ** zoom * OSM_TILE_SIZE;
+    }
+    function northUpTransform(west, east, south, north) {
+      const westPx = lonToTilePixelX(west, OSM_TILE_ZOOM);
+      const eastPx = lonToTilePixelX(east, OSM_TILE_ZOOM);
+      const northPx = latToTilePixelY(north, OSM_TILE_ZOOM);
+      const southPx = latToTilePixelY(south, OSM_TILE_ZOOM);
+      return {
+        xx: WORLD_MAX / (eastPx - westPx),
+        xy: 0,
+        x0: -westPx * WORLD_MAX / (eastPx - westPx),
+        yx: 0,
+        yy: WORLD_MAX / (southPx - northPx),
+        y0: -northPx * WORLD_MAX / (southPx - northPx),
+      };
     }
     function tileImage(z, x, y) {
       const key = `${z}/${x}/${y}`;
@@ -478,30 +499,48 @@
       ctx.save();
       ctx.globalAlpha = 0.9;
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, r.x, r.y, r.size, r.size);
+      ctx.drawImage(img, crop.x, crop.y, crop.w, crop.h, r.x, r.y, r.w, r.h);
       ctx.restore();
     }
     function drawOsm(r) {
       if (backgroundMode !== "osm") return;
-      const bounds = theaterBounds();
-      if (!bounds) return;
+      const georef = theaterBounds();
+      if (!georef) return;
 
       const zoom = OSM_TILE_ZOOM;
-      const west = lonToTileX(bounds.west, zoom);
-      const east = lonToTileX(bounds.east, zoom);
-      const north = latToTileY(bounds.north, zoom);
-      const south = latToTileY(bounds.south, zoom);
-      const tileMinX = Math.floor(west);
-      const tileMaxX = Math.floor(east);
-      const tileMinY = Math.floor(north);
-      const tileMaxY = Math.floor(south);
-      const scaleX = r.size / ((east - west) * OSM_TILE_SIZE);
-      const scaleY = r.size / ((south - north) * OSM_TILE_SIZE);
       const maxTile = 2 ** zoom;
+      const t = georef.t;
+      const det = t.xx * t.yy - t.xy * t.yx;
+      if (Math.abs(det) < 0.000001) return;
+      const worldToMercatorPixel = (wx, wy) => {
+        const dx = wx - t.x0;
+        const dy = wy - t.y0;
+        return {
+          x: (t.yy * dx - t.xy * dy) / det,
+          y: (-t.yx * dx + t.xx * dy) / det,
+        };
+      };
+      const corners = [
+        worldToMercatorPixel(0, 0),
+        worldToMercatorPixel(WORLD_MAX, 0),
+        worldToMercatorPixel(0, WORLD_MAX),
+        worldToMercatorPixel(WORLD_MAX, WORLD_MAX),
+      ];
+      const minX = Math.min(...corners.map(p => p.x));
+      const maxX = Math.max(...corners.map(p => p.x));
+      const minY = Math.min(...corners.map(p => p.y));
+      const maxY = Math.max(...corners.map(p => p.y));
+      const tileMinX = Math.floor(minX / OSM_TILE_SIZE) - 1;
+      const tileMaxX = Math.floor(maxX / OSM_TILE_SIZE) + 1;
+      const tileMinY = Math.floor(minY / OSM_TILE_SIZE) - 1;
+      const tileMaxY = Math.floor(maxY / OSM_TILE_SIZE) + 1;
+      const worldScaleX = r.w / WORLD_MAX;
+      const worldScaleY = r.h / WORLD_MAX;
+      const dpr = canvas.width / canvas.clientWidth || 1;
 
       ctx.save();
       ctx.beginPath();
-      ctx.rect(r.x, r.y, r.size, r.size);
+      ctx.rect(r.x, r.y, r.w, r.h);
       ctx.clip();
       ctx.globalAlpha = 0.82;
       for (let ty = tileMinY; ty <= tileMaxY; ty++) {
@@ -510,9 +549,19 @@
           const wrappedX = ((tx % maxTile) + maxTile) % maxTile;
           const img = tileImage(zoom, wrappedX, ty);
           if (!img.complete) continue;
-          const dx = r.x + ((tx - west) * OSM_TILE_SIZE) * scaleX;
-          const dy = r.y + ((ty - north) * OSM_TILE_SIZE) * scaleY;
-          ctx.drawImage(img, dx, dy, OSM_TILE_SIZE * scaleX, OSM_TILE_SIZE * scaleY);
+          const tilePxX = tx * OSM_TILE_SIZE;
+          const tilePxY = ty * OSM_TILE_SIZE;
+          const e = r.x + (t.xx * tilePxX + t.xy * tilePxY + t.x0) * worldScaleX;
+          const f = r.y + (t.yx * tilePxX + t.yy * tilePxY + t.y0) * worldScaleY;
+          ctx.setTransform(
+            t.xx * worldScaleX * dpr,
+            t.yx * worldScaleY * dpr,
+            t.xy * worldScaleX * dpr,
+            t.yy * worldScaleY * dpr,
+            e * dpr,
+            f * dpr
+          );
+          ctx.drawImage(img, 0, 0);
         }
       }
       ctx.restore();
@@ -526,8 +575,9 @@
       const x = Math.round(p.x - w / 2);
       const y = Math.round(p.y - h / 2);
       ctx.save();
-      const haloColor = backgroundMode === "game" ? "rgba(0,0,0,0.68)" : "rgba(255,255,235,0.68)";
-      const edgeColor = backgroundMode === "game" ? "rgba(0,0,0,0.78)" : "rgba(255,255,235,0.76)";
+      const usesMapBackground = backgroundMode === "game" || backgroundMode === "osm";
+      const haloColor = usesMapBackground ? "rgba(0,0,0,0.68)" : "rgba(255,255,235,0.68)";
+      const edgeColor = usesMapBackground ? "rgba(0,0,0,0.78)" : "rgba(255,255,235,0.76)";
       ctx.fillStyle = haloColor;
       glyph.forEach((row, gy) => {
         [...row].forEach((px, gx) => {
@@ -571,28 +621,34 @@
     function mapRect() {
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
-      const size = Math.min(w, h) - 36;
-      return { x: (w - size) / 2, y: (h - size) / 2, size };
+      const aspect = GAME_BACKDROP_CROP.w / GAME_BACKDROP_CROP.h;
+      let rw = w - 36;
+      let rh = rw / aspect;
+      if (rh > h - 36) {
+        rh = h - 36;
+        rw = rh * aspect;
+      }
+      return { x: (w - rw) / 2, y: (h - rh) / 2, w: rw, h: rh };
     }
     function worldToScreen(x, y) {
       const r = mapRect();
       return {
-        x: r.x + (x / WORLD_MAX) * r.size,
-        y: r.y + (y / WORLD_MAX) * r.size,
+        x: r.x + (x / WORLD_MAX) * r.w,
+        y: r.y + (y / WORLD_MAX) * r.h,
       };
     }
     function screenToWorld(px, py) {
       const r = mapRect();
       return {
-        x: Math.round(clamp(((px - r.x) / r.size) * WORLD_MAX, 0, WORLD_MAX - 1)),
-        y: Math.round(clamp(((py - r.y) / r.size) * WORLD_MAX, 0, WORLD_MAX - 1)),
+        x: Math.round(clamp(((px - r.x) / r.w) * WORLD_MAX, 0, WORLD_MAX - 1)),
+        y: Math.round(clamp(((py - r.y) / r.h) * WORLD_MAX, 0, WORLD_MAX - 1)),
       };
     }
     function draw() {
       ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
       const r = mapRect();
       ctx.fillStyle = "#121910";
-      ctx.fillRect(r.x, r.y, r.size, r.size);
+      ctx.fillRect(r.x, r.y, r.w, r.h);
       drawGameBackdrop(r);
       drawOsm(r);
       drawTerrain(r);
@@ -601,27 +657,29 @@
     }
     function drawTerrain(r) {
       const grid = terrainGrid();
-      const cell = r.size / GRID_CELLS;
+      const cellW = r.w / GRID_CELLS;
+      const cellH = r.h / GRID_CELLS;
       for (let gy = 0; gy < GRID_CELLS; gy++) {
         for (let gx = 0; gx < GRID_CELLS; gx++) {
           const val = grid ? grid[gx + gy * GRID_CELLS] : 0;
           ctx.fillStyle = (val & 3) ? getCss("--water") : getCss("--land");
           if (val & 0x10) ctx.fillStyle = getCss("--blocked");
           ctx.globalAlpha = backgroundMode === "off" ? 0.72 : 0.28;
-          ctx.fillRect(r.x + gx * cell, r.y + gy * cell, cell, cell);
+          ctx.fillRect(r.x + gx * cellW, r.y + gy * cellH, cellW, cellH);
         }
       }
       ctx.globalAlpha = 1;
     }
     function drawGrid(r) {
-      const cell = r.size / GRID_CELLS;
+      const cellW = r.w / GRID_CELLS;
+      const cellH = r.h / GRID_CELLS;
       ctx.strokeStyle = "rgba(236,231,213,0.22)";
       ctx.lineWidth = 1;
       for (let i = 0; i <= GRID_CELLS; i++) {
-        const p = r.x + i * cell;
-        const q = r.y + i * cell;
-        ctx.beginPath(); ctx.moveTo(p, r.y); ctx.lineTo(p, r.y + r.size); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(r.x, q); ctx.lineTo(r.x + r.size, q); ctx.stroke();
+        const p = r.x + i * cellW;
+        const q = r.y + i * cellH;
+        ctx.beginPath(); ctx.moveTo(p, r.y); ctx.lineTo(p, r.y + r.h); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(r.x, q); ctx.lineTo(r.x + r.w, q); ctx.stroke();
       }
     }
     function drawObjects() {
