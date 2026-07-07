@@ -140,7 +140,7 @@ void load3DT(char *fileName) {
         for (tile = 0; sizes3dt[cat] > tile; tile++) {
             matrix3dt_2[cat][tile] = GET_MATRIX(byteOff);
             for (obj = 0; matrix3dt[cat][tile] > obj; obj++) {
-                if ((byteOff + sizeof(struct TileSceneObject)) >= MAX_TILE_DATA) {
+                if ((byteOff + sizeof(struct TileSceneObject)) > MAX_TILE_DATA) {
                     printError("Too much tile data");
                     return;
                 }
