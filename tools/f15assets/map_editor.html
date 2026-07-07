@@ -514,18 +514,20 @@
       const x = Math.round(p.x - w / 2);
       const y = Math.round(p.y - h / 2);
       ctx.save();
-      ctx.fillStyle = "rgba(0,0,0,0.88)";
+      const haloColor = backgroundMode === "game" ? "rgba(0,0,0,0.68)" : "rgba(255,255,235,0.68)";
+      const edgeColor = backgroundMode === "game" ? "rgba(0,0,0,0.78)" : "rgba(255,255,235,0.76)";
+      ctx.fillStyle = haloColor;
       glyph.forEach((row, gy) => {
         [...row].forEach((px, gx) => {
           if (px !== "#") return;
           const rx = x + gx * scale;
           const ry = y + gy * scale;
-          ctx.fillRect(rx - 2, ry - 2, scale + 4, scale + 4);
+          ctx.fillRect(rx - 1, ry - 1, scale + 2, scale + 2);
         });
       });
       ctx.fillStyle = colorFor(obj);
-      ctx.strokeStyle = "rgba(0,0,0,0.95)";
-      ctx.lineWidth = 1.25;
+      ctx.strokeStyle = edgeColor;
+      ctx.lineWidth = 1;
       glyph.forEach((row, gy) => {
         [...row].forEach((px, gx) => {
           if (px !== "#") return;
