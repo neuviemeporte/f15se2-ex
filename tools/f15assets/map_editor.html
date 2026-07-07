@@ -514,9 +514,18 @@
       const x = Math.round(p.x - w / 2);
       const y = Math.round(p.y - h / 2);
       ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,0.88)";
+      glyph.forEach((row, gy) => {
+        [...row].forEach((px, gx) => {
+          if (px !== "#") return;
+          const rx = x + gx * scale;
+          const ry = y + gy * scale;
+          ctx.fillRect(rx - 2, ry - 2, scale + 4, scale + 4);
+        });
+      });
       ctx.fillStyle = colorFor(obj);
-      ctx.strokeStyle = "rgba(0,0,0,0.72)";
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(0,0,0,0.95)";
+      ctx.lineWidth = 1.25;
       glyph.forEach((row, gy) => {
         [...row].forEach((px, gx) => {
           if (px !== "#") return;
