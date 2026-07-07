@@ -521,4 +521,14 @@ extern uint8 dacValues[];
 extern const uint8 otherDacValues[];
 extern const uint8 g_dacGroundPaletteSrc[];
 
+union vtxSignMask_t
+{
+  struct
+  {
+    int16 Lo;
+    int16 Hi;
+  };
+  int32 Value;
+};
+
 #endif /* F15_SE2_EGDATA */

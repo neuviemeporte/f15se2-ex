@@ -51,6 +51,7 @@ extern int aspectScaleY(int screenY);
 extern int readAxisInput(int axisIdx);
 extern int shapeDataOffset(int shapeId);
 
+extern vtxSignMask_t g_vtxSignMask;
 namespace {
 
 // Behavior-sensitive constants are named here or explained at the use site.
@@ -406,8 +407,8 @@ int main() {
         buildVertexSignMask(0, 0);
         require(g_modelEdgeCount == kVertexSignMaskCount &&
                     g_modelWideVtxFlag == 0 &&
-                    g_vtxSignMaskLo == kVertexSignMaskAfterNegativeFirstEdge &&
-                    g_vtxSignMaskHi == -1,
+                    g_vtxSignMask.Lo == kVertexSignMaskAfterNegativeFirstEdge &&
+                    g_vtxSignMask.Hi == -1,
                 "buildVertexSignMask flips the original low sign-mask bit for negative edge normals");
     }
 

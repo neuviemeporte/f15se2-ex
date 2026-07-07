@@ -233,8 +233,8 @@ void resetSceneState() {
     g_viewCenterY = kViewCenterY;
     g_dacSupported = 0;
     g_modelWideVtxFlag = 0;
-    g_vtxSignMaskLo = kVisibilityMaskLo;
-    g_vtxSignMaskHi = 0;
+    g_vtxSignMask.Lo = kVisibilityMaskLo;
+    g_vtxSignMask.Hi = 0;
 }
 
 } // namespace
@@ -623,7 +623,7 @@ int main() {
         unsigned char *maskPtr = maskStream;
         writeLe16(maskStream, kVisibilityMaskLo);
         g_modelWideVtxFlag = 0;
-        g_vtxSignMaskLo = kVisibilityMaskLo;
+        g_vtxSignMask.Lo = kVisibilityMaskLo;
         require(testVisibilityMask(&maskPtr) == kVisibilityMaskLo &&
                     maskPtr == maskStream + 2,
                 "testVisibilityMask reads the original narrow low-word visibility mask");
@@ -632,8 +632,8 @@ int main() {
         writeLe16(maskStream, 0);
         writeLe16(maskStream + 2, kVisibilityMaskHi);
         g_modelWideVtxFlag = 1;
-        g_vtxSignMaskLo = 0;
-        g_vtxSignMaskHi = kVisibilityMaskHi;
+        g_vtxSignMask.Lo = 0;
+        g_vtxSignMask.Hi = kVisibilityMaskHi;
         require(testVisibilityMask(&maskPtr) == kVisibilityMaskHi &&
                     maskPtr == maskStream + 4,
                 "testVisibilityMask reads the original wide low/high visibility masks");
@@ -654,7 +654,7 @@ int main() {
         primitiveStream[4] = kPrimitiveEdgeIndex;
         primitiveStream[5] = kPrimitiveColorIndex;
         g_modelWideVtxFlag = 0;
-        g_vtxSignMaskLo = kVisibilityMaskLo;
+        g_vtxSignMask.Lo = kVisibilityMaskLo;
         g_objShade = 0;
         renderPrimitiveList(primitiveStream);
         require(g_gfxSetColorCalls == 1 &&
@@ -676,14 +676,14 @@ int main() {
         };
         unsigned char *facePtr = hiddenFaceStream;
         resetDrawStubs();
-        g_vtxSignMaskLo = 0;
+        g_vtxSignMask.Lo = 0;
         renderPrimitiveCommand(&facePtr);
         require(facePtr == hiddenFaceStream + sizeof(hiddenFaceStream) &&
                     g_gfxSetColorCalls == 0,
                 "renderPrimitiveCommand skips an original filled face whose visibility bit is clear");
 
         facePtr = hiddenFaceStream;
-        g_vtxSignMaskLo = kVisibilityMaskLo;
+        g_vtxSignMask.Lo = kVisibilityMaskLo;
         hiddenFaceStream[sizeof(hiddenFaceStream) - 1] = static_cast<unsigned char>(kPrimitiveHiddenColor);
         renderPrimitiveCommand(&facePtr);
         require(facePtr == hiddenFaceStream + sizeof(hiddenFaceStream) &&
@@ -709,8 +709,8 @@ int main() {
         };
         unsigned char *facePtr = highMaskFaceStream;
         resetDrawStubs();
-        g_vtxSignMaskLo = 0;
-        g_vtxSignMaskHi = kVisibilityMaskLo;
+        g_vtxSignMask.Lo = 0;
+        g_vtxSignMask.Hi = kVisibilityMaskLo;
         renderPrimitiveCommand(&facePtr);
         require(facePtr == highMaskFaceStream + sizeof(highMaskFaceStream) &&
                     g_gfxSetColorCalls == 0,
@@ -727,7 +727,7 @@ int main() {
         unsigned char *facePtr = faceStream;
         resetRasterState();
         resetDrawStubs();
-        g_vtxSignMaskLo = kVisibilityMaskLo;
+        g_vtxSignMask.Lo = kVisibilityMaskLo;
         for (int idx = 0; idx < kFilledFaceVertexCount; ++idx) {
             struct EdgeRec *rec = EREC(idx);
             std::memset(rec, 0, sizeof(*rec));
@@ -755,14 +755,14 @@ int main() {
         writeLe16(invisibleLineStream + 1, kVisibilityMaskLo);
         invisibleLineStream[3] = kPrimitiveEdgeIndex;
         invisibleLineStream[4] = kPrimitiveColorIndex;
-        g_vtxSignMaskLo = 0;
+        g_vtxSignMask.Lo = 0;
         renderPrimitiveCommand(&linePtr);
         require(linePtr == invisibleLineStream + 5 &&
                     g_drawClipLineCalls == 0,
                 "renderPrimitiveCommand skips an original line command whose visibility mask is clear");
 
         linePtr = invisibleLineStream;
-        g_vtxSignMaskLo = kVisibilityMaskLo;
+        g_vtxSignMask.Lo = kVisibilityMaskLo;
         std::memset(rec, 0, sizeof(*rec));
         rec->flags = kRejectedEdgeFlag;
         renderPrimitiveCommand(&linePtr);
@@ -796,7 +796,7 @@ int main() {
         rec->y2 = kPrimitiveY2;
         g_modelEdgeCount = 1;
         g_modelWideVtxFlag = 0;
-        g_vtxSignMaskLo = kVisibilityMaskLo;
+        g_vtxSignMask.Lo = kVisibilityMaskLo;
         renderPrimitiveList(rleDisplayList);
         require(g_drawClipLineCalls == 1 &&
                     g_lastGfxColor == colorLut[kPrimitiveColorIndex],
@@ -842,7 +842,7 @@ int main() {
         rec1->y2 = kPrimitiveY2 + 1;
         g_modelEdgeCount = 2;
         g_modelWideVtxFlag = 0;
-        g_vtxSignMaskLo = kVisibilityMaskLo | (kVisibilityMaskLo << 1);
+        g_vtxSignMask.Lo = kVisibilityMaskLo | (kVisibilityMaskLo << 1);
         renderPrimitiveList(rleDisplayList);
         require(g_drawClipLineCalls == 2 &&
                     g_lastGfxColor == colorLut[kPrimitiveColorIndex],
@@ -1254,7 +1254,7 @@ int main() {
         rotatePoint3d(3, 2, 1, &facePtr);
         require(facePtr == faceStream + 1 + kFaceRecordBytes &&
                     g_modelEdgeCount == kFaceCountOne &&
-                    g_vtxSignMaskLo == static_cast<int16>(~kVisibilityMaskLo),
+                    g_vtxSignMask.Lo == static_cast<int16>(~kVisibilityMaskLo),
                 "rotatePoint3d reads the original face table and clears flipped visibility bits");
 
         facePtr = faceStream;
@@ -1296,7 +1296,7 @@ int main() {
         unsigned char *vertexPtr = indexedStream;
         resetSceneState();
         writeLe16(indexedStream + 1, kVisibilityMaskLo);
-        g_vtxSignMaskLo = kVisibilityMaskLo;
+        g_vtxSignMask.Lo = kVisibilityMaskLo;
         DW(0x004) = kSceneVertexCoord;
         DW(0x25c) = 0;
         DW(0x4b4) = static_cast<long>(kSceneDepthHi) << 16;
@@ -1309,7 +1309,7 @@ int main() {
         resetSceneState();
         setIdentityObjectMatrix();
         writeLe16(indexedStream + 1, kVisibilityMaskLo);
-        g_vtxSignMaskLo = kVisibilityMaskLo;
+        g_vtxSignMask.Lo = kVisibilityMaskLo;
         g_offscreenRender = 1;
         g_replayLog.vertexX[0] = kSceneVertexCoord;
         reinterpret_cast<int16 *>(g_modelVertY)[0] = kSceneVertexCoord;
@@ -1377,7 +1377,7 @@ int main() {
         writeLe16(edgeStream + 1, kVisibilityMaskLo);
         edgeStream[3] = 0;
         edgeStream[4] = 1;
-        g_vtxSignMaskLo = 0;
+        g_vtxSignMask.Lo = 0;
         std::memset(rec, 0, sizeof(*rec));
         projectModelEdges(&edgePtr);
         require(edgePtr == edgeStream + sizeof(edgeStream) &&
@@ -1386,7 +1386,7 @@ int main() {
 
         edgePtr = edgeStream;
         resetSceneState();
-        g_vtxSignMaskLo = kVisibilityMaskLo;
+        g_vtxSignMask.Lo = kVisibilityMaskLo;
         vtxScratch.vproj.in[0].div = 0;
         vtxScratch.vproj.in[1].div = 0;
         projectModelEdges(&edgePtr);
@@ -1395,7 +1395,7 @@ int main() {
 
         edgePtr = edgeStream;
         resetSceneState();
-        g_vtxSignMaskLo = kVisibilityMaskLo;
+        g_vtxSignMask.Lo = kVisibilityMaskLo;
         vtxScratch.vproj.in[0].div = 1;
         vtxScratch.vproj.in[1].div = 0;
         vtxScratch.vproj.x.v[0] = 20;
@@ -1408,7 +1408,7 @@ int main() {
 
         edgePtr = edgeStream;
         resetSceneState();
-        g_vtxSignMaskLo = kVisibilityMaskLo;
+        g_vtxSignMask.Lo = kVisibilityMaskLo;
         vtxScratch.vproj.in[0].div = 1;
         vtxScratch.vproj.in[1].div = 1;
         vtxScratch.vproj.x.v[0] = kPrimitiveX1;

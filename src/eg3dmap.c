@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern vtxSignMask_t g_vtxSignMask;
 /* Private helpers for this translation unit. */
 void drawMapTiles(int originX, int originY, int zoomShift);
 void computeTileBounds(int *, int *, int *, int *);
@@ -304,8 +305,8 @@ void buildVertexSignMask(int screenX, int screenY) {
 
     bit = 1L;
     g_modelEdgeCount = (int)(unsigned char)(*((*(char far **)&g_modelStreamPtr)++)) & 0x1f;
-    g_vtxSignMaskLo = -1;
-    g_vtxSignMaskHi = -1;
+    g_vtxSignMask.Lo = -1;
+    g_vtxSignMask.Hi = -1;
     *(char *)&g_modelWideVtxFlag = (g_modelEdgeCount > 16) ? 1 : 0;
     edgeIdx = 0;
     while (edgeIdx < g_modelEdgeCount) {
@@ -313,7 +314,7 @@ void buildVertexSignMask(int screenX, int screenY) {
         if (rdI16(g_modelStreamPtr) < 0) {
             /* Lo:Hi are an adjacent int16 pair forming one 32-bit sign mask;
              * access as int32 — native `long` would over-read 4 bytes past Hi. */
-            *(int32 *)&g_vtxSignMaskLo ^= bit;
+            g_vtxSignMask.Value ^= bit;
         }
         g_modelStreamPtr += 4; /* int16 mask word read above (+2) + skip (+2) */
         bit <<= 1;

@@ -58,6 +58,7 @@ extern int16 g_savedPrimVtxScale;
  * rotated object facing; g_rotInputX a per-point scratch. */
 extern int16 g_camTransXLo, g_camTransXHi, g_camTransYLo, g_camTransYHi;
 extern int16 g_objDirX, g_objDirY, g_objDirZ, g_rotInputX;
+extern vtxSignMask_t g_vtxSignMask;
 
 /* ---- this TU's own scratch ---- */
 struct SpanBuffers g_spanBuf;   /* g_spanMinX / g_spanMaxX (contiguous) */
@@ -334,11 +335,11 @@ static int testVisibilityMask(unsigned char far **pp) {
     int r;
     p += 2;
     if (g_modelWideVtxFlag == 0) {
-        r = lo & g_vtxSignMaskLo;
+        r = lo & g_vtxSignMask.Lo;
     } else {
         int hi = rdI16(p);
         p += 2;
-        r = (lo & g_vtxSignMaskLo) | (hi & g_vtxSignMaskHi);
+        r = (lo & g_vtxSignMask.Lo) | (hi & g_vtxSignMask.Hi);
     }
     *pp = p;
     return r;
@@ -1148,9 +1149,9 @@ static void renderPrimitiveCommand(unsigned char far **pp) {
         uint16 mask = g_vtxBitMask[(cl & 0x1e) >> 1]; /* g_vtxScale+3 lookup */
         int visible;
         if (cl & 0x20)
-            visible = (g_vtxSignMaskHi & mask) != 0;
+            visible = (g_vtxSignMask.Hi & mask) != 0;
         else
-            visible = (g_vtxSignMaskLo & mask) != 0;
+            visible = (g_vtxSignMask.Lo & mask) != 0;
         /* a skipped face consumes its `count` vertex bytes plus the colour byte */
         if (!visible) {
             p += countByte + 1;
@@ -1312,7 +1313,7 @@ static void renderPrimitiveList(unsigned char far *p) {
     }
     /* ---- 0xFF: RLE-reordered shared-edge path (loc_1781) ---- */
     {
-        unsigned long mask = ((unsigned long)(uint16)g_vtxSignMaskHi << 16) | (uint16)g_vtxSignMaskLo;
+        unsigned long mask = ((unsigned long)(uint16)g_vtxSignMask.Hi << 16) | (uint16)g_vtxSignMask.Lo;
         int cnt = g_modelEdgeCount;
         int i;
         for (i = 0; i < cnt; i++) {
@@ -1989,8 +1990,8 @@ static void rotatePoint3d(int relZ, int relY, int relX, unsigned char far **pp) 
     cnt = (*p++) & 0x1f;
     g_modelEdgeCount = cnt;
     g_modelWideVtxFlag = (cnt > 0x10) ? 1 : 0;
-    g_vtxSignMaskLo = -1;
-    g_vtxSignMaskHi = -1;
+    g_vtxSignMask.Lo = -1;
+    g_vtxSignMask.Hi = -1;
     flipped = 0;
     {
         unsigned long bit = 1;
@@ -2007,8 +2008,8 @@ static void rotatePoint3d(int relZ, int relY, int relX, unsigned char far **pp) 
             p += 2;
             dot = imul16(fnx, g_objDirX) + imul16(fny, g_objDirZ) + imul16(fnz, g_objDirY);
             if (dot < (long)thr) {
-                g_vtxSignMaskLo ^= (int16)(uint16)(bit & 0xffff);
-                g_vtxSignMaskHi ^= (int16)(uint16)((bit >> 16) & 0xffff);
+                g_vtxSignMask.Lo ^= (int16)(uint16)(bit & 0xffff);
+                g_vtxSignMask.Hi ^= (int16)(uint16)((bit >> 16) & 0xffff);
                 flipped++;
             }
             bit <<= 1;
