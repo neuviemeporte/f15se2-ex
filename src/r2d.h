@@ -133,11 +133,16 @@ typedef struct {
     R2DImage *img;
     short srcX, srcY, imgW, imgH;
     short key;            /* <0 opaque; >=0 transparent on that index (sprites: 0) */
+    /* scope line (kind == R2D_PRIM_SCOPELINE): fractional 320-space endpoints for a
+     * sub-pixel replay; srcX,srcY,imgW,imgH double as the scissor rect (absolute
+     * 320-space, half-open) the GL edge-cut is clipped to. */
+    float fx1, fy1, fx2, fy2;
 } R2DOverlayPrim;
 #define R2D_PRIM_LINE  0
 #define R2D_PRIM_POINT 1
 #define R2D_PRIM_IMAGE 2
 #define R2D_PRIM_POLY  3
+#define R2D_PRIM_SCOPELINE 4
 
 /* Marks the start of a GL flight frame's 2D overlay (called from the 3D backend
  * once the main 3D view begins). Only between this and the present do 2D
@@ -173,6 +178,15 @@ int r2d_overlayRetained(void);
  * the registered software rasterizer. */
 void r2d_submitLine(int x1, int y1, int x2, int y2, int color);
 void r2d_submitPoint(int x, int y, int color);
+
+/* Submit a sub-pixel radar/MFD line: fractional 320-space endpoints, scissored
+ * to (clipX0,clipY0)-(clipX1,clipY1) (absolute 320-space, half-open) at replay.
+ * On a GL vector frame records for a native-res replay whose ends are cut by a GL
+ * scissor at the true MFD edge (not a geometry clip snapped to whole pixels, which
+ * wobbles and leaves gaps); off a vector frame the software backend rounds to int,
+ * clips the segment to the rect and rasterizes it into the page (unchanged look). */
+void r2d_submitScopeLine(float x1, float y1, float x2, float y2, int color,
+                         int clipX0, int clipY0, int clipX1, int clipY1);
 
 /* Submit a filled convex polygon: `n` vertices as interleaved x,y pairs in
  * absolute 320-space, filled with palette colour `color`. Only meaningful on a

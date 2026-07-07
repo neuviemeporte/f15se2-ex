@@ -266,6 +266,56 @@ void r2d_submitPoint(int x, int y, int color) {
     else if (s_swPoint) s_swPoint(x, y, color);
 }
 
+/* Cohen-Sutherland clip of an integer segment to the inclusive box [x0,x1]x[y0,y1].
+ * Returns 0 if fully outside (nothing to draw). Mirrors the drawClipLineGlobal /
+ * gfx_drawLine clippers; used only for the software scope-line fallback. */
+static int csOutcode(int x, int y, int x0, int y0, int x1, int y1) {
+    int c = 0;
+    if (x < x0) c |= 1; else if (x > x1) c |= 2;
+    if (y < y0) c |= 4; else if (y > y1) c |= 8;
+    return c;
+}
+static int csClip(int *px1, int *py1, int *px2, int *py2,
+                  int x0, int y0, int x1, int y1) {
+    int ax = *px1, ay = *py1, bx = *px2, by = *py2;
+    int c1 = csOutcode(ax, ay, x0, y0, x1, y1);
+    int c2 = csOutcode(bx, by, x0, y0, x1, y1);
+    for (;;) {
+        int oc, cx = 0, cy = 0;
+        if ((c1 | c2) == 0) break;
+        if ((c1 & c2) != 0) return 0;
+        oc = c1 ? c1 : c2;
+        if (oc & 8)      { cx = ax + (long)(bx - ax) * (y1 - ay) / (by - ay); cy = y1; }
+        else if (oc & 4) { cx = ax + (long)(bx - ax) * (y0 - ay) / (by - ay); cy = y0; }
+        else if (oc & 2) { cy = ay + (long)(by - ay) * (x1 - ax) / (bx - ax); cx = x1; }
+        else             { cy = ay + (long)(by - ay) * (x0 - ax) / (bx - ax); cx = x0; }
+        if (oc == c1) { ax = cx; ay = cy; c1 = csOutcode(ax, ay, x0, y0, x1, y1); }
+        else          { bx = cx; by = cy; c2 = csOutcode(bx, by, x0, y0, x1, y1); }
+    }
+    *px1 = ax; *py1 = ay; *px2 = bx; *py2 = by;
+    return 1;
+}
+
+void r2d_submitScopeLine(float x1, float y1, float x2, float y2, int color,
+                         int cx0, int cy0, int cx1, int cy1) {
+    if (r2d_vectorActive()) {
+        R2DOverlayPrim *p = primGrow();
+        if (!p) return;
+        p->kind = R2D_PRIM_SCOPELINE;
+        p->color = (unsigned char)color;
+        p->img = NULL;
+        p->fx1 = x1; p->fy1 = y1; p->fx2 = x2; p->fy2 = y2;
+        /* scissor rect (half-open) stashed in the src fields */
+        p->srcX = (short)cx0; p->srcY = (short)cy0;
+        p->imgW = (short)cx1; p->imgH = (short)cy1;
+    } else if (s_swLine) {
+        int ix1 = (int)SDL_floorf(x1 + 0.5f), iy1 = (int)SDL_floorf(y1 + 0.5f);
+        int ix2 = (int)SDL_floorf(x2 + 0.5f), iy2 = (int)SDL_floorf(y2 + 0.5f);
+        if (csClip(&ix1, &iy1, &ix2, &iy2, cx0, cy0, cx1 - 1, cy1 - 1))
+            s_swLine(ix1, iy1, ix2, iy2, color);
+    }
+}
+
 void r2d_submitPoly(const short *xy, int n, int color,
                     int clipX0, int clipY0, int clipX1, int clipY1) {
     R2DOverlayPrim *p;

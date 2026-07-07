@@ -26,10 +26,36 @@ void drawMapMarkerBox(int centerX, int centerY, int color);
 void projectMapPoint(int mapX, int mapY);
 void blitGaugeSprite(int srcCol, int srcRow, int destX, int destY);
 
+/* Sub-pixel projected position of the most recent projectMapPoint(), in absolute
+ * 320-space (fractional). The integer vtxScratch.vproj.x.lo/y.lo (whole 320-space)
+ * still drives blip-icon placement and the on-scope visibility test; the radar's
+ * *lines* draw from these floats so they glide instead of snapping to whole pixels
+ * as the plane moves/turns. */
+static float g_scopeFx, g_scopeFy;
+
+/* The 1.2 vertical stretch the GL backend presents the 320x200 overlay with (the
+ * authentic non-square-pixel CRT look). A top-down radar must read isotropic, so
+ * the projection pre-divides its vertical offset by this factor and the present's
+ * x1.2 restores it to square. The software backend presents square pixels (no
+ * vector replay), so the scope is already isotropic there — return 1. */
+static float scopeAspectY(void) {
+    return 5.0f / 6.0f;
+}
+
+static int scopeRound(float v) {
+    return (int)(v < 0.0f ? v - 0.5f : v + 0.5f);
+}
+
+/* One radar/MFD line, drawn from the current fill colour and cut at the middle-MFD
+ * box (the fillSpanRect region above, as a half-open scissor rect). */
+static void scopeLine(float x1, float y1, float x2, float y2) {
+    r2d_submitScopeLine(x1, y1, x2, y2, g_pageFront[2], 120, 104, 200, 176);
+}
+
 void drawTacticalMap(char page) {
-    int startX;
+    float startX;
     int code;
-    int startY;
+    float startY;
     int altBand;
     int altDiff;
     int gridX;
@@ -59,19 +85,19 @@ void drawTacticalMap(char page) {
     i = gridLo * 2;
     while (gridStep * 2 >= i) {
         projectMapPoint(i * 0x400 + gridX, gridY + 0x1c00);
-        startX = vtxScratch.vproj.x.lo;
-        startY = vtxScratch.vproj.y.lo;
+        startX = g_scopeFx;
+        startY = g_scopeFy;
         projectMapPoint(i * 0x400 + gridX, gridY - 0x1800);
-        drawClippedLineRegion(startX, startY, vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, 120, 199, 104, 175, 0);
+        scopeLine(startX, startY, g_scopeFx, g_scopeFy);
         i += 2;
     }
     i = gridLo * 2;
     while (gridStep * 2 >= i) {
         projectMapPoint(gridX + 0x1c00, i * 0x400 + gridY);
-        startX = vtxScratch.vproj.x.lo;
-        startY = vtxScratch.vproj.y.lo;
+        startX = g_scopeFx;
+        startY = g_scopeFy;
         projectMapPoint(gridX - 0x1800, i * 0x400 + gridY);
-        drawClippedLineRegion(startX, startY, vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, 120, 199, 104, 175, 0);
+        scopeLine(startX, startY, g_scopeFx, g_scopeFy);
         i += 2;
     }
     for (i = 0; i < g_groundUnitCount; i++) {
@@ -120,7 +146,9 @@ void drawTacticalMap(char page) {
                     setDrawColor(COLOR_WHITE);;
                 }
                 code = g_projectiles[i].worldX - g_ourHead;
-                drawScreenLineOnePage(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, vtxScratch.vproj.x.lo - sinMul(code, radius), cosMul(code, radius) + vtxScratch.vproj.y.lo);
+                scopeLine(g_scopeFx, g_scopeFy,
+                          g_scopeFx - (float)sinMul(code, radius),
+                          g_scopeFy + (float)cosMul(code, radius) * scopeAspectY());
             }
         }
     }
@@ -173,27 +201,39 @@ void drawTacticalMap(char page) {
 
 // ==== seg000:0xa740 ====
 void drawMapMarkerBox(int centerX, int centerY, int color) {
+    /* Centre on the sub-pixel projected blip (g_scopeFx/y, set by the immediately
+     * preceding projectMapPoint); the ±4×±3 box reads square after the 1.2 stretch. */
+    float x = g_scopeFx, y = g_scopeFy;
+    (void)centerX;
+    (void)centerY;
     setDrawColor(color);
-    drawScreenLineOnePage(vtxScratch.vproj.x.lo - 4, vtxScratch.vproj.y.lo - 3, vtxScratch.vproj.x.lo + 4, vtxScratch.vproj.y.lo - 3);
-    drawScreenLineOnePage(vtxScratch.vproj.x.lo + 4, vtxScratch.vproj.y.lo - 3, vtxScratch.vproj.x.lo + 4, vtxScratch.vproj.y.lo + 3);
-    drawScreenLineOnePage(vtxScratch.vproj.x.lo + 4, vtxScratch.vproj.y.lo + 3, vtxScratch.vproj.x.lo - 4, vtxScratch.vproj.y.lo + 3);
-    drawScreenLineOnePage(vtxScratch.vproj.x.lo - 4, vtxScratch.vproj.y.lo + 3, vtxScratch.vproj.x.lo - 4, vtxScratch.vproj.y.lo - 3);
+    scopeLine(x - 4, y - 3, x + 4, y - 3);
+    scopeLine(x + 4, y - 3, x + 4, y + 3);
+    scopeLine(x + 4, y + 3, x - 4, y + 3);
+    scopeLine(x - 4, y + 3, x - 4, y - 3);
 }
 
 // ==== seg000:0xa7c4 ====
 
 void projectMapPoint(int mapX, int mapY) {
-    int scaledX;
-    int scaledY;
-    char shift;
+    char shift = 7 - (char)g_radarScopeRange;
+    /* Carry the fraction the original's `>> shift` dropped: scale the 16-bit world
+     * delta (kept as int16 so it wraps exactly as the original word math did) by 1/2^shift
+     * in float, then rotate by heading with the shared sine table. cosMul/sinMul are
+     * fixedMulQ14(sine, v) = sine*v/32768, so cosine()/sine() over 32768 reproduce
+     * them without the whole-unit truncation that made the scope wobble. */
+    float inv = 1.0f / (float)(1 << shift);
+    float fsx = (float)(int16)(mapX - g_viewX_) * inv;
+    float fsy = (float)(int16)(g_viewY_ - mapY) * inv;
+    float c = (float)cosine(g_ourHead) * (1.0f / 32768.0f);
+    float s = (float)sine(g_ourHead) * (1.0f / 32768.0f);
+    float rx = c * fsx - s * fsy;
+    float ry = c * fsy + s * fsx;
     g_projDepth = 0;
-    shift = 7 - (char)g_radarScopeRange;
-    scaledX = (mapX - g_viewX_) >> shift;
-    scaledY = (g_viewY_ - mapY) >> shift;
-    vtxScratch.vproj.x.lo = cosMul(g_ourHead, scaledX) - sinMul(g_ourHead, scaledY);
-    vtxScratch.vproj.y.lo = cosMul(g_ourHead, scaledY) + sinMul(g_ourHead, scaledX);
-    vtxScratch.vproj.x.lo += 160;
-    vtxScratch.vproj.y.lo = -vtxScratch.vproj.y.lo + 152;
+    g_scopeFx = 160.0f + rx;
+    g_scopeFy = 152.0f - ry * scopeAspectY();
+    vtxScratch.vproj.x.lo = (int16)scopeRound(g_scopeFx);
+    vtxScratch.vproj.y.lo = (int16)scopeRound(g_scopeFy);
     if (vtxScratch.vproj.x.lo < 124 || vtxScratch.vproj.x.lo > 195) {
         g_projDepth = -1;
     }

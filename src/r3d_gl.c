@@ -1611,6 +1611,31 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
                     glEnd();
                 }
                 glDisable(GL_SCISSOR_TEST);
+            } else if (kind == R2D_PRIM_SCOPELINE) {
+                /* Radar/MFD lines with fractional endpoints (no wobble) whose ends
+                 * are cut by a GL scissor at the true MFD edge (prim srcX,srcY,imgW,
+                 * imgH = the rect) instead of a whole-pixel geometry clip — a crisp
+                 * screen-edge cut, not a slanted butt-cap short of the border. */
+                glEnable(GL_SCISSOR_TEST);
+                glLineWidth(lw / 2);
+                for (; i < j; i++) {
+                    const R2DOverlayPrim *p = &prims[i];
+                    SDL_Color c = vpal->colors[p->color];
+                    float sx0 = (float)lbx + (float)p->srcX * scaleX - shake;
+                    float sx1 = (float)lbx + (float)p->imgW * scaleX - shake;
+                    float sy1w = (float)lby + (float)p->srcY * scaleY;
+                    float sy2w = (float)lby + (float)p->imgH * scaleY;
+                    glScissor((int)sx0, (int)((float)win_h - sy2w),
+                              (int)(sx1 - sx0), (int)(sy2w - sy1w));
+                    glColor3ub(c.r, c.g, c.b);
+                    glBegin(GL_LINES);
+                    glVertex2f((float)lbx + (p->fx1 + 0.5f) * scaleX - shake,
+                               (float)lby + (p->fy1 + 0.5f) * scaleY);
+                    glVertex2f((float)lbx + (p->fx2 + 0.5f) * scaleX - shake,
+                               (float)lby + (p->fy2 + 0.5f) * scaleY);
+                    glEnd();
+                }
+                glDisable(GL_SCISSOR_TEST);
             } else { /* R2D_PRIM_IMAGE */
                 glEnable(GL_TEXTURE_2D);
                 glColor3ub(255, 255, 255); /* MODULATE: white so the texture passes through */
