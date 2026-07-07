@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>F-15 World Map Editor</title>
+  <style>
+    :root {
+      --bg: #11140f;
+      --panel: #1d2419;
+      --panel-2: #26301f;
+      --ink: #ece7d5;
+      --muted: #aeb89a;
+      --line: #4f5c3d;
+      --accent: #d7a84f;
+      --danger: #e56b4f;
+      --water: #23354a;
+      --land: #2f4424;
+      --blocked: #5a392a;
+      --target: #f2c15b;
+      --base: #7fd18b;
+      --sam: #f26d5b;
+      --ship: #6db8f2;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 20% 10%, rgba(215, 168, 79, 0.16), transparent 32rem),
+        linear-gradient(135deg, #0b0f0a 0%, var(--bg) 48%, #18150f 100%);
+      font-family: "Aptos Display", "Segoe UI", sans-serif;
+    }
+
+    header {
+      padding: 18px 22px 12px;
+      border-bottom: 1px solid rgba(236, 231, 213, 0.12);
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    button, label.file {
+      border: 1px solid rgba(236, 231, 213, 0.22);
+      background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      color: var(--ink);
+      border-radius: 10px;
+      padding: 9px 12px;
+      cursor: pointer;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    button:hover, label.file:hover { border-color: var(--accent); }
+    input[type="file"] { display: none; }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(320px, 1fr) 360px;
+      gap: 16px;
+      padding: 16px;
+    }
+
+    .map-wrap, aside {
+      background: rgba(29, 36, 25, 0.86);
+      border: 1px solid rgba(236, 231, 213, 0.12);
+      border-radius: 18px;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+      overflow: hidden;
+    }
+
+    .map-head, .side-head {
+      padding: 12px 14px;
+      background: rgba(38, 48, 31, 0.88);
+      border-bottom: 1px solid rgba(236, 231, 213, 0.12);
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .hint, .stat {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    #map {
+      width: 100%;
+      height: min(78vh, calc(100vw - 420px));
+      min-height: 560px;
+      display: block;
+      background: #172015;
+      touch-action: none;
+    }
+
+    aside {
+      max-height: calc(100vh - 110px);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .details {
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+      overflow: auto;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .row label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    input, select {
+      width: 100%;
+      border: 1px solid rgba(236, 231, 213, 0.16);
+      background: #11170f;
+      color: var(--ink);
+      border-radius: 9px;
+      padding: 8px;
+    }
+
+    .list {
+      overflow: auto;
+      border-top: 1px solid rgba(236, 231, 213, 0.12);
+      padding: 8px;
+    }
+
+    .item {
+      padding: 8px;
+      border-radius: 10px;
+      cursor: pointer;
+      display: grid;
+      gap: 2px;
+    }
+
+    .item:hover, .item.active { background: rgba(215, 168, 79, 0.14); }
+    .item small { color: var(--muted); }
+    .chips {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .chip {
+      border: 1px solid rgba(236, 231, 213, 0.18);
+      background: rgba(17, 23, 15, 0.82);
+      border-radius: 999px;
+      padding: 4px 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+      #map { height: 72vh; min-height: 420px; }
+      aside { max-height: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>F-15 World Map Editor</h1>
+      <div class="hint">Load exported <code>*.WLD.json</code>, drag objects, edit fields, export JSON.</div>
+    </div>
+    <div class="toolbar">
+      <label class="file">Load WLD JSON<input id="file" type="file" accept=".json,application/json"></label>
+      <button id="toggle-grid">Grid on</button>
+      <button id="duplicate">Duplicate</button>
+      <button id="delete">Delete</button>
+      <button id="download">Export JSON</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="map-wrap">
+      <div class="map-head">
+        <div id="title">No world loaded</div>
+        <div class="stat" id="stats">0 objects</div>
+      </div>
+      <canvas id="map" width="900" height="900"></canvas>
+    </section>
+
+    <aside>
+      <div class="side-head">
+        <strong>Selected object</strong>
+        <span class="stat" id="dirty">clean</span>
+      </div>
+      <div class="details" id="details">
+        <div class="hint">Select a marker on the map or in the list.</div>
+      </div>
+      <div class="list" id="object-list"></div>
+    </aside>
+  </main>
+
+  <script>
+    const WORLD_MAX = 32768;
+    const GRID_CELLS = 16;
+    const canvas = document.getElementById("map");
+    const ctx = canvas.getContext("2d");
+    const fileInput = document.getElementById("file");
+    const titleEl = document.getElementById("title");
+    const statsEl = document.getElementById("stats");
+    const detailsEl = document.getElementById("details");
+    const listEl = document.getElementById("object-list");
+    const dirtyEl = document.getElementById("dirty");
+    let world = null;
+    let fileName = "world.WLD.json";
+    let selected = -1;
+    let dragging = false;
+    let showGrid = true;
+    let dirty = false;
+    const ICON_GLYPHS = {
+      target: ["..#..", ".###.", "#####", ".###.", "..#.."],
+      base: ["#...#", ".#.#.", "..#..", ".#.#.", "#...#"],
+      sam: ["..#..", ".#.#.", "#####", "#.#.#", "..#.."],
+      ship: [".....", "..#..", ".###.", "#####", ".#.#."],
+    };
+
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+    function objects() { return world?.world_objects || []; }
+    function flights() { return world?.flight_units || []; }
+    function names() { return world?.name_strings || []; }
+    function objectTypeTable() {
+      if (!world?.object_type_table) return null;
+      try {
+        return Uint8Array.from(atob(world.object_type_table), c => c.charCodeAt(0));
+      } catch (_) {
+        return null;
+      }
+    }
+    function terrainGrid() {
+      if (!world?.terrain_grid) return null;
+      try {
+        return Uint8Array.from(atob(world.terrain_grid), c => c.charCodeAt(0));
+      } catch (_) {
+        return null;
+      }
+    }
+    function objectName(obj) {
+      const idx = (Number(obj.objectIdx || 0) & 0x7f);
+      const unit = Number(obj.unitRef || 0);
+      const n = names();
+      const objName = n[idx] || `object_${idx}`;
+      const unitName = n[unit] || "";
+      return unitName ? `${objName} at ${unitName}` : objName;
+    }
+    function objectKind(obj) {
+      const name = objectName(obj).toLowerCase();
+      const flags = Number(obj.targetFlags || 0);
+      if (name.includes("sam") || name.includes("radar")) return "sam";
+      if ((flags & 0x500) || name.includes("airbase") || name.includes("airstrip")) return "base";
+      if (name.includes("uss") || name.includes("boat") || name.includes("ship")) return "ship";
+      return "target";
+    }
+    function colorFor(obj) {
+      return {
+        sam: getCss("--sam"),
+        base: getCss("--base"),
+        ship: getCss("--ship"),
+        target: getCss("--target"),
+      }[objectKind(obj)];
+    }
+    function objectTypeValue(obj) {
+      const table = objectTypeTable();
+      if (!table) return 0;
+      return table[Number(obj.objectIdx || 0) & 0x7f] || 0;
+    }
+    function flagLabels(obj) {
+      const f = Number(obj.targetFlags || 0);
+      const labels = [];
+      if (f & 0x001) labels.push("mission/placeable");
+      if (f & 0x008) labels.push("random removable");
+      if (f & 0x080) labels.push("destroyed/inactive");
+      if (f & 0x100) labels.push("airbase");
+      if (f & 0x200) labels.push("large/runway");
+      if (f & 0x400) labels.push("waypoint/no intercept");
+      if (f & 0x800) labels.push("disabled");
+      if (f & 0x1000) labels.push("enemy-counted");
+      return labels;
+    }
+    function roleFor(obj, idx) {
+      const f = Number(obj.targetFlags || 0);
+      if ((f & 0x800) !== 0) return "disabled";
+      if (idx >= Number(world?.world_object_count || 0) && (f & 0x500) && (f & 0x201)) return "takeoff/landing base candidate";
+      if (objectTypeValue(obj) !== 0) return "primary/secondary target candidate";
+      if (idx < Number(world?.ground_unit_count || 0) && Number(obj.unitType || 0) !== 0) return "ground unit";
+      if ((f & 0x400) !== 0) return "waypoint/reference point";
+      return "map object";
+    }
+    function flightsForObject(idx) {
+      return flights()
+        .map((unit, unitIdx) => ({ unit, unitIdx }))
+        .filter(entry => Number(entry.unit.waypointIdx || -1) === idx);
+    }
+    function hex(v) {
+      const n = Number(v || 0);
+      return "0x" + (n < 0 ? (n >>> 0).toString(16) : n.toString(16));
+    }
+    function updateStats() {
+      const baseCount = objects().filter((obj, idx) => roleFor(obj, idx).includes("base candidate")).length;
+      const targetCount = objects().filter((obj, idx) => roleFor(obj, idx).includes("target candidate")).length;
+      statsEl.textContent = `${objects().length} objects, ${flights().length} flights, ${targetCount} target candidates, ${baseCount} bases`;
+    }
+    function drawGameIcon(obj, p, isSelected) {
+      const kind = objectKind(obj);
+      const glyph = ICON_GLYPHS[kind] || ICON_GLYPHS.target;
+      const scale = isSelected ? 4 : 3;
+      const w = glyph[0].length * scale;
+      const h = glyph.length * scale;
+      const x = Math.round(p.x - w / 2);
+      const y = Math.round(p.y - h / 2);
+      ctx.save();
+      ctx.fillStyle = colorFor(obj);
+      ctx.strokeStyle = "rgba(0,0,0,0.72)";
+      ctx.lineWidth = 1;
+      glyph.forEach((row, gy) => {
+        [...row].forEach((px, gx) => {
+          if (px !== "#") return;
+          const rx = x + gx * scale;
+          const ry = y + gy * scale;
+          ctx.fillRect(rx, ry, scale, scale);
+          ctx.strokeRect(rx + 0.5, ry + 0.5, scale - 1, scale - 1);
+        });
+      });
+      if (isSelected) {
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
+      }
+      ctx.restore();
+      return true;
+    }
+    function getCss(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(rect.width * dpr);
+      canvas.height = Math.floor(rect.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      draw();
+    }
+    function mapRect() {
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      const size = Math.min(w, h) - 36;
+      return { x: (w - size) / 2, y: (h - size) / 2, size };
+    }
+    function worldToScreen(x, y) {
+      const r = mapRect();
+      return {
+        x: r.x + (x / WORLD_MAX) * r.size,
+        y: r.y + (y / WORLD_MAX) * r.size,
+      };
+    }
+    function screenToWorld(px, py) {
+      const r = mapRect();
+      return {
+        x: Math.round(clamp(((px - r.x) / r.size) * WORLD_MAX, 0, WORLD_MAX - 1)),
+        y: Math.round(clamp(((py - r.y) / r.size) * WORLD_MAX, 0, WORLD_MAX - 1)),
+      };
+    }
+    function draw() {
+      ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+      const r = mapRect();
+      ctx.fillStyle = "#121910";
+      ctx.fillRect(r.x, r.y, r.size, r.size);
+      drawTerrain(r);
+      if (showGrid) drawGrid(r);
+      drawObjects();
+    }
+    function drawTerrain(r) {
+      const grid = terrainGrid();
+      const cell = r.size / GRID_CELLS;
+      for (let gy = 0; gy < GRID_CELLS; gy++) {
+        for (let gx = 0; gx < GRID_CELLS; gx++) {
+          const val = grid ? grid[gx + gy * GRID_CELLS] : 0;
+          ctx.fillStyle = (val & 3) ? getCss("--water") : getCss("--land");
+          if (val & 0x10) ctx.fillStyle = getCss("--blocked");
+          ctx.globalAlpha = 0.72;
+          ctx.fillRect(r.x + gx * cell, r.y + gy * cell, cell, cell);
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+    function drawGrid(r) {
+      const cell = r.size / GRID_CELLS;
+      ctx.strokeStyle = "rgba(236,231,213,0.22)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= GRID_CELLS; i++) {
+        const p = r.x + i * cell;
+        const q = r.y + i * cell;
+        ctx.beginPath(); ctx.moveTo(p, r.y); ctx.lineTo(p, r.y + r.size); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(r.x, q); ctx.lineTo(r.x + r.size, q); ctx.stroke();
+      }
+    }
+    function drawObjects() {
+      objects().forEach((obj, idx) => {
+        if (!obj || (!obj.x_coord && !obj.y_coord && !obj.objectIdx && !obj.unitRef)) return;
+        const p = worldToScreen(Number(obj.x_coord || 0), Number(obj.y_coord || 0));
+        if (drawGameIcon(obj, p, idx === selected)) return;
+        ctx.beginPath();
+        ctx.fillStyle = colorFor(obj);
+        ctx.strokeStyle = idx === selected ? "#ffffff" : "rgba(0,0,0,0.7)";
+        ctx.lineWidth = idx === selected ? 3 : 1.5;
+        ctx.arc(p.x, p.y, idx === selected ? 7 : 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      });
+    }
+    function pickObject(px, py) {
+      let best = -1, bestDist = 9999;
+      objects().forEach((obj, idx) => {
+        const p = worldToScreen(Number(obj.x_coord || 0), Number(obj.y_coord || 0));
+        const d = Math.hypot(px - p.x, py - p.y);
+        if (d < 12 && d < bestDist) { best = idx; bestDist = d; }
+      });
+      return best;
+    }
+    function selectObject(idx) {
+      selected = idx;
+      renderDetails();
+      renderList();
+      draw();
+    }
+    function markDirty() {
+      dirty = true;
+      dirtyEl.textContent = "modified";
+      dirtyEl.style.color = getCss("--accent");
+    }
+    function updateField(key, value) {
+      if (selected < 0) return;
+      const obj = objects()[selected];
+      obj[key] = Number.isNaN(Number(value)) ? value : Number(value);
+      if (key === "x_coord" || key === "y_coord") {
+        obj[key] = clamp(Math.round(Number(obj[key])), 0, WORLD_MAX - 1);
+      }
+      markDirty();
+      renderDetails();
+      renderList();
+      draw();
+    }
+    function duplicateSelected() {
+      if (!world || selected < 0 || !objects()[selected]) return;
+      const copy = JSON.parse(JSON.stringify(objects()[selected]));
+      copy.x_coord = clamp(Number(copy.x_coord || 0) + 512, 0, WORLD_MAX - 1);
+      copy.y_coord = clamp(Number(copy.y_coord || 0) + 512, 0, WORLD_MAX - 1);
+      objects().push(copy);
+      world.read_item_size = objects().length;
+      selected = objects().length - 1;
+      markDirty();
+      updateStats();
+      renderDetails();
+      renderList();
+      draw();
+    }
+    function deleteSelected() {
+      if (!world || selected < 0 || !objects()[selected]) return;
+      const ok = confirm(`Delete object ${selected}: ${objectName(objects()[selected])}?`);
+      if (!ok) return;
+      objects().splice(selected, 1);
+      world.read_item_size = objects().length;
+      selected = Math.min(selected, objects().length - 1);
+      markDirty();
+      updateStats();
+      renderDetails();
+      renderList();
+      draw();
+    }
+    function renderDetails() {
+      if (!world || selected < 0 || !objects()[selected]) {
+        detailsEl.innerHTML = '<div class="hint">Select a marker on the map or in the list.</div>';
+        return;
+      }
+      const obj = objects()[selected];
+      const idx = Number(obj.objectIdx || 0) & 0x7f;
+      const flags = flagLabels(obj);
+      const linkedFlights = flightsForObject(selected);
+      const role = roleFor(obj, selected);
+      const typeValue = objectTypeValue(obj);
+      detailsEl.innerHTML = `
+        <div class="row"><label>Index</label><input value="${selected}" disabled></div>
+        <div class="row"><label>Label</label><input value="${escapeHtml(objectName(obj))}" disabled></div>
+        <div class="row"><label>Role</label><input value="${escapeHtml(role)}" disabled></div>
+        <div class="row"><label>Flags</label><div class="chips">${(flags.length ? flags : ["none"]).map(v => `<span class="chip">${escapeHtml(v)}</span>`).join("")}</div></div>
+        <div class="row"><label>object type</label><input value="${typeValue} (${hex(typeValue)})" disabled></div>
+        <div class="row"><label>flights here</label><input value="${linkedFlights.length ? linkedFlights.map(v => `#${v.unitIdx} plane ${v.unit.planeType}`).join(", ") : "none"}" disabled></div>
+        <div class="row"><label>x_coord</label><input data-k="x_coord" type="number" min="0" max="32767" value="${obj.x_coord || 0}"></div>
+        <div class="row"><label>y_coord</label><input data-k="y_coord" type="number" min="0" max="32767" value="${obj.y_coord || 0}"></div>
+        <div class="row"><label>grid</label><input value="${(obj.x_coord || 0) >> 11}, ${(obj.y_coord || 0) >> 11}" disabled></div>
+        <div class="row"><label>unitRef</label><input data-k="unitRef" type="number" value="${obj.unitRef || 0}"></div>
+        <div class="row"><label>unitType</label><input data-k="unitType" type="number" value="${obj.unitType || 0}"></div>
+        <div class="row"><label>targetFlags</label><input data-k="targetFlags" type="number" value="${obj.targetFlags || 0}"></div>
+        <div class="row"><label>occupantType</label><input data-k="occupantType" type="number" value="${obj.occupantType || 0}"></div>
+        <div class="row"><label>patrolCount</label><input data-k="patrolCount" type="number" value="${obj.patrolCount || 0}"></div>
+        <div class="row"><label>objectIdx</label><input data-k="objectIdx" type="number" value="${obj.objectIdx || 0}"></div>
+        <div class="row"><label>name index</label><input value="${idx}" disabled></div>
+      `;
+      detailsEl.querySelectorAll("input[data-k]").forEach(input => {
+        input.addEventListener("change", () => updateField(input.dataset.k, input.value));
+      });
+    }
+    function renderList() {
+      listEl.innerHTML = "";
+      if (!world) return;
+      objects().forEach((obj, idx) => {
+        if (!obj || (!obj.x_coord && !obj.y_coord && !obj.objectIdx && !obj.unitRef)) return;
+        const el = document.createElement("div");
+        el.className = "item" + (idx === selected ? " active" : "");
+        el.innerHTML = `<strong>${idx}: ${escapeHtml(objectName(obj))}</strong><small>${escapeHtml(roleFor(obj, idx))}; x ${obj.x_coord || 0}, y ${obj.y_coord || 0}, flags ${obj.targetFlags || 0}</small>`;
+        el.addEventListener("click", () => selectObject(idx));
+        listEl.appendChild(el);
+      });
+    }
+    function escapeHtml(v) {
+      return String(v).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    }
+    function loadWorld(text, name) {
+      world = JSON.parse(text);
+      fileName = name || "world.WLD.json";
+      selected = -1;
+      dirty = false;
+      dirtyEl.textContent = "clean";
+      dirtyEl.style.color = "";
+      titleEl.textContent = fileName;
+      updateStats();
+      renderDetails();
+      renderList();
+      draw();
+    }
+    fileInput.addEventListener("change", async event => {
+      const file = event.target.files[0];
+      if (!file) return;
+      loadWorld(await file.text(), file.name);
+    });
+    canvas.addEventListener("pointerdown", event => {
+      if (!world) return;
+      const rect = canvas.getBoundingClientRect();
+      const idx = pickObject(event.clientX - rect.left, event.clientY - rect.top);
+      if (idx >= 0) {
+        selectObject(idx);
+        dragging = true;
+        canvas.setPointerCapture(event.pointerId);
+      }
+    });
+    canvas.addEventListener("pointermove", event => {
+      if (!dragging || selected < 0) return;
+      const rect = canvas.getBoundingClientRect();
+      const p = screenToWorld(event.clientX - rect.left, event.clientY - rect.top);
+      objects()[selected].x_coord = p.x;
+      objects()[selected].y_coord = p.y;
+      markDirty();
+      renderDetails();
+      draw();
+    });
+    canvas.addEventListener("pointerup", () => {
+      if (dragging) renderList();
+      dragging = false;
+    });
+    document.getElementById("toggle-grid").addEventListener("click", event => {
+      showGrid = !showGrid;
+      event.target.textContent = showGrid ? "Grid on" : "Grid off";
+      draw();
+    });
+    document.getElementById("duplicate").addEventListener("click", duplicateSelected);
+    document.getElementById("delete").addEventListener("click", deleteSelected);
+    document.getElementById("download").addEventListener("click", () => {
+      if (!world) return;
+      const blob = new Blob([JSON.stringify(world, null, 2) + "\n"], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = fileName.replace(/\.json$/i, ".edited.json");
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+  </script>
+</body>
+</html>
