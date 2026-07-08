@@ -121,6 +121,13 @@
       font-size: 13px;
     }
 
+    .geo {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      text-align: right;
+    }
+
     #map {
       width: 100%;
       height: min(78vh, calc(100vw - 420px));
@@ -141,6 +148,29 @@
       display: grid;
       gap: 10px;
       overflow: auto;
+    }
+
+    .model-preview {
+      display: grid;
+      gap: 8px;
+      justify-items: center;
+      padding: 10px;
+      border: 1px solid rgba(236, 231, 213, 0.14);
+      border-radius: 12px;
+      background: rgba(17, 23, 15, 0.72);
+    }
+
+    .model-preview canvas, .model-preview img {
+      width: 160px;
+      height: 160px;
+      object-fit: contain;
+      image-rendering: auto;
+    }
+
+    .model-preview .caption {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
     }
 
     .row {
@@ -210,9 +240,10 @@
       <div class="hint">Load exported <code>*.WLD.json</code>, drag objects, edit fields, export JSON.</div>
     </div>
     <div class="toolbar">
-      <label class="file">Load WLD JSON<input id="file" type="file" accept=".WLD.json,.wld.json"></label>
+      <label class="file">Load WLD JSON<input id="file" type="file" accept=".wld.json"></label>
       <button id="toggle-osm">Background off</button>
       <button id="toggle-grid">Grid on</button>
+      <button id="toggle-glb">Object labels off</button>
       <button id="duplicate">Duplicate</button>
       <button id="delete">Delete</button>
       <button id="download">Export JSON</button>
@@ -223,10 +254,13 @@
     <section class="map-wrap">
       <div class="map-head">
         <div id="title">No world loaded</div>
-        <div class="stat" id="stats">0 objects</div>
+        <div>
+          <div class="stat" id="stats">0 objects</div>
+          <div class="geo" id="geo"></div>
+        </div>
       </div>
       <canvas id="map" width="900" height="900"></canvas>
-      <div class="map-attribution" id="map-attribution" hidden>© OpenStreetMap contributors © OpenTopoMap</div>
+      <div class="map-attribution" id="map-attribution" hidden></div>
     </section>
 
     <aside class="details-panel">
@@ -248,6 +282,16 @@
     </aside>
   </main>
 
+  <script async src="https://unpkg.com/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+  <script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+  </script>
+  <script type="module">
+    import * as THREE_MODULE from "three";
+    import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
+    window.F15_THREE = { THREE: THREE_MODULE, GLTFLoader };
+    window.dispatchEvent(new Event("f15-three-ready"));
+  </script>
   <script>
     const WORLD_MAX = 32768;
     const GRID_CELLS = 16;
@@ -256,6 +300,7 @@
     const fileInput = document.getElementById("file");
     const titleEl = document.getElementById("title");
     const statsEl = document.getElementById("stats");
+    const geoEl = document.getElementById("geo");
     const detailsEl = document.getElementById("details");
     const listEl = document.getElementById("object-list");
     const dirtyEl = document.getElementById("dirty");
@@ -267,15 +312,35 @@
     let dragging = false;
     let dragCandidate = null;
     let showGrid = true;
+    let objectOverlayMode = "off";
     let showOsm = false;
     let backgroundMode = "off";
     let dirty = false;
     const DRAG_START_PX = 6;
     const OSM_TILE_SIZE = 256;
     const OSM_TILE_ZOOM = 6;
-    const OSM_TILE_URL = "https://a.tile.opentopomap.org/{z}/{x}/{y}.png";
+    const MAP_TILE_LAYERS = {
+      osm: {
+        label: "OSM topo",
+        attribution: "© OpenStreetMap contributors © OpenTopoMap",
+        url: "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
+      },
+      nolabel: {
+        label: "Topo no labels",
+        attribution: "Sources: Esri, USGS, NOAA",
+        url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Terrain_Base/MapServer/tile/{z}/{y}/{x}",
+      },
+    };
     const osmTiles = new Map();
     const gameBackdropImages = new Map();
+    let glbObjectNames = [];
+    let glbObjectNameByIndex = new Map();
+    let glbSceneByIndex = new Map();
+    let glbThumbByIndex = new Map();
+    let glbFileName = "";
+    let autoGlbTried = false;
+    let pendingGlbFile = null;
+    let selectedPreviewRenderer = null;
     const OSM_GEOREFS = {
       // Affine transforms from Web Mercator tile pixels at zoom 6 to WLD world
       // coordinates. These are calibrated from named WLD objects against their
@@ -347,6 +412,7 @@
       const unitName = n[unit] || "";
       return unitName ? `${objName} at ${unitName}` : objName;
     }
+    function modelNameFor(obj) { return glbObjectNameByIndex.get(Number(obj.objectIdx || 0) & 0x7f) || ""; }
     function objectKind(obj) {
       const name = objectName(obj).toLowerCase();
       const flags = Number(obj.targetFlags || 0);
@@ -420,9 +486,34 @@
     function gameBackdropCandidates(name) {
       return [
         `../../converted_assets_all/${name}`,
+        `/f15se2-re/converted_assets_all/${name}`,
         `./${name}`,
-        `file:///home/xor/games/f15se2-re/converted_assets_all/${name}`,
       ];
+    }
+    function glbCandidates() {
+      const raw = fileName.replace(/\.wld\.json$/i, "");
+      const base = raw.replace(/\..*$/, "");
+      const modelBase = {
+        LIBYA: "LB",
+        GULF: "PG",
+      }[theaterKey()] || theaterKey() || base;
+      const names = [...new Set([
+        `${modelBase}.3D3.glb`,
+        `${base}.3D3.glb`,
+        `${modelBase}.glb`,
+        `${base}.glb`,
+        `${modelBase}.WLD.glb`,
+        `${base}.WLD.glb`,
+      ])];
+      const dirs = [
+        "../../converted_assets_all",
+        "/converted_assets_all",
+        "/f15se2-re/converted_assets_all",
+        ".",
+      ];
+      const out = [];
+      dirs.forEach(dir => names.forEach(name => out.push(`${dir}/${name}`)));
+      return out;
     }
     function lonToTilePixelX(lon, zoom) {
       return ((lon + 180) / 360) * 2 ** zoom * OSM_TILE_SIZE;
@@ -430,6 +521,13 @@
     function latToTilePixelY(lat, zoom) {
       const rad = lat * Math.PI / 180;
       return (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * 2 ** zoom * OSM_TILE_SIZE;
+    }
+    function tilePixelToLon(x, zoom) {
+      return x / (2 ** zoom * OSM_TILE_SIZE) * 360 - 180;
+    }
+    function tilePixelToLat(y, zoom) {
+      const n = Math.PI * (1 - 2 * y / (2 ** zoom * OSM_TILE_SIZE));
+      return Math.atan(Math.sinh(n)) * 180 / Math.PI;
     }
     function northUpTransform(west, east, south, north) {
       const westPx = lonToTilePixelX(west, OSM_TILE_ZOOM);
@@ -445,12 +543,58 @@
         y0: -northPx * WORLD_MAX / (southPx - northPx),
       };
     }
-    function tileImage(z, x, y) {
-      const key = `${z}/${x}/${y}`;
+    function worldToMercatorPixel(georef, wx, wy) {
+      const t = georef.t;
+      const det = t.xx * t.yy - t.xy * t.yx;
+      if (Math.abs(det) < 0.000001) return null;
+      const dx = wx - t.x0;
+      const dy = wy - t.y0;
+      return {
+        x: (t.yy * dx - t.xy * dy) / det,
+        y: (-t.yx * dx + t.xx * dy) / det,
+      };
+    }
+    function worldToLonLat(georef, wx, wy) {
+      const p = worldToMercatorPixel(georef, wx, wy);
+      if (!p) return null;
+      return {
+        lon: tilePixelToLon(p.x, OSM_TILE_ZOOM),
+        lat: tilePixelToLat(p.y, OSM_TILE_ZOOM),
+      };
+    }
+    function updateGeoInfo() {
+      const georef = theaterBounds();
+      if (!georef) {
+        geoEl.textContent = "";
+        return;
+      }
+      const corners = [
+        worldToLonLat(georef, 0, 0),
+        worldToLonLat(georef, WORLD_MAX, 0),
+        worldToLonLat(georef, 0, WORLD_MAX),
+        worldToLonLat(georef, WORLD_MAX, WORLD_MAX),
+      ].filter(Boolean);
+      if (corners.length !== 4) {
+        geoEl.textContent = "";
+        return;
+      }
+      const west = Math.min(...corners.map(p => p.lon));
+      const east = Math.max(...corners.map(p => p.lon));
+      const south = Math.min(...corners.map(p => p.lat));
+      const north = Math.max(...corners.map(p => p.lat));
+      geoEl.innerHTML = `Geo ${georef.label}: W ${west.toFixed(3)}, E ${east.toFixed(3)}, S ${south.toFixed(3)}, N ${north.toFixed(3)}<br>` +
+        `Corners TL ${corners[0].lon.toFixed(3)},${corners[0].lat.toFixed(3)} ` +
+        `TR ${corners[1].lon.toFixed(3)},${corners[1].lat.toFixed(3)} ` +
+        `BL ${corners[2].lon.toFixed(3)},${corners[2].lat.toFixed(3)} ` +
+        `BR ${corners[3].lon.toFixed(3)},${corners[3].lat.toFixed(3)}`;
+    }
+    function tileImage(layerKey, z, x, y) {
+      const layer = MAP_TILE_LAYERS[layerKey] || MAP_TILE_LAYERS.osm;
+      const key = `${layerKey}/${z}/${x}/${y}`;
       if (osmTiles.has(key)) return osmTiles.get(key);
       const img = new Image();
       img.onload = () => draw();
-      img.src = OSM_TILE_URL
+      img.src = layer.url
         .replace("{z}", String(z))
         .replace("{x}", String(x))
         .replace("{y}", String(y));
@@ -462,13 +606,14 @@
       const backdrop = gameBackdropName();
       if (backgroundMode === "game") {
         osmButton.textContent = backdrop ? `Game ${backdrop}` : "Game unavailable";
-      } else if (backgroundMode === "osm") {
-        osmButton.textContent = `OSM ${bounds ? bounds.label : "unknown"}`;
+      } else if (MAP_TILE_LAYERS[backgroundMode]) {
+        osmButton.textContent = `${MAP_TILE_LAYERS[backgroundMode].label} ${bounds ? bounds.label : "unknown"}`;
       } else {
         osmButton.textContent = "Background off";
       }
-      showOsm = backgroundMode === "osm";
-      attributionEl.hidden = backgroundMode !== "osm";
+      showOsm = Boolean(MAP_TILE_LAYERS[backgroundMode]);
+      attributionEl.hidden = !showOsm;
+      attributionEl.textContent = MAP_TILE_LAYERS[backgroundMode]?.attribution || "";
     }
     function gameBackdropImage(name) {
       if (gameBackdropImages.has(name)) return gameBackdropImages.get(name);
@@ -503,7 +648,7 @@
       ctx.restore();
     }
     function drawOsm(r) {
-      if (backgroundMode !== "osm") return;
+      if (!MAP_TILE_LAYERS[backgroundMode]) return;
       const georef = theaterBounds();
       if (!georef) return;
 
@@ -512,19 +657,11 @@
       const t = georef.t;
       const det = t.xx * t.yy - t.xy * t.yx;
       if (Math.abs(det) < 0.000001) return;
-      const worldToMercatorPixel = (wx, wy) => {
-        const dx = wx - t.x0;
-        const dy = wy - t.y0;
-        return {
-          x: (t.yy * dx - t.xy * dy) / det,
-          y: (-t.yx * dx + t.xx * dy) / det,
-        };
-      };
       const corners = [
-        worldToMercatorPixel(0, 0),
-        worldToMercatorPixel(WORLD_MAX, 0),
-        worldToMercatorPixel(0, WORLD_MAX),
-        worldToMercatorPixel(WORLD_MAX, WORLD_MAX),
+        worldToMercatorPixel(georef, 0, 0),
+        worldToMercatorPixel(georef, WORLD_MAX, 0),
+        worldToMercatorPixel(georef, 0, WORLD_MAX),
+        worldToMercatorPixel(georef, WORLD_MAX, WORLD_MAX),
       ];
       const minX = Math.min(...corners.map(p => p.x));
       const maxX = Math.max(...corners.map(p => p.x));
@@ -547,7 +684,7 @@
         if (ty < 0 || ty >= maxTile) continue;
         for (let tx = tileMinX; tx <= tileMaxX; tx++) {
           const wrappedX = ((tx % maxTile) + maxTile) % maxTile;
-          const img = tileImage(zoom, wrappedX, ty);
+          const img = tileImage(backgroundMode, zoom, wrappedX, ty);
           if (!img.complete) continue;
           const tilePxX = tx * OSM_TILE_SIZE;
           const tilePxY = ty * OSM_TILE_SIZE;
@@ -575,7 +712,7 @@
       const x = Math.round(p.x - w / 2);
       const y = Math.round(p.y - h / 2);
       ctx.save();
-      const usesMapBackground = backgroundMode === "game" || backgroundMode === "osm";
+      const usesMapBackground = backgroundMode === "game" || MAP_TILE_LAYERS[backgroundMode];
       const haloColor = usesMapBackground ? "rgba(0,0,0,0.68)" : "rgba(255,255,235,0.68)";
       const edgeColor = usesMapBackground ? "rgba(0,0,0,0.78)" : "rgba(255,255,235,0.76)";
       ctx.fillStyle = haloColor;
@@ -686,6 +823,7 @@
       objects().forEach((obj, idx) => {
         if (!obj || (!obj.x_coord && !obj.y_coord && !obj.objectIdx && !obj.unitRef)) return;
         const p = worldToScreen(Number(obj.x_coord || 0), Number(obj.y_coord || 0));
+        if (objectOverlayMode === "labels") drawObjectLabel(obj, p, idx === selected);
         if (drawGameIcon(obj, p, idx === selected)) return;
         ctx.beginPath();
         ctx.fillStyle = colorFor(obj);
@@ -695,6 +833,86 @@
         ctx.fill();
         ctx.stroke();
       });
+    }
+    function drawObjectLabel(obj, p, isSelected) {
+      const idx = Number(obj.objectIdx || 0) & 0x7f;
+      const label = objectName(obj);
+      const color = colorFor(obj);
+      ctx.save();
+      ctx.globalAlpha = 0.92;
+      ctx.strokeStyle = isSelected ? "#ffffff" : "rgba(0,0,0,0.82)";
+      ctx.fillStyle = "rgba(0,0,0,0.58)";
+      ctx.lineWidth = isSelected ? 2.5 : 1.5;
+      ctx.beginPath();
+      ctx.rect(p.x - 9, p.y - 9, 18, 18);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = color;
+      ctx.fillRect(p.x - 4, p.y - 4, 8, 8);
+      ctx.font = "11px Aptos Display, Segoe UI, sans-serif";
+      const text = `${idx}: ${label}`;
+      const w = ctx.measureText(text).width;
+      ctx.fillStyle = "rgba(0,0,0,0.72)";
+      ctx.fillRect(p.x + 12, p.y - 10, w + 8, 16);
+      ctx.fillStyle = "#f7f0d8";
+      ctx.fillText(text, p.x + 16, p.y + 2);
+      ctx.restore();
+    }
+    function drawGlbObjectModel(obj, p, isSelected) {
+      const idx = Number(obj.objectIdx || 0) & 0x7f;
+      const thumb = glbThumbByIndex.get(idx);
+      if (!thumb) {
+        drawObjectLabel(obj, p, isSelected);
+        return;
+      }
+      const size = isSelected ? 42 : 34;
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = "rgba(0,0,0,0.42)";
+      ctx.fillRect(p.x - size / 2 - 2, p.y - size / 2 - 2, size + 4, size + 4);
+      ctx.drawImage(thumb, p.x - size / 2, p.y - size / 2, size, size);
+      if (isSelected) {
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(p.x - size / 2 - 3, p.y - size / 2 - 3, size + 6, size + 6);
+      }
+      ctx.restore();
+    }
+    function renderSelectedModelPreview(modelIdx) {
+      const host = document.getElementById("selected-model-preview");
+      if (!host) return;
+      const THREE = window.F15_THREE?.THREE;
+      const model = glbSceneByIndex.get(modelIdx);
+      if (!THREE || !model) return;
+      if (selectedPreviewRenderer) {
+        selectedPreviewRenderer.dispose();
+        selectedPreviewRenderer = null;
+      }
+      host.innerHTML = "";
+      const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+      selectedPreviewRenderer = renderer;
+      renderer.setSize(160, 160);
+      renderer.setClearColor(0x000000, 0);
+      const scene = new THREE.Scene();
+      const clone = model.clone(true);
+      scene.add(new THREE.AmbientLight(0xffffff, 1.6));
+      const key = new THREE.DirectionalLight(0xffffff, 2.4);
+      key.position.set(3, 5, 4);
+      const pivot = new THREE.Group();
+      pivot.add(clone);
+      scene.add(key, pivot);
+      const box = new THREE.Box3().setFromObject(clone);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      clone.position.sub(center);
+      pivot.rotation.x = -Math.PI / 2;
+      pivot.rotation.z = -Math.PI / 2;
+      const radius = Math.max(size.x, size.y, size.z, 1);
+      const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 10000);
+      camera.position.set(radius * 1.8, -radius * 2.4, radius * 1.3);
+      camera.lookAt(0, 0, 0);
+      renderer.render(scene, camera);
+      host.appendChild(renderer.domElement);
     }
     function pickObject(px, py) {
       let best = -1, bestDist = 9999;
@@ -766,7 +984,11 @@
       const linkedFlights = flightsForObject(selected);
       const role = roleFor(obj, selected);
       const typeValue = objectTypeValue(obj);
+      const modelIdx = Number(obj.objectIdx || 0) & 0x7f;
+      const hasModel = glbSceneByIndex.has(modelIdx);
+      const preview = `<div class="model-preview"><div id="selected-model-preview">${hasModel ? "" : `<div class="caption">No 3D model loaded for object ${modelIdx}</div>`}</div><div class="caption">3D model ${modelIdx}${modelNameFor(obj) ? `: ${escapeHtml(modelNameFor(obj))}` : ""}</div></div>`;
       detailsEl.innerHTML = `
+        ${preview}
         <div class="row"><label>Index</label><input value="${selected}" disabled></div>
         <div class="row"><label>Label</label><input value="${escapeHtml(objectName(obj))}" disabled></div>
         <div class="row"><label>Role</label><input value="${escapeHtml(role)}" disabled></div>
@@ -787,6 +1009,7 @@
       detailsEl.querySelectorAll("input[data-k]").forEach(input => {
         input.addEventListener("change", () => updateField(input.dataset.k, input.value));
       });
+      renderSelectedModelPreview(modelIdx);
     }
     function renderList() {
       listEl.innerHTML = "";
@@ -803,6 +1026,146 @@
     function escapeHtml(v) {
       return String(v).replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
     }
+    function parseGlbObjectNames(buffer) {
+      const view = new DataView(buffer);
+      if (view.byteLength < 20 || view.getUint32(0, true) !== 0x46546c67) {
+        alert("This is not a valid binary GLB file.");
+        return [];
+      }
+      let offset = 12;
+      while (offset + 8 <= view.byteLength) {
+        const chunkLength = view.getUint32(offset, true);
+        const chunkType = view.getUint32(offset + 4, true);
+        offset += 8;
+        if (chunkType === 0x4e4f534a) {
+          const bytes = new Uint8Array(buffer, offset, chunkLength);
+          const gltf = JSON.parse(new TextDecoder("utf-8").decode(bytes));
+          const names = [];
+          (gltf.nodes || []).forEach(node => {
+            if (node?.name) names.push(String(node.name));
+          });
+          (gltf.meshes || []).forEach(mesh => {
+            if (mesh?.name) names.push(String(mesh.name));
+          });
+          return [...new Set(names)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+        }
+        offset += chunkLength + (chunkLength % 4 ? 4 - chunkLength % 4 : 0);
+      }
+      alert("No JSON chunk found in GLB.");
+      return [];
+    }
+    function loadGlbModelLibrary(file) {
+      glbSceneByIndex = new Map();
+      glbThumbByIndex = new Map();
+      const THREE = window.F15_THREE?.THREE;
+      const GLTFLoader = window.F15_THREE?.GLTFLoader;
+      if (!THREE || !GLTFLoader) {
+        pendingGlbFile = file;
+        return;
+      }
+      pendingGlbFile = null;
+      const url = URL.createObjectURL(file);
+      new GLTFLoader().load(url, gltf => {
+        URL.revokeObjectURL(url);
+        const all = [];
+        gltf.scene.traverse(node => {
+          if (node.name && (node.isMesh || node.children?.length)) all.push(node);
+        });
+        all.forEach(node => {
+          const match = node.name.match(/(?:shape|object|obj|model)[_-]?(\d+)/i) || node.name.match(/(\d+)$/);
+          if (!match) return;
+          const idx = Number(match[1]);
+          if (Number.isInteger(idx) && idx >= 0 && idx < 128 && !glbSceneByIndex.has(idx)) {
+            glbSceneByIndex.set(idx, node.clone(true));
+          }
+        });
+        if (!glbSceneByIndex.size) {
+          all.forEach((node, idx) => {
+          if (idx < 128) glbSceneByIndex.set(idx, node.clone(true));
+          });
+        }
+        renderGlbThumbnails();
+        if (glbThumbByIndex.size) {
+          objectOverlayMode = "models";
+          document.getElementById("toggle-glb").textContent = `3D models ${glbFileName}`;
+        }
+        if (selected >= 0) renderDetails();
+        draw();
+      }, undefined, () => {
+        URL.revokeObjectURL(url);
+      });
+    }
+    function renderGlbThumbnails() {
+      const THREE = window.F15_THREE?.THREE;
+      if (!THREE || !glbSceneByIndex.size) return;
+      const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
+      renderer.setSize(96, 96);
+      renderer.setClearColor(0x000000, 0);
+      const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 10000);
+      const light = new THREE.DirectionalLight(0xffffff, 2.2);
+      light.position.set(3, 5, 4);
+      const ambient = new THREE.AmbientLight(0xffffff, 1.4);
+      glbSceneByIndex.forEach((model, idx) => {
+        const scene = new THREE.Scene();
+        const clone = model.clone(true);
+        scene.add(ambient.clone(), light.clone(), clone);
+        const box = new THREE.Box3().setFromObject(clone);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        clone.position.sub(center);
+        const radius = Math.max(size.x, size.y, size.z, 1);
+        camera.position.set(0, -radius * 2.4, radius * 1.2);
+        camera.lookAt(0, 0, 0);
+        renderer.render(scene, camera);
+        const img = new Image();
+        img.onload = () => draw();
+        img.src = renderer.domElement.toDataURL("image/png");
+        glbThumbByIndex.set(idx, img);
+      });
+      renderer.dispose();
+    }
+    function autoLoadGlbModels() {
+      if (autoGlbTried) return;
+      autoGlbTried = true;
+      const candidates = glbCandidates();
+      if (location.protocol === "file:") {
+        document.getElementById("toggle-glb").textContent = "3D models need HTTP";
+        return;
+      }
+      const tryNext = idx => {
+        if (idx >= candidates.length) return;
+        fetch(candidates[idx])
+          .then(response => {
+            if (!response.ok) throw new Error(String(response.status));
+            return response.blob();
+          })
+          .then(async blob => {
+            glbFileName = candidates[idx].split("/").pop();
+            const file = new File([blob], glbFileName, { type: "model/gltf-binary" });
+            const parsed = parseGlbObjectNames(await blob.arrayBuffer());
+            glbObjectNames = parsed;
+            glbObjectNameByIndex = indexGlbObjectNames(parsed);
+            objectOverlayMode = "models";
+            document.getElementById("toggle-glb").textContent = `3D models ${glbFileName}`;
+            loadGlbModelLibrary(file);
+            draw();
+          })
+          .catch(() => tryNext(idx + 1));
+      };
+      tryNext(0);
+    }
+    function indexGlbObjectNames(names) {
+      const byIndex = new Map();
+      names.forEach(name => {
+        const match = name.match(/(?:shape|object|obj|model)[_-]?(\d+)/i) || name.match(/(\d+)$/);
+        if (!match) return;
+        const idx = Number(match[1]);
+        if (Number.isInteger(idx) && idx >= 0 && idx < 128 && !byIndex.has(idx)) {
+          byIndex.set(idx, name);
+        }
+      });
+      return byIndex;
+    }
     function loadWorld(text, name) {
       if (!/\.wld\.json$/i.test(name || "")) {
         alert("Please select an exported *.WLD.json file.");
@@ -816,15 +1179,20 @@
       }
       fileName = name || "world.WLD.json";
       selected = -1;
+      objectOverlayMode = "off";
+      autoGlbTried = false;
       dirty = false;
       dirtyEl.textContent = "clean";
       dirtyEl.style.color = "";
       titleEl.textContent = fileName;
+      document.getElementById("toggle-glb").textContent = "Object labels off";
       backgroundMode = gameBackdropName() ? "game" : (theaterBounds() ? "osm" : "off");
       updateOsmButton();
       updateStats();
+      updateGeoInfo();
       renderDetails();
       renderList();
+      autoLoadGlbModels();
       draw();
     }
     fileInput.addEventListener("change", async event => {
@@ -876,10 +1244,23 @@
       event.target.textContent = showGrid ? "Grid on" : "Grid off";
       draw();
     });
+    document.getElementById("toggle-glb").addEventListener("click", event => {
+      if (objectOverlayMode === "off") objectOverlayMode = "labels";
+      else if (objectOverlayMode === "labels") objectOverlayMode = "off";
+      else objectOverlayMode = "off";
+      if (objectOverlayMode === "labels") {
+        event.target.textContent = "Object labels on";
+      } else {
+        event.target.textContent = "Object labels off";
+      }
+      draw();
+    });
     document.getElementById("toggle-osm").addEventListener("click", event => {
       if (backgroundMode === "game") {
         backgroundMode = theaterBounds() ? "osm" : "off";
       } else if (backgroundMode === "osm") {
+        backgroundMode = theaterBounds() ? "nolabel" : "off";
+      } else if (backgroundMode === "nolabel") {
         backgroundMode = "off";
       } else {
         backgroundMode = gameBackdropName() ? "game" : (theaterBounds() ? "osm" : "off");
@@ -899,6 +1280,9 @@
       URL.revokeObjectURL(a.href);
     });
     window.addEventListener("resize", resizeCanvas);
+    window.addEventListener("f15-three-ready", () => {
+      if (pendingGlbFile) loadGlbModelLibrary(pendingGlbFile);
+    });
     resizeCanvas();
   </script>
 </body>
