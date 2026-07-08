@@ -1041,13 +1041,13 @@ void renderFrame() {
     }
     g_hudBottomY = (g_activePanelMode == 0x13 || g_mapMode == 1 || g_hudVisible == 0) ? 200 : 97;
 
-    /* Non-retained renderers (GL) rebuild the 2D overlay every present, so the
-     * tac map — cached into g_eg2dBacking for the software page — must be re-emitted
-     * into this frame's native stream, crisp at window resolution. Runs inside the
-     * vector frame (render3DView opened it above). It reloads colorLut to the map
-     * palette; save/restore it so the HUD/gauges drawn after keep the flight
-     * palette render3DView set. The software path leaves the cached map alone. */
-    if (!r2d_overlayRetained()) {
+    /* GL (native overlay) rebuilds the 2D every present, so the tac map — cached
+     * into g_eg2dBacking for the software page — must be re-emitted into this frame's
+     * native stream, crisp at window resolution. Runs inside the vector frame
+     * (render3DView opened it above). It reloads colorLut to the map palette;
+     * save/restore it so the HUD/gauges drawn after keep the flight palette
+     * render3DView set. The software (retained page) path leaves the cached map alone. */
+    if (r2d_vectorActive()) {
         uint8 savedLut[16];
         memcpy(savedLut, colorLut, 16);
         renderTacMapOverlay();

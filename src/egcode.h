@@ -55,6 +55,7 @@ void far r3d_submitLineFar(long baseXA, long camXA, long camYA,
 void r3d_setObjCullWiden(int numX, int denX, int numY, int denY);
 int far drawModelDisplayList();
 int far fillSpanRect(const int16 *dst, int left, int top, int right, int bottom);
+int far fillSpanRectImmediate(const int16 *dst, int left, int top, int right, int bottom);
 int far drawClipLineGlobal();
 int far flushSpanDirtyRect();
 int far resetScanlineSpans();

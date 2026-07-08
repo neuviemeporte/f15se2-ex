@@ -146,19 +146,17 @@ void r2d_registerSoftwarePresent(void (*present)(struct SDL_Surface *page, int s
     s_swPresent = present;
 }
 
-/* ---- Native 2D vector layer ---------------------------------------------- */
+/* ---- Native 2D overlay layer --------------------------------------------- */
+
+/* On a GL flight frame every 2D submission draws IMMEDIATELY, directly onto the
+ * active framebuffer at its call site (r3dgl_draw*), at native window resolution —
+ * no recording, no present-time replay. Off a GL frame (software backend, or the
+ * pure-2D menu/briefing/debrief screens, which never open a vector frame) the same
+ * call bakes into the retained 320x200 page via the registered rasterizer, exactly
+ * as before. This IS the "framebuffer retained?" question inverted. */
 
 static void (*s_swLine)(int, int, int, int, int);
 static void (*s_swPoint)(int, int, int);
-
-static R2DOverlayPrim *s_prims;
-static int s_primCount, s_primCap;
-
-/* Vertex pool for R2D_PRIM_POLY: interleaved x,y in submission order; each poly
- * prim indexes a contiguous run (srcX = first index, srcY = count). Cleared with
- * the prim stream each frame. */
-static short *s_polyVerts;
-static int s_polyCount, s_polyCap;
 
 void r2d_registerSoftwarePrims(void (*line)(int, int, int, int, int),
                                void (*point)(int, int, int)) {
@@ -172,34 +170,10 @@ void r2d_registerSoftwareImage(void (*image)(R2DImage *, int, int, int, int, int
     s_swImage = image;
 }
 
-static R2DOverlayPrim *primGrow(void) {
-    if (s_primCount >= s_primCap) {
-        int cap = s_primCap ? s_primCap * 2 : 256;
-        R2DOverlayPrim *grown = (R2DOverlayPrim *)SDL_realloc(s_prims, (size_t)cap * sizeof(*grown));
-        if (!grown) return NULL;
-        s_prims = grown;
-        s_primCap = cap;
-    }
-    return &s_prims[s_primCount++];
-}
-
 void r2d_submitImage(R2DImage *img, int srcX, int srcY, int w, int h,
                      int dstX, int dstY, int key) {
-    /* On a GL flight frame record into the ordered overlay stream for a
-     * textured-quad replay (so sprites and lines keep submission order); non-GL
-     * frames rasterize into the page, exactly like r2d_submitLine. */
     if (img && r2d_vectorActive()) {
-        R2DOverlayPrim *p = primGrow();
-        if (!p) return;
-        p->kind = R2D_PRIM_IMAGE;
-        p->color = 0;
-        p->x1 = (short)dstX; p->y1 = (short)dstY;
-        p->x2 = 0; p->y2 = 0;
-        p->img = img;
-        p->srcX = (short)srcX; p->srcY = (short)srcY;
-        p->imgW = (short)w; p->imgH = (short)h;
-        p->x2 = (short)w; p->y2 = (short)h;   /* 1:1: dest footprint == source size */
-        p->key = (short)key;
+        r3dgl_drawImage(img, srcX, srcY, w, h, dstX, dstY, w, h, key); /* 1:1 footprint */
     } else if (s_swImage) {
         s_swImage(img, srcX, srcY, w, h, dstX, dstY, key);
     }
@@ -207,63 +181,40 @@ void r2d_submitImage(R2DImage *img, int srcX, int srcY, int w, int h,
 
 void r2d_submitImageScaled(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
                            int dstX, int dstY, int dstW, int dstH, int key) {
-    R2DOverlayPrim *p;
-    /* GL-only (HD art). Off a vector frame there is nothing to record and no
-     * software scaled-blit, so drop — callers fall back to the legacy sprite. */
+    /* GL-only (HD art). Off a vector frame there is no software scaled-blit, so
+     * drop — callers fall back to the legacy sprite. */
     if (!img || !r2d_vectorActive()) return;
-    p = primGrow();
-    if (!p) return;
-    p->kind = R2D_PRIM_IMAGE;
-    p->color = 0;
-    p->x1 = (short)dstX; p->y1 = (short)dstY;
-    p->x2 = (short)dstW; p->y2 = (short)dstH;
-    p->img = img;
-    p->srcX = (short)srcX; p->srcY = (short)srcY;
-    p->imgW = (short)srcW; p->imgH = (short)srcH;
-    p->key = (short)key;
+    r3dgl_drawImage(img, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH, key);
 }
 
 /* Set for the duration of a GL flight frame (between gl_beginScene's main 3D view
- * and the present). 2D submissions only record for native replay while this is
- * set — pure-2D screens (debrief/briefing/menus) have no 3D pass, so their lines
- * rasterize into the page as before (accumulating, correctly ordered with their
- * sprites). */
+ * and the present). 2D submissions draw immediately while this is set — pure-2D
+ * screens (debrief/briefing/menus) have no 3D pass, so their primitives bake into
+ * the page as before (accumulating, correctly ordered with their sprites). */
 static int s_vectorFrame;
 
-void r2d_vectorBeginFrame(void) { s_vectorFrame = 1; }
-
-int r2d_vectorActive(void) {
-    static int cached = -1;
-    if (!s_vectorFrame) return 0;
-    if (cached < 0) {
-        const char *e = SDL_getenv("F15_VECTOR2D");
-        cached = (e && (e[0] == '0' || e[0] == 'n' || e[0] == 'N')) ? 0 : 1;
-    }
-    return cached;
+void r2d_vectorBeginFrame(void) {
+    s_vectorFrame = 1;
+    if (r3dgl_active()) r3dgl_beginOverlay(); /* set the immediate-draw letterbox+shake context */
 }
 
-int r2d_overlayRetained(void) { return !r2d_vectorActive(); }
+int r2d_vectorActive(void) { return s_vectorFrame; }
 
 int r2d_hasNativeOverlay(void) { return r3dgl_active(); }
 
-static void primAppend(int x1, int y1, int x2, int y2, int color, int kind) {
-    R2DOverlayPrim *p = primGrow();
-    if (!p) return;
-    p->kind = (unsigned char)kind;
-    p->color = (unsigned char)color;
-    p->x1 = (short)x1; p->y1 = (short)y1;
-    p->x2 = (short)x2; p->y2 = (short)y2;
-    p->img = NULL;
-}
-
 void r2d_submitLine(int x1, int y1, int x2, int y2, int color) {
-    if (r2d_vectorActive()) primAppend(x1, y1, x2, y2, color, R2D_PRIM_LINE);
+    if (r2d_vectorActive()) r3dgl_drawLine(x1, y1, x2, y2, color);
     else if (s_swLine) s_swLine(x1, y1, x2, y2, color);
 }
 
 void r2d_submitPoint(int x, int y, int color) {
-    if (r2d_vectorActive()) primAppend(x, y, x, y, color, R2D_PRIM_POINT);
+    if (r2d_vectorActive()) r3dgl_drawPoint(x, y, color);
     else if (s_swPoint) s_swPoint(x, y, color);
+}
+
+void r2d_submitRect(int x0, int y0, int x1, int y1, int color) {
+    if (r2d_vectorActive()) r3dgl_drawRect(x0, y0, x1, y1, color);
+    /* else: caller bakes via fillSpanRect (software retained page) */
 }
 
 /* Cohen-Sutherland clip of an integer segment to the inclusive box [x0,x1]x[y0,y1].
@@ -299,15 +250,7 @@ static int csClip(int *px1, int *py1, int *px2, int *py2,
 void r2d_submitScopeLine(float x1, float y1, float x2, float y2, int color,
                          int cx0, int cy0, int cx1, int cy1) {
     if (r2d_vectorActive()) {
-        R2DOverlayPrim *p = primGrow();
-        if (!p) return;
-        p->kind = R2D_PRIM_SCOPELINE;
-        p->color = (unsigned char)color;
-        p->img = NULL;
-        p->fx1 = x1; p->fy1 = y1; p->fx2 = x2; p->fy2 = y2;
-        /* scissor rect (half-open) stashed in the src fields */
-        p->srcX = (short)cx0; p->srcY = (short)cy0;
-        p->imgW = (short)cx1; p->imgH = (short)cy1;
+        r3dgl_drawScopeLine(x1, y1, x2, y2, color, cx0, cy0, cx1, cy1);
     } else if (s_swLine) {
         int ix1 = (int)SDL_floorf(x1 + 0.5f), iy1 = (int)SDL_floorf(y1 + 0.5f);
         int ix2 = (int)SDL_floorf(x2 + 0.5f), iy2 = (int)SDL_floorf(y2 + 0.5f);
@@ -318,42 +261,13 @@ void r2d_submitScopeLine(float x1, float y1, float x2, float y2, int color,
 
 void r2d_submitPoly(const short *xy, int n, int color,
                     int clipX0, int clipY0, int clipX1, int clipY1) {
-    R2DOverlayPrim *p;
-    int i;
-    /* Records only on a GL vector frame; software fills the face in the page
-     * span rasterizer and never reaches here (the call site branches first). */
+    /* GL vector frame only; software fills the face in the page span rasterizer
+     * and never reaches here (the call site branches on r2d_vectorActive first). */
     if (n < 3 || !r2d_vectorActive()) return;
-    if (s_polyCount + n * 2 > s_polyCap) {
-        int cap = s_polyCap ? s_polyCap * 2 : 1024;
-        short *grown;
-        while (cap < s_polyCount + n * 2) cap *= 2;
-        grown = (short *)SDL_realloc(s_polyVerts, (size_t)cap * sizeof(*grown));
-        if (!grown) return;
-        s_polyVerts = grown;
-        s_polyCap = cap;
-    }
-    p = primGrow();
-    if (!p) return;
-    p->kind = R2D_PRIM_POLY;
-    p->color = (unsigned char)color;
-    p->x1 = (short)clipX0; p->y1 = (short)clipY0; /* scissor rect (320-space) */
-    p->x2 = (short)clipX1; p->y2 = (short)clipY1;
-    p->img = NULL;
-    p->srcX = (short)(s_polyCount / 2); /* first vertex index (pairs, not shorts) */
-    p->srcY = (short)n;
-    for (i = 0; i < n * 2; i++) s_polyVerts[s_polyCount++] = xy[i];
+    r3dgl_drawPoly(xy, n, color, clipX0, clipY0, clipX1, clipY1);
 }
-
-const R2DOverlayPrim *r2d_overlayPrims(int *count) {
-    if (count) *count = s_primCount;
-    return s_prims;
-}
-
-const short *r2d_overlayPolyVerts(void) { return s_polyVerts; }
 
 void r2d_vectorMarkPresented(void) {
-    s_primCount = 0;
-    s_polyCount = 0;
     s_vectorFrame = 0;
 }
 

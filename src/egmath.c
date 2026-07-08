@@ -252,7 +252,7 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
         }
         *(g_targetViewParams + 2) = colorLut[3];
         if (horizonY != 128) {
-            fillSpanRect(g_targetViewParams, 232, 128, 304, horizonY);
+            fillSpanRectImmediate(g_targetViewParams, 232, 128, 304, horizonY);
         }
         colorIdx = g_world3dData[0x2f];
         category = (int)(signed char)g_shapeTargetCategory[shapeId & 0x7f];
@@ -265,7 +265,7 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
         }
         *(g_targetViewParams + 2) = colorLut[colorIdx];
         if (horizonY != 184) {
-            fillSpanRect(g_targetViewParams, 232, horizonY, 304, 184);
+            fillSpanRectImmediate(g_targetViewParams, 232, horizonY, 304, 184);
         }
     }
 

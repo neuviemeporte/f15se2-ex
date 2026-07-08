@@ -15,10 +15,13 @@
  * software perspective divide (the >>8 focal scale, 3/4 Y aspect, depth divide).
  * Pixels may drift from the integer rasterizer; behaviour does not (Q1).
  *
- * Compositing (interim): the software 2D page is drawn over the GL 3D as a
- * single flat textured quad with the show-through key (GFX_GL_SHOWTHROUGH_KEY)
- * made transparent, so the HUD/cockpit land on top of the GL viewport. A later
- * step submits 2D through the renderer too.
+ * Compositing: the 2D overlay draws IMMEDIATELY over the GL 3D at native window
+ * resolution, in true call order (r3dgl_draw*, driven from r2d_submit*). The
+ * retained software page still carries the cockpit/panel + on-change gauges; it is
+ * composited once per flight frame as a textured quad at the main-scene anchor
+ * (gl_endScene, before the frame's HUD), with the 3D viewport rect(s) made
+ * transparent so the GL 3D shows beneath. Pure-2D screens (menus/briefing/debrief)
+ * have no 3D pass and composite the page at present instead.
  */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
@@ -134,8 +137,44 @@ static void fillPools(MeshVtxPools *pools) {
 /* ---- scene state -------------------------------------------------------- */
 
 static int s_sceneRendered;  /* a GL 3D view was drawn this frame (live under the present) */
+static int s_mainScene;      /* the current scene is the main out-the-window 3D view (not an
+                              * MFD target sub-scene) — gates the anchor page composite */
+static int s_glFlightLive;   /* the last present carried a live 3D flight frame (so a bare
+                              * gfx_repaint must not blank it by re-presenting only the page) */
 static int s_wide = -1;      /* widescreen 3D (Hor+): -1 = not yet read from F15_WIDESCREEN */
+
+/* The 3D-viewport rect(s) the anchor page composite makes transparent so the GL 3D
+ * shows beneath the retained cockpit/panel — registered by the main out-the-window
+ * view (gl_beginScene). Keyed on the rect, not on any page pixel value, so no page
+ * fill is needed: nothing 2D is baked into the viewport region on GL (the HUD there
+ * is drawn immediately over the 3D). The MFD target sub-view needs none — its
+ * two-tone horizon is drawn immediately as its backdrop. Consumed by the composite. */
+#define MAX_SHOW_RECTS 4
+static SDL_Rect s_showRects[MAX_SHOW_RECTS];
+static int s_nShowRects;
+
+static void addShowRect(int x, int y, int w, int h) {
+    if (s_nShowRects >= MAX_SHOW_RECTS) return;
+    s_showRects[s_nShowRects].x = x;
+    s_showRects[s_nShowRects].y = y;
+    s_showRects[s_nShowRects].w = w;
+    s_showRects[s_nShowRects].h = h;
+    s_nShowRects++;
+}
+
+/* Is page-space pixel (x,y) inside any show-through rect? */
+static int inShowRect(int x, int y) {
+    int i;
+    for (i = 0; i < s_nShowRects; i++) {
+        const SDL_Rect *r = &s_showRects[i];
+        if (x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + r->h)
+            return 1;
+    }
+    return 0;
+}
 static float s_proj[16];     /* column-major GL projection for the active scene */
+static int s_sceneVp[4];     /* window-px viewport/scissor of the active 3D scene, for
+                              * re-establishing the scene state in gl_endScene */
 static float s_pixelScale;   /* letterbox scale: window pixels per 320-space pixel (point size) */
 static float s_vpW, s_vpH;   /* active 3D viewport size in window pixels (screen-span tests) */
 
@@ -187,38 +226,6 @@ static uint8 *ensureRgbaScratch(int need) {
         s_rgbaCap = s_rgba ? need : 0;
     }
     return s_rgba;
-}
-
-/* Upload an INDEX8 sub-rect of a surface as an RGBA texture through `tex` (created
- * on first use), resolving indices via the live palette. Nearest + clamp. */
-static void uploadIndexedRegion(GLuint *tex, SDL_Surface *surf, SDL_Palette *pal,
-                                int rx, int ry, int rw, int rh) {
-    const uint8 *base;
-    uint8 *rgba;
-    int x, y, pitch;
-    if (!surf || !pal || rw <= 0 || rh <= 0) return;
-    rgba = ensureRgbaScratch(rw * rh * 4);
-    if (!rgba) return;
-    base = (const uint8 *)surf->pixels;
-    pitch = surf->pitch;
-    for (y = 0; y < rh; y++) {
-        const uint8 *row = base + (size_t)(ry + y) * pitch + rx;
-        uint8 *out = rgba + (size_t)y * rw * 4;
-        for (x = 0; x < rw; x++) {
-            SDL_Color c = pal->colors[row[x]];
-            out[x * 4 + 0] = c.r;
-            out[x * 4 + 1] = c.g;
-            out[x * 4 + 2] = c.b;
-            out[x * 4 + 3] = 255;
-        }
-    }
-    if (!*tex) glGenTextures(1, tex);
-    glBindTexture(GL_TEXTURE_2D, *tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, rw, rh, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
 }
 
 /* Map a final palette index to GL colour. */
@@ -507,8 +514,6 @@ static void glDrawSphere(float oLeft, float oRight, float oBottom, float oTop) {
     glShadeModel(GL_FLAT);
 }
 
-static GLuint s_backdropTex; /* per-frame snapshot of the sub-view MFD page region */
-
 /* Common per-model GL state for a 3D scene (main view and target sub-view): the
  * perspective projection, double-sided flat fill, and the hybrid depth setup
  * (z-buffer + GL_LEQUAL + polygon offset — see gl_endScene). */
@@ -530,18 +535,15 @@ static void beginModelPass(void) {
     glEnable(GL_POLYGON_OFFSET_POINT);
 }
 
-/* Target-model MFD sub-view (renderScene == 0). The game fills the MFD region of
- * the page with its two-tone horizon before submitting the model; the software
- * rasterizer drew the model straight over that page background. GL renders under
- * the page, so we snapshot that region as the GL backdrop, punch the page region
- * show-through, then render the model over the backdrop in a scissored viewport.
- * Only depth is cleared (scissored) so the main 3D already in the framebuffer is
- * preserved; the model's blips/labels still draw into the page (over the model). */
+/* Target-model MFD sub-view (renderScene == 0). The game's two-tone horizon backdrop
+ * is drawn immediately (fillSpanRectImmediate, egmath.c) into the MFD region just
+ * before this, over the anchor page composite — so the framebuffer already holds the
+ * MFD backdrop. We just render the model over it in a scissored sub-viewport, with
+ * only this region's depth cleared so the main 3D already in the framebuffer (and the
+ * immediate horizon) are preserved; the model's blips/labels then draw over it. */
 static void gl_beginSubScene(const R3DScene *s) {
     int win_w, win_h, vpTop, vpBot, vpLeft, vpRight, Wv, Hv, lbx, lby, gx, gy, gw, gh;
     float scaleX, scaleY, fGate;
-    SDL_Surface *page;
-    SDL_Palette *pal;
 
     r3d_setObjCullWiden(1, 1, 1, 1); /* the MFD is inside the pillarboxed 4:3 UI box */
     setup3DTransform(s->viewport, s->angleX, s->angleY, s->angleZ,
@@ -585,44 +587,21 @@ static void gl_beginSubScene(const R3DScene *s) {
     gh = (int)(Hv * scaleY);
     gy = win_h - (lby + (int)(vpTop * scaleY)) - gh;
 
-    /* Snapshot the page's MFD region as the backdrop, THEN punch it show-through. */
-    page = gfx_getCurPageSurface();
-    pal = gfx_getPalette();
-    uploadIndexedRegion(&s_backdropTex, page, pal, vpLeft, vpTop, Wv, Hv);
-    if (page) {
-        SDL_Rect rc = {vpLeft, vpTop, Wv, Hv};
-        SDL_FillSurfaceRect(page, &rc, GFX_GL_SHOWTHROUGH_KEY);
-    }
-
     glViewport(gx, gy, gw, gh);
     glScissor(gx, gy, gw, gh);
     glEnable(GL_SCISSOR_TEST);
+    s_sceneVp[0] = gx;
+    s_sceneVp[1] = gy;
+    s_sceneVp[2] = gw;
+    s_sceneVp[3] = gh;
     s_vpW = (float)gw;
     s_vpH = (float)gh;
 
-    /* Backdrop quad fills the viewport (ortho, depth off); clear only this region's
-     * depth so the model z-buffers against a clean slate over the main-view depth. */
+    /* Clear only this region's depth (color preserved: the immediate horizon backdrop
+     * already drawn here stays) so the model z-buffers against a clean slate over the
+     * main-view depth. */
     glDepthMask(GL_TRUE);
     glClear(GL_DEPTH_BUFFER_BIT);
-    if (s_backdropTex) {
-        glMatrixMode(GL_PROJECTION);
-        glLoadIdentity();
-        glOrtho(0, gw, gh, 0, -1, 1);
-        glMatrixMode(GL_MODELVIEW);
-        glLoadIdentity();
-        glDisable(GL_DEPTH_TEST);
-        glDisable(GL_BLEND);
-        glColor3ub(255, 255, 255);
-        glEnable(GL_TEXTURE_2D);
-        glBindTexture(GL_TEXTURE_2D, s_backdropTex);
-        glBegin(GL_QUADS);
-        glTexCoord2f(0, 0); glVertex2f(0, 0);
-        glTexCoord2f(1, 0); glVertex2f((float)gw, 0);
-        glTexCoord2f(1, 1); glVertex2f((float)gw, (float)gh);
-        glTexCoord2f(0, 1); glVertex2f(0, (float)gh);
-        glEnd();
-        glDisable(GL_TEXTURE_2D);
-    }
 
     beginModelPass();
     s_nSub = 0;
@@ -630,6 +609,7 @@ static void gl_beginSubScene(const R3DScene *s) {
     s_nLine = 0;
     s_lineOverflow = 0;
     s_flatN = 0;
+    s_mainScene = 0; /* this is the MFD target sub-scene, not the main view */
     s_sceneRendered = 1; /* live 3D is now in the framebuffer; the present must not clear it */
 }
 
@@ -637,10 +617,9 @@ static void gl_beginScene(const R3DScene *s) {
     int win_w, win_h, vpTop, vpBot, vpLeft, vpRight, Wv, Hv, lbx, lby;
     float scaleX, scaleY, fGate, sphOrtho[4];
     int16 skyIdx;
-    SDL_Surface *page;
 
-    /* The target-model MFD sub-view has its own scissored GL path (backdrop from
-     * the page + model), separate from the main view's full sky/fog setup. */
+    /* The target-model MFD sub-view has its own scissored GL path (model over the
+     * immediate horizon backdrop), separate from the main view's full sky/fog setup. */
     if (s->renderScene == 0) {
         gl_beginSubScene(s);
         return;
@@ -746,6 +725,13 @@ static void gl_beginScene(const R3DScene *s) {
             sphOrtho[0] = 0.0f; sphOrtho[1] = (float)Wv;
             sphOrtho[2] = (float)Hv; sphOrtho[3] = 0.0f;
         }
+        if (s_wide) {
+            s_sceneVp[0] = 0; s_sceneVp[1] = 0;
+            s_sceneVp[2] = win_w; s_sceneVp[3] = win_h;
+        } else {
+            s_sceneVp[0] = gx; s_sceneVp[1] = gy;
+            s_sceneVp[2] = gw; s_sceneVp[3] = gh;
+        }
     }
     glEnable(GL_SCISSOR_TEST);
 
@@ -821,18 +807,16 @@ static void gl_beginScene(const R3DScene *s) {
         glEnable(GL_FOG);
     }
 
-    /* Make the page's viewport region show-through so the 2D composite reveals
-     * the GL 3D under it; the HUD/cockpit then draw over it (non-key, opaque). */
-    page = gfx_getCurPageSurface();
-    if (page) {
-        SDL_Rect rc = {vpLeft, vpTop, Wv, Hv};
-        SDL_FillSurfaceRect(page, &rc, GFX_GL_SHOWTHROUGH_KEY);
-    }
+    /* Register the 3D viewport rect as show-through: the anchor page composite makes
+     * exactly this rect transparent so the GL 3D shows, and the immediate HUD then
+     * draws over it. No page fill needed — nothing 2D is baked into this region. */
+    addShowRect(vpLeft, vpTop, Wv, Hv);
     s_nSub = 0;
     s_subOverflow = 0;
     s_nLine = 0;
     s_lineOverflow = 0;
     s_flatN = 0; /* model-flatness cache is per-frame (world data may reload) */
+    s_mainScene = 1; /* the out-the-window view: gl_endScene composites the page backdrop after it */
     s_sceneRendered = 1;
 }
 
@@ -1299,8 +1283,29 @@ static int subCmp(const void *a, const void *b) {
     return ((unsigned)x->sortLo < (unsigned)y->sortLo) - ((unsigned)x->sortLo > (unsigned)y->sortLo);
 }
 
+static void composePageBackdrop(SDL_Surface *page, int shakeOffset); /* defined below */
+
 static void gl_endScene(void) {
     int i;
+
+    /* Re-establish the scene's GL state before replaying the deferred subs: an
+     * immediate 2D primitive drawn mid-scene (e.g. the far-contact dot from
+     * updateTargetLock) leaves the overlay's full-window ortho/viewport behind,
+     * which would project the whole scene as garbage. */
+    glViewport(s_sceneVp[0], s_sceneVp[1], s_sceneVp[2], s_sceneVp[3]);
+    glScissor(s_sceneVp[0], s_sceneVp[1], s_sceneVp[2], s_sceneVp[3]);
+    glEnable(GL_SCISSOR_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glLoadMatrixf(s_proj);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_BLEND);
+    glShadeModel(GL_FLAT);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glEnable(GL_POLYGON_OFFSET_LINE);
+    glEnable(GL_POLYGON_OFFSET_POINT);
+    if (s_mainScene) glEnable(GL_FOG);
 
     if (s_subOverflow)
         LogWarn(("r3d_gl: %d submissions dropped (cap %d)", s_subOverflow, GL_MAX_SUBS));
@@ -1342,6 +1347,16 @@ static void gl_endScene(void) {
     glDisable(GL_FOG);
     s_nSub = 0;
     glDisable(GL_SCISSOR_TEST);
+
+    /* Ordering anchor: composite the retained page (cockpit/panel + on-change
+     * gauges, with the viewport show-through hole) onto the window NOW — right after
+     * the main out-the-window 3D view, before the frame's immediate HUD/MFD draws —
+     * so the 2D lands over it in true call order. The MFD target sub-scene has its
+     * own path (s_mainScene 0) and draws its model directly over this backdrop. */
+    if (s_mainScene) {
+        composePageBackdrop(gfx_getCurPageSurface(), gfx_getShakeOffset());
+        s_mainScene = 0;
+    }
 }
 
 const R3DBackend r3d_glBackend = {
@@ -1441,36 +1456,313 @@ static GLuint imageTexture(R2DImage *img, SDL_Palette *pal, int palGen) {
     return tex;
 }
 
-void r3dgl_present(SDL_Surface *page, int shakeOffset) {
-    int win_w, win_h, w, h, x, y, lbx, lby, qw, qh;
-    SDL_Palette *pal;
-    const uint8 *src;
-    int pitch;
-    GLuint tex;
-    float shake, scaleX, scaleY;
+/* ---- Immediate 2D overlay primitives ------------------------------------ */
 
-    if (!page || !s_active) return;
+/* 2D overlay draw context: the virtual->window letterbox (from the shared r2d
+ * mapping) plus the screen-shake, shared by every immediate 2D primitive. Set once
+ * before the frame's first 2D draw (overlaySetContext); each r3dgl_draw* below reads
+ * it. Drawing a cached texture or a few vector verts is cheap enough to issue every
+ * frame, so the only thing cached is the *decode* (imageTexture), never the draw. */
+static struct {
+    int lbx, lby;         /* top-left of the centred virtual box, window px */
+    float scaleX, scaleY; /* window px per virtual (320-space) px, per axis */
+    float shake;          /* explosion screen-shake, already scaled to window px */
+    int winW, winH;
+    float lineW;          /* native HUD line width */
+} s_ov;
+
+static void overlaySetContext(int virtW, int virtH, int shakeOffset) {
+    R2DMapping m;
+    SDL_GetWindowSizeInPixels(s_win, &s_ov.winW, &s_ov.winH);
+    r2d_computeMapping(virtW, virtH, s_ov.winW, s_ov.winH, 0, &m);
+    s_ov.scaleX = m.scaleX;
+    s_ov.scaleY = m.scaleY;
+    s_ov.lbx = m.offX;
+    s_ov.lby = m.offY;
+    s_ov.shake = (float)shakeOffset * m.scaleX;
+    s_ov.lineW = m.scaleY < 1.0f ? 1.0f : m.scaleY;
+}
+
+void r3dgl_beginOverlay(void) {
+    /* The flight overlay is authored in the 320x200 virtual box; shake is the live
+     * explosion offset (read once per frame here, applied by every r3dgl_draw*). */
+    overlaySetContext(LOGICAL_WIDTH, LOGICAL_HEIGHT, gfx_getShakeOffset());
+}
+
+/* Map a 320-space coordinate to window pixels through the shared letterbox+shake.
+ * Callers add the +0.5 pixel-centre bias for vector endpoints; corners pass integers. */
+static float ovMapX(float x) { return (float)s_ov.lbx + x * s_ov.scaleX - s_ov.shake; }
+static float ovMapY(float y) { return (float)s_ov.lby + y * s_ov.scaleY; }
+
+/* Scissor to a half-open 320-space clip rect (used by the MFD poly/scope draws). */
+static void ovClipScissor(int cx0, int cy0, int cx1, int cy1) {
+    float sx0 = ovMapX((float)cx0), sx1 = ovMapX((float)cx1);
+    float sy1w = ovMapY((float)cy0), sy2w = ovMapY((float)cy1);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor((int)sx0, (int)((float)s_ov.winH - sy2w),
+              (int)(sx1 - sx0), (int)(sy2w - sy1w));
+}
+
+/* Establish the 2D ortho GL state for one immediate overlay primitive: full-window
+ * viewport, y-down ortho in window pixels, depth/fog/lighting off. Cheap and fully
+ * self-contained so a primitive drawn mid-frame — even right after a 3D sub-scene
+ * that left depth/scissor/perspective set — always draws correctly, no shared
+ * "am I in 2D mode" flag. */
+static void overlay2DState(void) {
+    glViewport(0, 0, s_ov.winW, s_ov.winH);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_FOG);
+    glDisable(GL_TEXTURE_2D);
+    glShadeModel(GL_FLAT);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, s_ov.winW, s_ov.winH, 0, -1, 1); /* y-down: 320-space row 0 at top */
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+}
+
+void r3dgl_drawLine(int x1, int y1, int x2, int y2, int color) {
+    SDL_Palette *pal = gfx_getPalette();
+    SDL_Color c;
+    if (!pal) return;
+    c = pal->colors[color & 0xff];
+    overlay2DState();
+    glLineWidth(s_ov.lineW);
+    glColor3ub(c.r, c.g, c.b);
+    glBegin(GL_LINES);
+    glVertex2f(ovMapX((float)x1 + 0.5f), ovMapY((float)y1 + 0.5f));
+    glVertex2f(ovMapX((float)x2 + 0.5f), ovMapY((float)y2 + 0.5f));
+    glEnd();
+}
+
+/* One virtual-pixel cell (scaleX x scaleY) so points keep their footprint at
+ * native, non-square size (pitch-ladder marks, submitted text pixels). */
+void r3dgl_drawPoint(int x, int y, int color) {
+    SDL_Palette *pal = gfx_getPalette();
+    SDL_Color c;
+    float x0, y0, x1q, y1q;
+    if (!pal) return;
+    c = pal->colors[color & 0xff];
+    overlay2DState();
+    x0 = ovMapX((float)x);
+    y0 = ovMapY((float)y);
+    x1q = x0 + s_ov.scaleX;
+    y1q = y0 + s_ov.scaleY;
+    glColor3ub(c.r, c.g, c.b);
+    glBegin(GL_QUADS);
+    glVertex2f(x0, y0);
+    glVertex2f(x1q, y0);
+    glVertex2f(x1q, y1q);
+    glVertex2f(x0, y1q);
+    glEnd();
+}
+
+/* Filled axis-aligned rect with INCLUSIVE 320-space bounds, matching fillSpanRect's
+ * pixel extent (x0..x1, y0..y1). Used for the per-frame MFD backdrops (target-view
+ * horizon, radar-scope background) and the damage flash — the fills that must land
+ * in true call order under the immediate MFD/scope content instead of baking. */
+void r3dgl_drawRect(int x0, int y0, int x1, int y1, int color) {
+    SDL_Palette *pal = gfx_getPalette();
+    SDL_Color c;
+    float qx0, qy0, qx1, qy1;
+    if (!pal || x1 < x0 || y1 < y0) return;
+    c = pal->colors[color & 0xff];
+    overlay2DState();
+    qx0 = ovMapX((float)x0);
+    qy0 = ovMapY((float)y0);
+    qx1 = ovMapX((float)(x1 + 1));
+    qy1 = ovMapY((float)(y1 + 1));
+    glColor3ub(c.r, c.g, c.b);
+    glBegin(GL_QUADS);
+    glVertex2f(qx0, qy0);
+    glVertex2f(qx1, qy0);
+    glVertex2f(qx1, qy1);
+    glVertex2f(qx0, qy1);
+    glEnd();
+}
+
+/* Filled convex tile face (left-MFD terrain map). Vertices are 320-space x,y pairs
+ * submitted UNCLIPPED and scissored to the MFD rect (clipX0,clipY0)-(clipX1,clipY1),
+ * half-open, so a face crossing the border fills correctly with a crisp edge. */
+void r3dgl_drawPoly(const short *xy, int n, int color,
+                    int clipX0, int clipY0, int clipX1, int clipY1) {
+    SDL_Palette *pal = gfx_getPalette();
+    SDL_Color c;
+    int k;
+    if (!pal || n < 3) return;
+    c = pal->colors[color & 0xff];
+    overlay2DState();
+    ovClipScissor(clipX0, clipY0, clipX1, clipY1);
+    glColor3ub(c.r, c.g, c.b);
+    glBegin(GL_POLYGON);
+    for (k = 0; k < n; k++)
+        glVertex2f(ovMapX((float)xy[k * 2] + 0.5f), ovMapY((float)xy[k * 2 + 1] + 0.5f));
+    glEnd();
+    glDisable(GL_SCISSOR_TEST);
+}
+
+/* Radar/MFD line with fractional endpoints (no whole-pixel wobble); its ends are
+ * cut by a GL scissor at the true MFD edge (cx0,cy0)-(cx1,cy1) rather than a
+ * geometry clip — a crisp screen-edge cut, not a slanted butt-cap short of it. */
+void r3dgl_drawScopeLine(float x1, float y1, float x2, float y2, int color,
+                         int cx0, int cy0, int cx1, int cy1) {
+    SDL_Palette *pal = gfx_getPalette();
+    SDL_Color c;
+    if (!pal) return;
+    c = pal->colors[color & 0xff];
+    overlay2DState();
+    ovClipScissor(cx0, cy0, cx1, cy1);
+    glLineWidth(s_ov.lineW / 2);
+    glColor3ub(c.r, c.g, c.b);
+    glBegin(GL_LINES);
+    glVertex2f(ovMapX(x1 + 0.5f), ovMapY(y1 + 0.5f));
+    glVertex2f(ovMapX(x2 + 0.5f), ovMapY(y2 + 0.5f));
+    glEnd();
+    glDisable(GL_SCISSOR_TEST);
+}
+
+/* One sprite/HD image as a textured quad from the per-image decode cache. Source
+ * sub-rect (srcX,srcY,imgW,imgH); destination footprint (dstW,dstH) in 320-space
+ * may differ from the source size (a scaled HD sprite). key<0 opaque (blend off,
+ * index 0 drawn as its colour); key>=0 transparent on index 0 (baked alpha). */
+void r3dgl_drawImage(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
+                     int dstX, int dstY, int dstW, int dstH, int key) {
+    SDL_Palette *pal = gfx_getPalette();
+    SDL_Surface *surf = r2d_imageSurface(img);
+    GLuint itex;
+    float u0, v0, u1, v1, x0, y0, x1q, y1q;
+    if (!surf || !pal) return;
+    itex = imageTexture(img, pal, gfx_paletteGeneration());
+    if (!itex) return;
+    overlay2DState();
+    glEnable(GL_TEXTURE_2D);
+    glColor3ub(255, 255, 255); /* MODULATE: white so the texture passes through */
+    if (key < 0) {
+        glDisable(GL_BLEND);
+    } else {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+    glBindTexture(GL_TEXTURE_2D, itex);
+    /* Full-frame texcoords into the sheet; pixel-snapping the quad keeps every
+     * fragment centre strictly inside the frame so NEAREST never bleeds across a
+     * sprite-sheet boundary. */
+    u0 = (float)srcX / (float)surf->w;
+    v0 = (float)srcY / (float)surf->h;
+    u1 = (float)(srcX + imgW) / (float)surf->w;
+    v1 = (float)(srcY + imgH) / (float)surf->h;
+    x0 = SDL_floorf(ovMapX((float)dstX) + 0.5f);
+    y0 = SDL_floorf(ovMapY((float)dstY) + 0.5f);
+    x1q = x0 + SDL_floorf((float)dstW * s_ov.scaleX + 0.5f);
+    y1q = y0 + SDL_floorf((float)dstH * s_ov.scaleY + 0.5f);
+    glBegin(GL_QUADS);
+    glTexCoord2f(u0, v0); glVertex2f(x0, y0);
+    glTexCoord2f(u1, v0); glVertex2f(x1q, y0);
+    glTexCoord2f(u1, v1); glVertex2f(x1q, y1q);
+    glTexCoord2f(u0, v1); glVertex2f(x0, y1q);
+    glEnd();
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_BLEND);
+}
+
+/* The retained page as a persistent GL texture + the dirty key it was built for.
+ * Re-uploaded ONLY when its visible output could have changed (below), so the page
+ * is NOT re-converted/re-uploaded every frame — the flight fire-palette cycle bumps
+ * the global palette generation every frame but touches only its 9 fire entries, so
+ * a cockpit that doesn't use them stays cached. */
+static GLuint s_pageTex;
+static unsigned s_pageKey;
+static int s_pageTexW, s_pageTexH;
+
+/* FNV-1a fold of the page's exact visible output: the pixel indices, the palette
+ * RGB of ONLY the indices actually present (so fire-cycle changes to unused entries
+ * don't force a re-upload), the show-through rects (they set the alpha), and the
+ * page size. A change in any of these — and nothing else — re-uploads the texture. */
+static unsigned pageOutputKey(SDL_Surface *page, SDL_Palette *pal) {
+    unsigned k = 2166136261u;
+    unsigned used[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    const uint8 *src = (const uint8 *)page->pixels;
+    int pitch = page->pitch, x, y, i;
+    for (y = 0; y < page->h; y++) {
+        const uint8 *row = src + (size_t)y * pitch;
+        for (x = 0; x < page->w; x++) {
+            uint8 idx = row[x];
+            k = (k ^ idx) * 16777619u;
+            used[idx >> 5] |= 1u << (idx & 31);
+        }
+    }
+    for (i = 0; i < 256 && i < pal->ncolors; i++) {
+        if (!(used[i >> 5] & (1u << (i & 31)))) continue;
+        k = (k ^ (unsigned)pal->colors[i].r) * 16777619u;
+        k = (k ^ (unsigned)pal->colors[i].g) * 16777619u;
+        k = (k ^ (unsigned)pal->colors[i].b) * 16777619u;
+    }
+    for (i = 0; i < s_nShowRects; i++) {
+        const SDL_Rect *r = &s_showRects[i];
+        k = (k ^ (unsigned)r->x) * 16777619u;
+        k = (k ^ (unsigned)r->y) * 16777619u;
+        k = (k ^ (unsigned)r->w) * 16777619u;
+        k = (k ^ (unsigned)r->h) * 16777619u;
+    }
+    k = (k ^ (unsigned)page->w) * 16777619u;
+    k = (k ^ (unsigned)page->h) * 16777619u;
+    return k;
+}
+
+/* Composite the retained 320x200 page (cockpit, gauges, menus, 2D screens) onto the
+ * window as one letterboxed textured quad, transparent inside the 3D-viewport rect(s)
+ * so the GL 3D beneath shows. On flight frames this runs at the MAIN-SCENE anchor
+ * (gl_endScene), BEFORE the frame's immediate HUD/MFD draws, so the 2D composes over
+ * it in true call order; on pure-2D screens (no 3D pass) it runs at present. Does not
+ * clear when a 3D scene is live. The RGBA convert + texture upload happen only when
+ * the page's visible output changed (pageOutputKey); the quad itself draws every
+ * frame (cheap, and the screen-shake offset applies here without a re-upload). */
+static void composePageBackdrop(SDL_Surface *page, int shakeOffset) {
+    int win_w, win_h, w, h, lbx, lby, qw, qh;
+    SDL_Palette *pal;
+    float shake, scaleX, scaleY;
+    unsigned key;
+
+    if (!page) return;
     w = page->w;
     h = page->h;
     pal = gfx_getPalette();
     if (!pal) return;
 
-    if (!ensureRgbaScratch(w * h * 4)) return;
-
-    src = (const uint8 *)page->pixels;
-    pitch = page->pitch;
-    for (y = 0; y < h; y++) {
-        const uint8 *row = src + y * pitch;
-        uint8 *out = s_rgba + y * w * 4;
-        for (x = 0; x < w; x++) {
-            uint8 idx = row[x];
-            SDL_Color c = pal->colors[idx];
-            out[x * 4 + 0] = c.r;
-            out[x * 4 + 1] = c.g;
-            out[x * 4 + 2] = c.b;
-            out[x * 4 + 3] = (idx == GFX_GL_SHOWTHROUGH_KEY) ? 0 : 255;
+    key = pageOutputKey(page, pal);
+    if (!s_pageTex || key != s_pageKey || w != s_pageTexW || h != s_pageTexH) {
+        int x, y, pitch;
+        const uint8 *src;
+        if (!ensureRgbaScratch(w * h * 4)) { s_nShowRects = 0; return; }
+        src = (const uint8 *)page->pixels;
+        pitch = page->pitch;
+        for (y = 0; y < h; y++) {
+            const uint8 *row = src + (size_t)y * pitch;
+            uint8 *out = s_rgba + (size_t)y * w * 4;
+            for (x = 0; x < w; x++) {
+                uint8 idx = row[x];
+                SDL_Color c = pal->colors[idx];
+                out[x * 4 + 0] = c.r;
+                out[x * 4 + 1] = c.g;
+                out[x * 4 + 2] = c.b;
+                /* Transparent inside the 3D viewport rect(s) so the GL 3D beneath
+                 * shows; opaque everywhere else (cockpit/panel). */
+                out[x * 4 + 3] = inShowRect(x, y) ? 0 : 255;
+            }
         }
+        if (!s_pageTex) glGenTextures(1, &s_pageTex);
+        glBindTexture(GL_TEXTURE_2D, s_pageTex);
+        setOverlayTexParams();
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, s_rgba);
+        s_pageKey = key;
+        s_pageTexW = w;
+        s_pageTexH = h;
     }
+    s_nShowRects = 0; /* consumed for this frame */
 
     SDL_GetWindowSizeInPixels(s_win, &win_w, &win_h);
     /* Letterbox the page into the window through the shared r2d mapping (deriving
@@ -1495,16 +1787,14 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
     glDisable(GL_LIGHTING);
     glShadeModel(GL_FLAT);
 
-    /* On flight frames the GL 3D is already in the framebuffer (with the bars
-     * cleared black by gl_beginScene) and the overlay's show-through key reveals
-     * it, so we must not clear here. On menu/briefing/debrief frames there is no
-     * live 3D underneath, so clear the whole window to blacken the letterbox bars
-     * before the opaque overlay quad lands. */
+    /* On flight frames the GL 3D is already in the framebuffer (bars cleared black
+     * by gl_beginScene) and the viewport rect reveals it, so we must not clear. On
+     * menu/briefing/debrief frames there is no live 3D underneath, so clear the whole
+     * window to blacken the letterbox bars before the opaque quad lands. */
     if (!s_sceneRendered) {
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
     }
-    s_sceneRendered = 0;
     glColor3ub(255, 255, 255);
 
     glMatrixMode(GL_PROJECTION);
@@ -1514,11 +1804,7 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
     glLoadIdentity();
 
     glEnable(GL_TEXTURE_2D);
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    setOverlayTexParams();
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, s_rgba);
-
+    glBindTexture(GL_TEXTURE_2D, s_pageTex);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -1534,156 +1820,24 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
         glEnd();
     }
 
-    glDeleteTextures(1, &tex);
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_BLEND);
+}
 
-    /* Native 2D overlay layer: replay the HUD/MFD lines, points and sprites
-     * recorded this frame at the window's native resolution, mapped through the
-     * same page letterbox (scale/lbx/lby) so they stay aligned with the UI box.
-     * Walked in submission order (a sprite drawn after a line lands over it);
-     * runs of the same kind batch into one GL primitive. Lines/points are crisp
-     * native-res vectors, sprites are textured quads from the per-image cache. */
-    {
-        int n, i;
-        const R2DOverlayPrim *prims = r2d_overlayPrims(&n);
-        const short *polyV = r2d_overlayPolyVerts();
-        SDL_Palette *vpal = gfx_getPalette();
-        int palGen = gfx_paletteGeneration();
-        float lw = scaleY < 1.0f ? 1.0f : scaleY;
-        for (i = 0; i < n && vpal; ) {
-            unsigned char kind = prims[i].kind;
-            int j = i;
-            while (j < n && prims[j].kind == kind) j++;
-            if (kind == R2D_PRIM_LINE) {
-                glLineWidth(lw);
-                glBegin(GL_LINES);
-                for (; i < j; i++) {
-                    const R2DOverlayPrim *p = &prims[i];
-                    SDL_Color c = vpal->colors[p->color];
-                    glColor3ub(c.r, c.g, c.b);
-                    glVertex2f((float)lbx + ((float)p->x1 + 0.5f) * scaleX - shake,
-                               (float)lby + ((float)p->y1 + 0.5f) * scaleY);
-                    glVertex2f((float)lbx + ((float)p->x2 + 0.5f) * scaleX - shake,
-                               (float)lby + ((float)p->y2 + 0.5f) * scaleY);
-                }
-                glEnd();
-            } else if (kind == R2D_PRIM_POINT) {
-                /* Points (pitch-ladder marks) as one virtual-pixel cells (scaleX x
-                 * scaleY) so they keep their footprint at native, non-square size. */
-                glBegin(GL_QUADS);
-                for (; i < j; i++) {
-                    const R2DOverlayPrim *p = &prims[i];
-                    SDL_Color c = vpal->colors[p->color];
-                    float x0 = (float)lbx + (float)p->x1 * scaleX - shake;
-                    float y0 = (float)lby + (float)p->y1 * scaleY;
-                    float x1q = x0 + scaleX, y1q = y0 + scaleY;
-                    glColor3ub(c.r, c.g, c.b);
-                    glVertex2f(x0, y0);
-                    glVertex2f(x1q, y0);
-                    glVertex2f(x1q, y1q);
-                    glVertex2f(x0, y1q);
-                }
-                glEnd();
-            } else if (kind == R2D_PRIM_POLY) {
-                /* Filled tile faces (left-MFD terrain map) as native-res convex
-                 * polygons; one GL_POLYGON per prim (a shared glBegin would fuse
-                 * separate faces into one loop). Vertices are 320-space pairs in
-                 * the poly pool, submitted UNCLIPPED and scissored to the MFD rect
-                 * (prim x1,y1,x2,y2) so faces crossing the border fill correctly. */
-                glEnable(GL_SCISSOR_TEST);
-                for (; i < j; i++) {
-                    const R2DOverlayPrim *p = &prims[i];
-                    SDL_Color c = vpal->colors[p->color];
-                    const short *v = polyV + (int)p->srcX * 2;
-                    int k, nv = p->srcY;
-                    float sx0 = (float)lbx + (float)p->x1 * scaleX - shake;
-                    float sx1 = (float)lbx + (float)p->x2 * scaleX - shake;
-                    float sy1w = (float)lby + (float)p->y1 * scaleY;
-                    float sy2w = (float)lby + (float)p->y2 * scaleY;
-                    glScissor((int)sx0, (int)((float)win_h - sy2w),
-                              (int)(sx1 - sx0), (int)(sy2w - sy1w));
-                    glColor3ub(c.r, c.g, c.b);
-                    glBegin(GL_POLYGON);
-                    for (k = 0; k < nv; k++)
-                        glVertex2f((float)lbx + ((float)v[k * 2] + 0.5f) * scaleX - shake,
-                                   (float)lby + ((float)v[k * 2 + 1] + 0.5f) * scaleY);
-                    glEnd();
-                }
-                glDisable(GL_SCISSOR_TEST);
-            } else if (kind == R2D_PRIM_SCOPELINE) {
-                /* Radar/MFD lines with fractional endpoints (no wobble) whose ends
-                 * are cut by a GL scissor at the true MFD edge (prim srcX,srcY,imgW,
-                 * imgH = the rect) instead of a whole-pixel geometry clip — a crisp
-                 * screen-edge cut, not a slanted butt-cap short of the border. */
-                glEnable(GL_SCISSOR_TEST);
-                glLineWidth(lw / 2);
-                for (; i < j; i++) {
-                    const R2DOverlayPrim *p = &prims[i];
-                    SDL_Color c = vpal->colors[p->color];
-                    float sx0 = (float)lbx + (float)p->srcX * scaleX - shake;
-                    float sx1 = (float)lbx + (float)p->imgW * scaleX - shake;
-                    float sy1w = (float)lby + (float)p->srcY * scaleY;
-                    float sy2w = (float)lby + (float)p->imgH * scaleY;
-                    glScissor((int)sx0, (int)((float)win_h - sy2w),
-                              (int)(sx1 - sx0), (int)(sy2w - sy1w));
-                    glColor3ub(c.r, c.g, c.b);
-                    glBegin(GL_LINES);
-                    glVertex2f((float)lbx + (p->fx1 + 0.5f) * scaleX - shake,
-                               (float)lby + (p->fy1 + 0.5f) * scaleY);
-                    glVertex2f((float)lbx + (p->fx2 + 0.5f) * scaleX - shake,
-                               (float)lby + (p->fy2 + 0.5f) * scaleY);
-                    glEnd();
-                }
-                glDisable(GL_SCISSOR_TEST);
-            } else { /* R2D_PRIM_IMAGE */
-                glEnable(GL_TEXTURE_2D);
-                glColor3ub(255, 255, 255); /* MODULATE: white so the texture passes through */
-                for (; i < j; i++) {
-                    const R2DOverlayPrim *p = &prims[i];
-                    SDL_Surface *surf = r2d_imageSurface(p->img);
-                    GLuint itex;
-                    float u0, v0, u1, v1, x0, y0, x1q, y1q;
-                    if (!surf) continue;
-                    itex = imageTexture(p->img, vpal, palGen);
-                    if (!itex) continue;
-                    /* key<0 opaque (blend off, index 0 drawn as its palette colour);
-                     * key>=0 transparent on index 0 (baked alpha). Sprites use 0/-1. */
-                    if (p->key < 0) {
-                        glDisable(GL_BLEND);
-                    } else {
-                        glEnable(GL_BLEND);
-                        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                    }
-                    glBindTexture(GL_TEXTURE_2D, itex);
-                    /* Full-frame texcoords; the surface is a sprite sheet and
-                     * srcX/srcY select one frame. Pixel-snapping the quad (below)
-                     * keeps every fragment centre strictly inside the frame, so
-                     * NEAREST never rounds across a boundary into the neighbouring
-                     * frame — no atlas bleed, and no thinned edge rows. */
-                    u0 = (float)p->srcX / (float)surf->w;
-                    v0 = (float)p->srcY / (float)surf->h;
-                    u1 = (float)(p->srcX + p->imgW) / (float)surf->w;
-                    v1 = (float)(p->srcY + p->imgH) / (float)surf->h;
-                    x0 = SDL_floorf((float)lbx + (float)p->x1 * scaleX - shake + 0.5f);
-                    y0 = SDL_floorf((float)lby + (float)p->y1 * scaleY + 0.5f);
-                    /* Dest footprint (x2,y2) == source size for 1:1 sprites; smaller
-                     * for a scaled HD sprite. */
-                    x1q = x0 + SDL_floorf((float)p->x2 * scaleX + 0.5f);
-                    y1q = y0 + SDL_floorf((float)p->y2 * scaleY + 0.5f);
-                    glBegin(GL_QUADS);
-                    glTexCoord2f(u0, v0); glVertex2f(x0, y0);
-                    glTexCoord2f(u1, v0); glVertex2f(x1q, y0);
-                    glTexCoord2f(u1, v1); glVertex2f(x1q, y1q);
-                    glTexCoord2f(u0, v1); glVertex2f(x0, y1q);
-                    glEnd();
-                }
-                glDisable(GL_TEXTURE_2D);
-                glDisable(GL_BLEND);
-            }
-        }
-        r2d_vectorMarkPresented();
-    }
-
+void r3dgl_present(SDL_Surface *page, int shakeOffset) {
+    if (!page || !s_active) return;
+    /* Flight frames composed the page backdrop at the main-scene anchor (before the
+     * frame's immediate HUD/MFD draws); only pure-2D screens (no 3D pass) compose it
+     * here, on top of the black-cleared window. */
+    if (!s_sceneRendered) composePageBackdrop(page, shakeOffset);
+    /* Remember whether THIS present carried a live 3D view. gfx_repaint (window
+     * expose/resize) re-presents only the page — which would blank the GL 3D (it
+     * lives in the framebuffer, not the page) — so on a flight frame it must instead
+     * leave the last composited frame alone (r3dgl_flightLive). */
+    s_glFlightLive = s_sceneRendered;
+    s_sceneRendered = 0;
+    r2d_vectorMarkPresented();
     SDL_GL_SwapWindow(s_win);
 }
+
+int r3dgl_flightLive(void) { return s_glFlightLive; }

@@ -97,7 +97,6 @@ Problems with the game that were introduces by the port, and to the best of our 
 1. When on the airfield/carrier, can see through to the ground on the sides of the view (exposed by widescreen support). Also, aircraft geometry sometimes flickers beneath the player.
 1. Missile markers on radar are too short/thick and should be drawn on top everything else as the most important threat that should be very visible.
 1. Pausing the game (`Alt-P`) appears to be busy waiting, CPU/GPU not idle.
-1. Terrain is sometimes visible through "holes" in the cockpit
 
 ## Building
 

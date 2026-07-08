@@ -61,11 +61,10 @@ struct SDL_Palette *gfx_getPalette(void);
 void gfx_paletteRGB(int idx, uint8 *r, uint8 *g, uint8 *b);
 int gfx_paletteGeneration(void);
 
-/* Palette index reserved as the GL "show-through" key: the GL backend fills the
- * 3D viewport region of the page with it, and the overlay composite makes those
- * pixels transparent so the GL 3D shows under the 2D layer. 0xFF is unused art
- * (the top palette block is built as black). */
-#define GFX_GL_SHOWTHROUGH_KEY 0xFF
+/* Current explosion screen-shake (0-3 virtual px, set by gfx_dacCycle). The GL
+ * backend reads it mid-frame to offset the immediate 2D overlay, matching the
+ * software present's shake shift. */
+int gfx_getShakeOffset(void);
 
 /*
  * Reference structures documenting how the overlay accesses caller data.

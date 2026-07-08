@@ -65,15 +65,15 @@ void drawTacticalMap(char page) {
     int gridLo;
     int gridStep;
 
-    /* The scope's grid/marker/projectile lines and its blip icon sprites share the
-     * one ordered overlay stream, so on GL they replay at native resolution in
+    /* The scope's grid/marker/projectile lines and its blip icon sprites draw in
      * submission order (icons, submitted last, land over the lines) — the crisp
-     * vector scope. The black backdrop is a direct page fill (fillSpanRect), so it
-     * composites behind the native stream. The interior is a plain rectangle (all
-     * content is rect-clipped at submit), not a round mask, so no scissor is needed. */
+     * vector scope. The black backdrop draws immediately behind them on GL (and
+     * bakes into the page on software), so it never dirties the retained page. The
+     * interior is a plain rectangle (all content is rect-clipped at submit), not a
+     * round mask, so no scissor is needed. */
     radius = g_radarScopeRange + 1;
     setDrawColor(COLOR_BLACK);
-    fillSpanRect(g_pageFront, 120, 104, 199, 175);
+    fillSpanRectImmediate(g_pageFront, 120, 104, 199, 175);
     setDrawColor(COLOR_DARKGRAY);
     gridStep = 1;
     if (g_radarScopeRange < 2 && g_detailLevel != 0) {

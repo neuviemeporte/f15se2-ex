@@ -14,6 +14,7 @@
 
 struct SDL_Window;
 struct SDL_Surface;
+typedef struct R2DImage R2DImage;
 
 /* Whether to bring a GL window/context up (GL is the auto preference, or forced
  * via F15_RENDER=gl). Checked by gfx_impl.c before window creation so it can
@@ -36,8 +37,44 @@ int r3dgl_initContext(struct SDL_Window *win);
 /* Nonzero once the GL context is live. */
 int r3dgl_active(void);
 
+/* Nonzero when the last present carried a live 3D flight frame. The GL 3D lives in
+ * the framebuffer (not the retained page), so a bare re-present of the page
+ * (gfx_repaint on a window expose/resize) would blank it; the caller skips the
+ * re-present in that case and lets the next flight frame redraw. */
+int r3dgl_flightLive(void);
+
 /* Composite the software 2D page over the rendered GL 3D and swap the window.
  * `shakeOffset` is the explosion screen-shake (pixels, 320-space). */
 void r3dgl_present(struct SDL_Surface *page, int shakeOffset);
+
+/*
+ * Immediate 2D overlay primitives.
+ *
+ * Each draws one HUD/MFD element straight onto the active GL framebuffer at native
+ * window resolution, in true call order — a cached texture bind + quad for images,
+ * a handful of vector verts otherwise — mapped through the shared page letterbox.
+ * Coordinates are absolute 320-space; `color` is a VGA palette index. Cheap enough
+ * to issue every frame; only the image *decode* is cached (per-image texture).
+ */
+/* Open the immediate 2D overlay for a flight frame: sets the shared virtual->window
+ * letterbox + screen-shake context the r3dgl_draw* primitives read. Called from
+ * r2d_vectorBeginFrame. */
+void r3dgl_beginOverlay(void);
+
+void r3dgl_drawLine(int x1, int y1, int x2, int y2, int color);
+void r3dgl_drawPoint(int x, int y, int color);
+/* Filled axis-aligned rect, INCLUSIVE 320-space bounds (matches fillSpanRect). */
+void r3dgl_drawRect(int x0, int y0, int x1, int y1, int color);
+/* Filled convex polygon: `n` (x,y) pairs, scissored to the half-open MFD clip rect. */
+void r3dgl_drawPoly(const short *xy, int n, int color,
+                    int clipX0, int clipY0, int clipX1, int clipY1);
+/* Sub-pixel radar/MFD line: fractional endpoints, ends cut by a scissor at the
+ * half-open clip rect (cx0,cy0)-(cx1,cy1). */
+void r3dgl_drawScopeLine(float x1, float y1, float x2, float y2, int color,
+                         int cx0, int cy0, int cx1, int cy1);
+/* Sprite/HD image: source sub-rect (srcX,srcY,imgW,imgH) into destination footprint
+ * (dstW,dstH) at (dstX,dstY); key<0 opaque, key>=0 transparent on index 0. */
+void r3dgl_drawImage(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
+                     int dstX, int dstY, int dstW, int dstH, int key);
 
 #endif /* R3D_GL_H */

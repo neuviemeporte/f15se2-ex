@@ -21,6 +21,7 @@
 #include "inttype.h"
 #include "struct.h"
 #include "gfx.h"
+#include "r2d.h"
 #include <dos.h>
 
 /* --- C-defined egame globals not surfaced in a header --- */
@@ -60,6 +61,19 @@ int __far fillSpanRect(const int16 *pageDesc, int left, int top, int right, int 
         }
     }
     return 0;
+}
+
+/* Per-frame rect fill (target-view horizon, radar-scope backdrop, damage flash):
+ * draws IMMEDIATELY over the composited frame on a GL vector frame (so it lands in
+ * true call order, under the frame's immediate MFD/scope/HUD content, and never
+ * dirties the retained page), and bakes into the page on the software backend. The
+ * fill colour is (uint8)pageDesc[2], as fillSpanRect reads it. */
+int __far fillSpanRectImmediate(const int16 *pageDesc, int left, int top, int right, int bottom) {
+    if (r2d_vectorActive()) {
+        r2d_submitRect(left, top, right, bottom, (uint8)pageDesc[2]);
+        return 0;
+    }
+    return fillSpanRect(pageDesc, left, top, right, bottom);
 }
 
 /* helpers: little-endian word view of a byte buffer, and low-byte lvalue. */

@@ -51,7 +51,11 @@ void renderHudFrame(int unused) {
             g_damageTakenFlag = 0;
             if (!(keyValue & 0x80)) {
                 setDrawColor(COLOR_FLAMING);
-                fillRectBoth(0, 0, 319, 96);
+                /* Immediate on GL: the flash colour (COLOR_FLAMING = 0x0d) is a
+                 * fire-cycled DAC entry, so baking it into the page would keep the
+                 * cached backdrop texture perpetually dirty. Software bakes it and
+                 * the DAC cycle animates it in place over the countdown. */
+                fillSpanRectImmediate(g_pageFront, 0, 0, 319, 96);
                 gfx_setDacAnimCount(60);
             }
         }

@@ -106,43 +106,18 @@ void r2d_blit(struct SDL_Surface *src, int srcX, int srcY,
               int w, int h, int key);
 
 /*
- * Native 2D vector layer.
+ * Native 2D overlay layer.
  *
  * The HUD/MFD primitives (lines, pitch-ladder, symbology) and sprites are
  * *submitted* to the renderer rather than rasterized into the 320x200 page. The
  * software backend realizes a submission by rasterizing into the page (the
- * low-end/DOS path, via the registered callbacks below). The GL backend records
- * the submission in 320-space and replays it at the **native window resolution**
- * over the composited frame — a crisp vector HUD and sharp sprites instead of an
- * upscaled low-res image. Lines, points and images share ONE ordered stream so
- * they replay in submission order (a sprite drawn after a line lands over it).
- * Same call sites, the realization is the backend's.
+ * low-end/DOS path, via the registered callbacks below). The GL backend draws each
+ * submission IMMEDIATELY, directly onto the active framebuffer at its call site
+ * (r3dgl_draw*), at **native window resolution** — a crisp vector HUD and sharp
+ * sprites in true call order (a sprite drawn after a line lands over it), no
+ * recording and no present-time replay. Same call sites, the realization is the
+ * backend's.
  */
-typedef struct {
-    unsigned char kind;   /* R2D_PRIM_LINE / _POINT / _IMAGE / _POLY */
-    unsigned char color;  /* VGA palette index (line / point / poly fill) */
-    short x1, y1, x2, y2; /* line/point: absolute 320-space, clipped to the page.
-                           * image: (x1,y1) is the destination corner; (x2,y2) is the
-                           * destination footprint (320-space) — equal to (imgW,imgH)
-                           * for a 1:1 sprite, smaller/larger for a scaled HD sprite.
-                           * poly: unused (vertices live in the poly pool). */
-    /* image submission (kind == R2D_PRIM_IMAGE): the sub-rect of `img` to draw.
-     * poly submission (kind == R2D_PRIM_POLY): srcX = first vertex index into the
-     * poly-vertex pool (r2d_overlayPolyVerts), srcY = vertex count; x1,y1,x2,y2 =
-     * the clip rect (absolute 320-space, half-open) the fill is scissored to. */
-    R2DImage *img;
-    short srcX, srcY, imgW, imgH;
-    short key;            /* <0 opaque; >=0 transparent on that index (sprites: 0) */
-    /* scope line (kind == R2D_PRIM_SCOPELINE): fractional 320-space endpoints for a
-     * sub-pixel replay; srcX,srcY,imgW,imgH double as the scissor rect (absolute
-     * 320-space, half-open) the GL edge-cut is clipped to. */
-    float fx1, fy1, fx2, fy2;
-} R2DOverlayPrim;
-#define R2D_PRIM_LINE  0
-#define R2D_PRIM_POINT 1
-#define R2D_PRIM_IMAGE 2
-#define R2D_PRIM_POLY  3
-#define R2D_PRIM_SCOPELINE 4
 
 /* Marks the start of a GL flight frame's 2D overlay (called from the 3D backend
  * once the main 3D view begins). Only between this and the present do 2D
@@ -150,34 +125,33 @@ typedef struct {
  * into the page as before. */
 void r2d_vectorBeginFrame(void);
 
-/* Whether 2D primitive submissions should be recorded for native replay (a GL
- * flight frame, unless disabled via F15_VECTOR2D=0) rather than rasterized into
- * the page. The gfx submission points branch on this. */
+/* Whether 2D primitive submissions draw immediately to the framebuffer this frame
+ * (set between r2d_vectorBeginFrame and the present — i.e. a GL flight/vector frame)
+ * rather than into the retained 320x200 page. The gfx submission points branch on
+ * this: true → draw immediately through the renderer (GL, redrawn every frame);
+ * false → write the page (software, retained across frames; also pure-2D screens
+ * with no 3D pass). This IS the "framebuffer retained?" question, inverted. */
 int r2d_vectorActive(void);
 
-/* Whether the active backend replays a submitted overlay at native resolution
- * (the GL backend) as opposed to rasterizing it into the page (software). A 2D
- * screen that wants a native vector frame must gate r2d_vectorBeginFrame() on
- * this: on the software backend there is no native replay, so entering a vector
- * frame would only record the primitives and never draw them. */
+/* Whether the active backend can replay a submitted overlay at native resolution
+ * (the GL backend) as opposed to rasterizing it into the page (software). Distinct
+ * from r2d_vectorActive: this is the backend capability, testable BEFORE a vector
+ * frame is opened. A pure-2D screen gates r2d_vectorBeginFrame() on this (on
+ * software there is no native replay, so entering a vector frame would record
+ * primitives that never draw). */
 int r2d_hasNativeOverlay(void);
 
-/* Whether the active backend RETAINS the 2D overlay across frames. The software
- * backend rasterizes into a page surface that persists until overwritten, so a
- * cached sub-image (the tac map baked into g_eg2dBacking) can be re-composited
- * each frame without re-rendering it — a lightweight-renderer optimization. The
- * GL backend rebuilds the native vector/quad stream every present (r2d_vector-
- * MarkPresented clears it), so anything on that layer must be re-submitted each
- * frame. Callers that cache-and-blit a region (redrawTacMap) branch on this: keep
- * the cache when retained, re-render every frame when not. Inverse of a GL vector
- * frame; false on software and on pure-2D screens (which also rasterize/persist). */
-int r2d_overlayRetained(void);
-
 /* Submit a clipped 2D line / point in absolute 320-space with a palette colour
- * index. Records for native replay when r2d_vectorActive(), else hands off to
- * the registered software rasterizer. */
+ * index. Draws immediately on a GL vector frame, else hands off to the registered
+ * software rasterizer. */
 void r2d_submitLine(int x1, int y1, int x2, int y2, int color);
 void r2d_submitPoint(int x, int y, int color);
+
+/* Submit a filled axis-aligned rect (INCLUSIVE 320-space bounds) for the per-frame
+ * MFD/HUD backdrops that must draw in true call order rather than bake into the
+ * page. GL-only (immediate); a no-op off a vector frame, where the caller bakes it
+ * with fillSpanRect instead (see fillSpanRectImmediate). */
+void r2d_submitRect(int x0, int y0, int x1, int y1, int color);
 
 /* Submit a sub-pixel radar/MFD line: fractional 320-space endpoints, scissored
  * to (clipX0,clipY0)-(clipX1,clipY1) (absolute 320-space, half-open) at replay.
@@ -231,17 +205,8 @@ void r2d_submitImageScaled(R2DImage *img, int srcX, int srcY, int srcW, int srcH
 void r2d_registerSoftwareImage(void (*image)(R2DImage *img, int srcX, int srcY,
                                              int w, int h, int dstX, int dstY, int key));
 
-/* The recorded overlay primitives (lines, points, images) for the current frame,
- * in submission order, for the GL backend to replay. Count via *count. */
-const R2DOverlayPrim *r2d_overlayPrims(int *count);
-
-/* The interleaved x,y vertex pool the R2D_PRIM_POLY prims index into (srcX =
- * first index, srcY = count), for the GL backend to replay filled polygons. */
-const short *r2d_overlayPolyVerts(void);
-
-/* Called by the backend after replaying the layer at present: clears it so each
- * frame composes a fresh layer (a frame that submits nothing — e.g. after a view
- * change — then correctly shows none, with no stale carry-over). */
+/* Called by the backend at present to close the vector frame: subsequent 2D
+ * submissions (until the next r2d_vectorBeginFrame) bake into the page again. */
 void r2d_vectorMarkPresented(void);
 
 /* Per-image backend texture cache: the GL backend stashes the INDEX8->RGBA

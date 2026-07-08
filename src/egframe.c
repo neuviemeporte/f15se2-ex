@@ -16,6 +16,7 @@
 #include "offsets.h"
 #include "log.h"
 #include "gfx.h"
+#include "r2d.h"
 #include "const.h"
 #include "comm.h"
 
@@ -163,8 +164,14 @@ void updateFrame(void) {
     applyGravityFall();
 
     if (objectToScreen(g_viewX_, g_viewY_, (int16 *)&val, (int16 *)&screenY) != 0) {
-        gfx_restoreFromImage(g_eg2dBacking, 0, val - 3, screenY - 3, val - 3, screenY - 3, 6, 6);
-        blitSprite(val - 1, screenY - 1, ((g_ourHead + 0x1000) >> 0xd & 7) * 4 + 164, 4, 4, 4, 0);
+        /* Software retained-page patch: erase last frame's player blip from the cached
+         * map and stamp the new one. On GL renderTacMapOverlay re-emits the whole map
+         * (incl. the blip) immediately every frame, so this bake is redundant — and
+         * skipping it keeps the moving blip from dirtying the cached page texture. */
+        if (!r2d_hasNativeOverlay()) {
+            gfx_restoreFromImage(g_eg2dBacking, 0, val - 3, screenY - 3, val - 3, screenY - 3, 6, 6);
+            blitSprite(val - 1, screenY - 1, ((g_ourHead + 0x1000) >> 0xd & 7) * 4 + 164, 4, 4, 4, 0);
+        }
         if (((int16)val < 32 || (int16)val > 88 || (int16)screenY < 118 || (int16)screenY > 162) && g_mapZoomLevel > 2) {
             g_mapZoomLevel--;
             redrawTacMap(g_viewX_, g_viewY_);

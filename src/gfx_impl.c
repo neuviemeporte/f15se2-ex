@@ -273,6 +273,8 @@ SDL_Palette *gfx_getPalette(void) {
  * it so a static sprite sheet re-uploads only when the palette actually moved. */
 int gfx_paletteGeneration(void) { return gfxPaletteGen; }
 
+int gfx_getShakeOffset(void) { return gfx_getState()->shakeOffset; }
+
 void gfx_paletteRGB(int idx, uint8 *r, uint8 *g, uint8 *b) {
     SDL_Palette *pal = gfx_getPalette();
     if (!pal || idx < 0 || idx >= pal->ncolors) {
@@ -488,6 +490,12 @@ void FAR CDECL gfx_flipPage(void) {
 /* Re-present the current visible frame (page 0, or the hi-res title surface).
  * gfx_presentPage already redirects to the hi-res path when the title is up. */
 void gfx_repaint(void) {
+    /* On a live GL flight frame the 3D is in the framebuffer, not the page, so
+     * re-presenting only the page here would blank it. The compositor still holds
+     * the last fully-composited frame, and the next flight frame redraws within a
+     * frame, so skip the bare re-present. Pure-2D screens (menus/briefing/debrief,
+     * which block in key-waits and produce no frame of their own) still need it. */
+    if (r3dgl_active() && r3dgl_flightLive()) return;
     gfx_presentPage(0);
 }
 
@@ -598,6 +606,7 @@ static void drawStringCore(int16 *params, const char *string,
     uint8 height, rowSize;
     uint8 *bitmaps;
     const uint8 *widthTab;
+    int submit;
 
     if (!string || !params) return;
 
@@ -612,6 +621,11 @@ static void drawStringCore(int16 *params, const char *string,
     rowSize = g_fontBitmapRowSize[fontIdx];
     bitmaps = g_fontBitmapPtrs[fontIdx];
     widthTab = g_fontWidthTables[fontIdx];
+
+    /* On a GL flight frame, submit each lit glyph pixel as a native point (drawn
+     * over the composited frame at window resolution) instead of baking it into the
+     * shared 320x200 page. Software (retained) keeps writing the page directly. */
+    submit = r2d_vectorActive();
 
     /* The page is backed by an SDL surface (same buffer the pic decoder and
      * clearRect target); glyph pixels are written straight into it. */
@@ -647,8 +661,10 @@ static void drawStringCore(int16 *params, const char *string,
                 for (col = 0; col < 8; col++) {
                     int px = x + col;
                     if ((bits & 0x80) && px >= clipL && px <= clipR &&
-                        px >= 0 && px < surfW)
-                        dstRow[px] = (uint8)color;
+                        px >= 0 && px < surfW) {
+                        if (submit) r2d_submitPoint(px, py, color);
+                        else dstRow[px] = (uint8)color;
+                    }
                     bits <<= 1;
                 }
             }
