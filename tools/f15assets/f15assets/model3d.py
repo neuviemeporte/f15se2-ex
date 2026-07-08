@@ -12,6 +12,28 @@ SIGNATURE_3D3 = 0x3333
 
 
 _FACE_PALETTE_RGB8: Optional[List[int]] = None
+_FLIGHT_DAY_COLOR_LUT = [
+    # src/egflight.c calls loadColorPalette(g_nightMode) before render3DView().
+    # For normal day rendering g_nightMode is 0, so color bytes are remapped
+    # through g_colorPalettes[0] before indexing the active VGA palette.
+    # Source: src/egdata.c g_colorPalettes[0].
+    0x00,
+    0x01,
+    0x02,
+    0x03,
+    0x04,
+    0x00,
+    0x06,
+    0x07,
+    0x08,
+    0x09,
+    0x0A,
+    0x0B,
+    0x0C,
+    0x0D,
+    0x0E,
+    0x0F,
+]
 
 
 def _face_material_color(color_index: int) -> Tuple[float, float, float, float]:
@@ -19,7 +41,8 @@ def _face_material_color(color_index: int) -> Tuple[float, float, float, float]:
     if _FACE_PALETTE_RGB8 is None:
         _FACE_PALETTE_RGB8 = _default_palette(8)
 
-    idx = int(color_index) & 0xFF
+    raw_idx = int(color_index) & 0xFF
+    idx = _FLIGHT_DAY_COLOR_LUT[raw_idx] if raw_idx < len(_FLIGHT_DAY_COLOR_LUT) else raw_idx
     if _FACE_PALETTE_RGB8:
         palette_colors = _FACE_PALETTE_RGB8
         palette_size = len(palette_colors) // 3
