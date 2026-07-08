@@ -276,6 +276,12 @@
     let jsonSidecar = null;
     let selectedIndex = -1;
     let wireVisible = true;
+    let canvasPointerStart = null;
+    let suppressShapeListClickUntil = 0;
+
+    function shouldSuppressPostCanvasDragClick() {
+      return performance.now() < suppressShapeListClickUntil;
+    }
 
     function candidates(name) {
       return [
@@ -350,7 +356,14 @@
         const el = document.createElement("div");
         el.className = "item" + (index === selectedIndex ? " active" : "");
         el.innerHTML = `<strong>${index}: ${escapeHtml(obj?.name || `shape_${index}`)}</strong><small>offset ${info.offset ?? "?"}, bytes ${info.size ?? "?"}</small>`;
-        el.addEventListener("click", () => selectShape(index, true));
+        el.addEventListener("click", event => {
+          if (shouldSuppressPostCanvasDragClick()) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          selectShape(index, true);
+        });
         shapeListEl.appendChild(el);
       });
     }
@@ -520,7 +533,51 @@
       renderer.render(scene, camera);
     }
 
+    canvas.addEventListener("pointerdown", event => {
+      canvasPointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY, dragged: false };
+      try {
+        canvas.setPointerCapture(event.pointerId);
+      } catch (_) {}
+    });
+
+    canvas.addEventListener("pointermove", event => {
+      if (!canvasPointerStart || canvasPointerStart.id !== event.pointerId) return;
+      if (Math.abs(event.clientX - canvasPointerStart.x) > 4 || Math.abs(event.clientY - canvasPointerStart.y) > 4) {
+        canvasPointerStart.dragged = true;
+      }
+    });
+
+    canvas.addEventListener("pointerup", event => {
+      if (!canvasPointerStart || canvasPointerStart.id !== event.pointerId) return;
+      if (canvasPointerStart.dragged) {
+        suppressShapeListClickUntil = performance.now() + 500;
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      canvasPointerStart = null;
+      try {
+        canvas.releasePointerCapture(event.pointerId);
+      } catch (_) {}
+    });
+
+    document.addEventListener("mouseup", event => {
+      if (!shouldSuppressPostCanvasDragClick()) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
+
+    document.addEventListener("click", event => {
+      if (!shouldSuppressPostCanvasDragClick()) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
+
     canvas.addEventListener("click", event => {
+      if (shouldSuppressPostCanvasDragClick()) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       const rect = canvas.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
