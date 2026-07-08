@@ -82,21 +82,23 @@ void drawTacticalMap(char page) {
     gridLo = 1 - gridStep;
     gridX = g_viewX_ & 0xf800;
     gridY = g_viewY_ & 0xf800;
+    /* ±0x2c00 spans the whole scope at long range: past the corner radius
+     * (~0x2312 at shift 7) + grid alignment (0x7ff); submit clip trims to box. */
     i = gridLo * 2;
     while (gridStep * 2 >= i) {
-        projectMapPoint(i * 0x400 + gridX, gridY + 0x1c00);
+        projectMapPoint(i * 0x400 + gridX, gridY + 0x2c00);
         startX = g_scopeFx;
         startY = g_scopeFy;
-        projectMapPoint(i * 0x400 + gridX, gridY - 0x1800);
+        projectMapPoint(i * 0x400 + gridX, gridY - 0x2c00);
         scopeLine(startX, startY, g_scopeFx, g_scopeFy);
         i += 2;
     }
     i = gridLo * 2;
     while (gridStep * 2 >= i) {
-        projectMapPoint(gridX + 0x1c00, i * 0x400 + gridY);
+        projectMapPoint(gridX + 0x2c00, i * 0x400 + gridY);
         startX = g_scopeFx;
         startY = g_scopeFy;
-        projectMapPoint(gridX - 0x1800, i * 0x400 + gridY);
+        projectMapPoint(gridX - 0x2c00, i * 0x400 + gridY);
         scopeLine(startX, startY, g_scopeFx, g_scopeFy);
         i += 2;
     }
