@@ -18,7 +18,7 @@ void timerPump(void) {}
 uint64 timerNowNs(void) { return 0; }
 void gfx_dacAnimate(void) {}
 void renderFrame(void) {}
-void renderHudFrame(int) {}
+void renderHudFrame(int16) {}
 void stepFlightModel(void) {}
 void updateFrame(void) {}
 

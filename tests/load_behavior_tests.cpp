@@ -553,17 +553,17 @@ void fillRectBoth(int, int, int, int) {}
 struct R3DScene;
 struct R3DSubmit;
 struct R3DLine;
-void setViewPosition(int, int, int) {}
-void setViewPositionFrac(int, int, int) {}
-int fixedMulQ14(int, int) { return 0; }
-int sine(int) { return 0; }
-void shiftLongLeftInPlace(int, long *) {}
-void shiftLongRightInPlace(int, long *) {}
-void r3d_worldPointToCameraFar(int, int, int, long *, long *, long *) {}
-int fillSpanRect(const int16 *, int, int, int, int) { return 0; }
-int getTimeOfDay() { return 0; }
-void drawStringActivePage(const char *, int, int, int) {}
-int misc_readJoystick(int16) { return 0; }
+void setViewPosition(int16, int16, int16) {}
+void setViewPositionFrac(int16, int16, int16) {}
+int16 fixedMulQ14(int16, int16) { return 0; }
+int16 sine(int16) { return 0; }
+void shiftLongLeftInPlace(int16, int32 *) {}
+void shiftLongRightInPlace(int16, int32 *) {}
+void r3d_worldPointToCameraFar(int16, int16, int16, int32 *, int32 *, int32 *) {}
+int16 fillSpanRect(const int16 *, int16, int16, int16, int16) { return 0; }
+int16 getTimeOfDay() { return 0; }
+void drawStringActivePage(const char *, int16, int16, int16) {}
+int16 misc_readJoystick(int16) { return 0; }
 void r3d_beginScene(const R3DScene *) {}
 void r3d_submit(const R3DSubmit *) {}
 void r3d_submitLine(const R3DLine *) {}

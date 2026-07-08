@@ -48,8 +48,8 @@ extern void FAR CDECL gfx_drawGlyphStr(int16 *desc, const char *str, int16 slot)
  * against the page" path). */
 int16 FAR fillSpanRect(const int16 *pageDesc, int16 left, int16 top, int16 right, int16 bottom) {
     uint8 color = (uint8)pageDesc[2];
-    int pitch, y, x;
-    uint8 *px = gfx_pagePixels((int)pageDesc[0], &pitch);
+    int16 pitch, y, x;
+    uint8 *px = gfx_pagePixels(pageDesc[0], &pitch);
     if (px && right >= left && bottom >= top) {
         for (y = top; y <= bottom; y++) {
             uint8 *p;

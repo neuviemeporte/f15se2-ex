@@ -94,17 +94,17 @@ void resetInputState(struct GameComm &comm) {
 struct GameComm *commData = nullptr;
 struct Game *gameData = nullptr;
 
-int FAR CDECL misc_checkKeyBuf(void) {
+int16 FAR CDECL misc_checkKeyBuf(void) {
     if (g_checkScriptPos < g_checkScriptLen) return g_checkScript[g_checkScriptPos++];
     return kNoKeyBuffered;
 }
 
-int FAR CDECL misc_getKey(void) {
+int16 FAR CDECL misc_getKey(void) {
     ++g_getKeyCalls;
     return g_getKeyResult;
 }
 
-int FAR CDECL misc_readJoystick(int16 axis) {
+int16 FAR CDECL misc_readJoystick(int16 axis) {
     require(axis == kJoystickButtonAxis, "waitForKeyOrJoy reads original joystick button axis");
     ++g_joystickCalls;
     if (g_joystickScriptPos < g_joystickScriptLen) return g_joystickScript[g_joystickScriptPos++];

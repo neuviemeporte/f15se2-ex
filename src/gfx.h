@@ -45,64 +45,64 @@ void gfx_presentHiRes(void);
  * code stays free of r2d/SDL surface details. Coordinates match gfx_copyRect's,
  * so a save-under maps 1:1 onto the same (x,y) in the image. */
 struct R2DImage;
-struct R2DImage *gfx_allocImage(int w, int h);  /* blank owned image; NULL on failure */
+struct R2DImage *gfx_allocImage(int16 w, int16 h);  /* blank owned image; NULL on failure */
 void gfx_freeImage(struct R2DImage *img);        /* release; safe on NULL */
 /* Copy a w x h rect from page `srcPage` (srcX,srcY) into `img` at (dstX,dstY). */
-void gfx_captureToImage(struct R2DImage *img, int srcPage, int srcX, int srcY,
-                        int dstX, int dstY, int w, int h);
+void gfx_captureToImage(struct R2DImage *img, int16 srcPage, int16 srcX, int16 srcY,
+                        int16 dstX, int16 dstY, int16 w, int16 h);
 /* Copy a w x h rect from `img` (srcX,srcY) into page `dstPage` at (dstX,dstY). */
-void gfx_restoreFromImage(struct R2DImage *img, int dstPage, int srcX, int srcY,
-                          int dstX, int dstY, int w, int h);
+void gfx_restoreFromImage(struct R2DImage *img, int16 dstPage, int16 srcX, int16 srcY,
+                          int16 dstX, int16 dstY, int16 w, int16 h);
 /* Read one palette-index pixel from `img` at (x,y); -1 if img is NULL or (x,y) is
  * out of bounds. Lets game code sample a cached surface without touching SDL. */
-int gfx_readImagePixel(struct R2DImage *img, int x, int y);
+int16 gfx_readImagePixel(struct R2DImage *img, int16 x, int16 y);
 /* Opaque copy of a w x h rect from sprite buffer `handle` (srcX,srcY) into page
  * `dstPage` at (dstX,dstY). For asset sheets drawn opaquely (e.g. the debrief
  * popup icons), as distinct from gfx_blitSprite's transparent (skip-index-0) blit. */
-void gfx_drawSpriteOpaque(int handle, int srcX, int srcY, int dstPage,
-                          int dstX, int dstY, int w, int h);
+void gfx_drawSpriteOpaque(int16 handle, int16 srcX, int16 srcY, int16 dstPage,
+                          int16 dstX, int16 dstY, int16 w, int16 h);
 
 /* ---- graphics slots (the public draw API, first slot 0, 84 used) ---- */
 /* dseg:0xab8 */
-int gfx_allocSpriteBuf(void);                                                 /* alloc a sprite-sheet surface, returns a handle */
-void gfx_freeSpriteBuf(int handle);                                           /* release a sprite-sheet surface handle */
+int16 gfx_allocSpriteBuf(void);                                                 /* alloc a sprite-sheet surface, returns a handle */
+void gfx_freeSpriteBuf(int16 handle);                                           /* release a sprite-sheet surface handle */
 void gfx_fillDirty(int16 *params, const char *string);              /* slot 0x01: clipped glyph variant (vertical window) */
 void gfx_blitTransparent(int16 *params, const char *string);        /* slot 0x02: clipped glyph variant (horizontal window) */
 void gfx_blitVariant(int16 *params, const char *string);            /* slot 0x03: clipped glyph variant (horizontal window) */
 void gfx_copyBlock(int16 *params, const char *string);              /* slot 0x04: glyph blit core (no clip) */
 void gfx_drawString(int16 *pageNum, const char *string);            /* slot 0x05: draw clipped string */
 void gfx_drawStringUnclipped(int16 *params, const char *string);    /* slot 0x06: draw string (both clip windows) */
-void gfx_complexRender(int bxArg, int dxArg, int cxArg, int siArg); /* slot 0x0b: HUD pitch-ladder renderer */
+void gfx_complexRender(int16 bxArg, int16 dxArg, int16 cxArg, int16 siArg); /* slot 0x0b: HUD pitch-ladder renderer */
 /* Writable pixels + stride of a page (its surface is the single back buffer), for
  * the egame HUD primitives that fill the page directly (eghudr fillSpanRect). */
-uint8 *gfx_pagePixels(int page, int *pitchOut);
+uint8 *gfx_pagePixels(int16 page, int16 *pitchOut);
 int16 gfx_blitSprite(struct SpriteParams *spritePtr);                                                                     /* slot 0x11: sprite blit */
 void gfx_setBlitOffset2();                                                                                              /* slot 0x18: setBlitOffset */
-void gfx_setBlitOffset(int offset);                                                                                     /* slot 0x1a: setBlitOffset */
+void gfx_setBlitOffset(int16 offset);                                                                                     /* slot 0x1a: setBlitOffset */
 int16 gfx_getPresetOffset1();                                                                                             /* slot 0x1c: returns baked constant 0x5580 */
 int16 gfx_getPresetOffset2();                                                                                             /* slot 0x1d: returns baked constant 0x1950 */
 int16 gfx_getBlitOffset();                                                                                                /* slot 0x1e: returns live blitOffset (cs:0x1a0) */
 void gfx_drawLine(uint16 x1, uint16 y1, uint16 x2, uint16 y2);                                                          /* slot 0x1f: drawLine (Bresenham) */
 void gfx_setDrawColor(uint16 color);                                                                                    /* slot 0x20: set fill/draw colour */
-void gfx_setColor(int color);                                                                                           /* slot 0x21: set fill/draw color */
+void gfx_setColor(int16 color);                                                                                           /* slot 0x21: set fill/draw color */
 void gfx_nop22();                                                                                                       /* slot 0x22: bare RETF no-op (does NOT reset blitOffset) */
 void gfx_nop23();                                                                                                       /* slot 0x23: bare RETF no-op */
-void gfx_dirtyRect(int16 *spanBuf, int yMin, int yMax);                                                                 /* slot 0x25: dirtyRect (reg-called: BX=spanBuf AX=yMin CX=yMax) */
+void gfx_dirtyRect(int16 *spanBuf, int16 yMin, int16 yMax);                                                             /* slot 0x25: dirtyRect (reg-called: BX=spanBuf AX=yMin CX=yMax) */
 void gfx_dirtyRect2(const int16 *spanMinBuf, uint16 yMin, uint16 yMax);                                                 /* slot 0x25/0x28: fill dirty spans */
-void gfx_switchColor(int16 *pageDesc, int x1, int y1, int x2, int y2, int oldColor, int newColor);                      /* slot 0x29: replace color in rect */
-void gfx_copyRect(int srcPage, uint16 srcX, uint16 srcY, int dstPage, uint16 dstX, uint16 dstY, int width, int height); /* slot 0x2a: copyRect between pages */
+void gfx_switchColor(int16 *pageDesc, int16 x1, int16 y1, int16 x2, int16 y2, int16 oldColor, int16 newColor);          /* slot 0x29: replace color in rect */
+void gfx_copyRect(int16 srcPage, uint16 srcX, uint16 srcY, int16 dstPage, uint16 dstX, uint16 dstY, int16 width, int16 height); /* slot 0x2a: copyRect between pages */
 void gfx_dacAnimate();                                                                                                  /* slot 0x2c: DAC palette animation */
 void gfx_dacCycle();                                                                                                    /* slot 0x2e: DAC fire/colour-cycle animation */
 int16 gfx_setFont(uint16 ch, uint16 fontIdx);                                                                             /* slot 0x2f: setup font metrics */
-int16 gfx_getRowOffset(int y);                                                                                            /* slot 0x3a: returns y*320 */
+int16 gfx_getRowOffset(int16 y);                                                                                            /* slot 0x3a: returns y*320 */
 /* dseg:0xbe4 */
 void gfx_setMode13(void);          /* slot 0x3c: switch to 320x200 (lo-res) */
-void gfx_setFadeSteps(int steps);  /* slot 0x3d: setFadeSteps */
-int16 gfx_calcRowAddr(int y, int x); /* slot 0x3e: calcRowAddr */
+void gfx_setFadeSteps(int16 steps);  /* slot 0x3d: setFadeSteps */
+int16 gfx_calcRowAddr(int16 y, int16 x); /* slot 0x3e: calcRowAddr */
 /* dseg:0xbf3 */
 int16 gfx_getModecode();                                              /* slot 0x3f: returns 3 (MCGA) */
-void gfx_setOvlVal1(int val);                                       /* slot 0x40: writes ds:0xcc */
-void gfx_setOvlVal2(int val);                                       /* slot 0x41: writes ds:0xce */
+void gfx_setOvlVal1(int16 val);                                       /* slot 0x40: writes ds:0xcc */
+void gfx_setOvlVal2(int16 val);                                       /* slot 0x41: writes ds:0xce */
 void gfx_setDac(uint16 palIdx);                                     /* slot 0x44: set VGA DAC palette */
 void gfx_setDacRange(uint16 startReg, uint16 count, const uint8 *vgaTriples); /* native INT 10h AX=1012h: load DAC register block */
 void gfx_waitRetrace();                                             /* slot 0x45: wait for vblank */

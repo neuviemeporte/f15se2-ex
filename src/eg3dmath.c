@@ -48,10 +48,10 @@ int16 fixedMulQ14(int16 a, int16 b) {
 /* In-place 32-bit shifts (pascal: args pushed left-to-right, callee cleans up).
  * The ASM dispatches to the MSC long-shift helpers; >>= on a signed int32 is the
  * arithmetic shift those helpers perform. */
-void pascal shiftLongLeftInPlace(int16 count, int32 *ptr) {
+void shiftLongLeftInPlace(int16 count, int32 *ptr) {
     *ptr <<= count;
 }
 
-void pascal shiftLongRightInPlace(int16 count, int32 *ptr) {
+void shiftLongRightInPlace(int16 count, int32 *ptr) {
     *ptr >>= count;
 }

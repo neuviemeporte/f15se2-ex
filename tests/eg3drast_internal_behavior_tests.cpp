@@ -272,13 +272,13 @@ int far drawClipLineGlobal(void) {
 // native r2d poly / blit-offset calls sit behind r2d_vectorActive() and never run.
 int r2d_vectorActive(void) { return 0; }
 void r2d_submitPoly(const short *, int, int, int, int, int, int) {}
-int FAR CDECL gfx_getBlitOffset() { return 0; }
+int16 FAR CDECL gfx_getBlitOffset() { return 0; }
 
 int main() {
     int16 matrixA[9] = {};
     int16 matrixB[9] = {};
     int16 matrixR[9] = {};
-    int polygonPoints[8] = {
+    int16 polygonPoints[8] = {
         -10, 10,
         20, 10,
         20, 40,
@@ -395,7 +395,7 @@ int main() {
                 pointOnClipEdge(20, 20) == 0,
             "pointOnClipEdge recognizes exact clip rectangle edges");
     {
-        int outY = 0;
+        int16 outY = 0;
         g_clipNeedsSubdiv = 0;
         require(clampToClipEdge(kClipLeftBit | kClipBelowBit, -100, -50, &outY) == 0 &&
                     outY == 0 &&
@@ -941,10 +941,10 @@ int main() {
     }
 
     {
-        int bx = kClipCrossLeftX;
-        int cx = -1;
-        int si = kClipCrossY1;
-        int dx = 0;
+        int16 bx = kClipCrossLeftX;
+        int16 cx = -1;
+        int16 si = kClipCrossY1;
+        int16 dx = 0;
         g_clipNeedsSubdiv = 0;
         g_clipMidxLo = kClipCrossRightX;
         g_clipMidxHi = 0;

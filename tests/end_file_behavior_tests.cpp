@@ -3,15 +3,13 @@
 // value (link order lets this TU's definition win over shared/miscimpl.c).
 #include "endata.h"
 #include "inttype.h"
+#include "enfile.h"
 #include "shared/common.h"
 
 #include <SDL3/SDL.h>
 
 #include <cstdlib>
 #include <iostream>
-
-extern void srandInit(int seed);
-extern void enSeedRandom(void);
 
 namespace {
 
@@ -33,7 +31,7 @@ void require(bool condition, const char *message) {
 
 } // namespace
 
-int getTimeOfDay(void) {
+int16 getTimeOfDay(void) {
     ++g_timeCalls;
     return kTimeOfDaySeed;
 }

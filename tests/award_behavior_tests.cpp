@@ -1,21 +1,16 @@
 #include "comm.h"
+#include "enaward.h"
 #include "endata.h"
 #include "endtypes.h"
 #include "gfx.h"
 #include "inttype.h"
 #include "struct.h"
 
-#include <SDL3/SDL_iostream.h>
-
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <string>
 #include <vector>
-
-extern void showPostMissionAwards(void);
-extern void loadPicFromFile(const char *name, int segment);
-extern void loadPicFromFileAt(const char *name, int segment, int off, SDL_IOWhence whence);
 
 namespace {
 

@@ -360,10 +360,10 @@ static int32 g_vtxXform[0x400]; /* shared-vertex transform cache (dword_34C2C)  
 /* The per-vertex 32-bit camera depth is stored in the vproj.in[] pair: .div is
  * its high word (the perspective divisor), .num its low word. Compose/decompose
  * explicitly rather than aliasing the slot through a union. */
-static int32 getVtxDepth(int vtx) {
+static int32 getVtxDepth(int16 vtx) {
     return JOIN32(vtxScratch.vproj.in[vtx].num, vtxScratch.vproj.in[vtx].div);
 }
-static void setVtxDepth(int vtx, int32 depth) {
+static void setVtxDepth(int16 vtx, int32 depth) {
     vtxScratch.vproj.in[vtx].num = (int16)depth;
     vtxScratch.vproj.in[vtx].div = (int16)(depth >> 16);
 }
@@ -414,7 +414,7 @@ static void clipEdgeNearPlane(struct EdgeRec *rec, int16 behind, int16 front) {
          * saturating udiv32by16 (cap 0x7f00) would clamp ratios above 0x7fff and
          * under-interpolate the clip point (visible as the ocean flipping when
          * pitched). Use the uncapped divide; >>1 keeps cx in 0..0x7fff. */
-        cx = (int)(udiv32by16_full(num, div) >> 1);
+        cx = (int16)(udiv32by16_full(num, div) >> 1);
     }
     /* Interpolate the clipped vertex's camera X/Y into slot 120. */
     fc = g_vtxCamX[front];
@@ -1062,7 +1062,7 @@ static void drawPrimitiveEdges(struct EdgeRec *rec) {
 /* table into a flat sequence at DI, terminated by 0xFF. Depth-first walk   */
 /* of the adjacency table at g_rleRowBase using an explicit stack.          */
 /* ===================================================================== */
-static void decodeRleEdgeRow(const uint8 FAR *src, uint8 *dst, unsigned char *base) {
+static void decodeRleEdgeRow(const uint8 FAR *src, uint8 *dst, uint8 *base) {
     /* explicit stack of (state, parentValue) frames replacing the asm's
      * PUSH AX / POP AX recursion. The asm pushes onto the hardware stack with
      * no fixed bound; the DFS walks a binary-tree adjacency whose nodes are
@@ -1170,7 +1170,7 @@ static void renderPrimitiveCommand(uint8 FAR **pp) {
                 *pp = p;
                 return;
             }
-            gfx_setColor((unsigned char)(colorLut[colorByte] + g_objShade));
+            gfx_setColor((uint8)(colorLut[colorByte] + g_objShade));
             /* On a GL vector frame the only faces reaching here are the left-MFD
              * terrain-map tiles (the main/target 3D views render through the r3d
              * backend, not this span rasterizer). Submit the face as a native-res
@@ -1184,10 +1184,10 @@ static void renderPrimitiveCommand(uint8 FAR **pp) {
             if (r2d_vectorActive()) {
                 struct { short ax, ay, bx, by; uint8 used; } eg[64];
                 short ring[64 * 2];
-                int ne = 0, nv = 0, kk, cnt = g_faceVtxCount;
-                int bo = gfx_getBlitOffset();
-                int vx = (int)((uint16)bo % 320u), vy = (int)((uint16)bo / 320u);
-                unsigned char far *rp = p;
+                int16 ne = 0, nv = 0, kk, cnt = g_faceVtxCount;
+                int16 bo = gfx_getBlitOffset();
+                int16 vx = (int16)((uint16)bo % 320u), vy = (int16)((uint16)bo / 320u);
+                uint8 FAR *rp = p;
                 for (kk = 0; kk < cnt; kk++) {
                     struct EdgeRec *rec = EREC(*rp++);
                     if (rec->flags & 0x80) continue; /* rejected edge */
@@ -1206,7 +1206,7 @@ static void renderPrimitiveCommand(uint8 FAR **pp) {
                     ring[2] = curX;     ring[3] = curY;
                     nv = 2;
                     while (nv < 64) {
-                        int found = -1;
+                        int16 found = -1;
                         short ox = 0, oy = 0;
                         for (kk = 0; kk < ne; kk++) {
                             if (eg[kk].used) continue;
@@ -1816,14 +1816,14 @@ static int16 g_sortList[35];
  * endpoints' camera-space triples and a final palette colour. */
 struct LineRec {
     int16 depthLo, depthHi;
-    long baseXA, camXA, camYA;
-    long baseXB, camXB, camYB;
+    int32 baseXA, camXA, camYA;
+    int32 baseXB, camXB, camYB;
     int16 color;
 };
 #define MAX_SORTED_LINES 64
 static struct LineRec g_lineRecs[MAX_SORTED_LINES];
-static int g_lineList[MAX_SORTED_LINES];
-static int g_sortedLineCount;
+static int16 g_lineList[MAX_SORTED_LINES];
+static int16 g_sortedLineCount;
 
 /* High word of (s<<1) plus the doubled low word's carry bit — the rotatePoint3d
  * `SHL;RCL;SHL;ADC` Q15-with-round idiom. */
@@ -1895,9 +1895,9 @@ static void transposeOrientationMatrix(void) {
 /* Widescreen frustum-cull widening (r3d_setObjCullWiden): scale the angular X/Y
  * half-extents so a wider-than-4:3 view cone fetches its peripheral models. 1:1 =
  * the original 4:3 cull (software default). */
-static int g_cullWidenNumX = 1, g_cullWidenDenX = 1, g_cullWidenNumY = 1, g_cullWidenDenY = 1;
+static int16 g_cullWidenNumX = 1, g_cullWidenDenX = 1, g_cullWidenNumY = 1, g_cullWidenDenY = 1;
 
-void r3d_setObjCullWiden(int numX, int denX, int numY, int denY) {
+void r3d_setObjCullWiden(int16 numX, int16 denX, int16 numY, int16 denY) {
     g_cullWidenNumX = (numX > 0) ? numX : 1;
     g_cullWidenDenX = (denX > 0) ? denX : 1;
     g_cullWidenNumY = (numY > 0) ? numY : 1;
@@ -1921,7 +1921,7 @@ static int16 transformAndCullObject(int16 relY, int16 relZ, int16 relX) {
      * Q16, so rotate the fraction and fold it in here. true rel = rel - frac/256,
      * and each unit of rel contributes imul16(m,rel)<<1, hence >>7. */
     if (g_viewPosFracX | g_viewPosFracY | g_viewPosFracZ) {
-        int fy = g_viewPosFracY, fz = g_viewPosFracZ, fx = g_viewPosFracX;
+        int16 fy = g_viewPosFracY, fz = g_viewPosFracZ, fx = g_viewPosFracX;
         g_camBaseX -= (imul16(m[6], fy) + imul16(m[3], fz) + imul16(m[0], fx)) >> 7;
         camX -= (imul16(m[7], fy) + imul16(m[4], fz) + imul16(m[1], fx)) >> 7;
         camY -= (imul16(m[8], fy) + imul16(m[5], fz) + imul16(m[2], fx)) >> 7;
@@ -2339,12 +2339,12 @@ void FAR projectSceneObject(char FAR *model, int16 yaw, int16 pitch, int16 roll,
  * it), 0 if visible. On success fills combined[9] (Q15 orient*view), the 32-bit
  * camera-space origin (camBase = screen-X axis, camX = screen-Y axis, camY =
  * depth) and the distance shade. The caller projects each vertex with these. */
-int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
-                            int posX, int posY, int posZ,
-                            int16 *combined, long *camBase, long *camX, long *camY,
-                            int *shade) {
-    int i;
-    g_objRenderMode = *(unsigned char far *)model;
+int16 FAR r3d_objTransformFar(char FAR *model, int16 yaw, int16 pitch, int16 roll,
+                            int16 posX, int16 posY, int16 posZ,
+                            int16 *combined, int32 *camBase, int32 *camX, int32 *camY,
+                            int16 *shade) {
+    int16 i;
+    g_objRenderMode = *(uint8 FAR *)model;
     g_objTransform[1] = yaw;
     g_objTransform[2] = pitch;
     g_objTransform[3] = roll;
@@ -2359,7 +2359,7 @@ int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
      * dishes / SAM launchers). projectSceneObject does this before building the
      * orientation matrix; peek the same opcode here so the GL model spins too. */
     {
-        unsigned char far *p = (unsigned char far *)model + 1; /* past render-mode byte */
+        uint8 FAR *p = (uint8 FAR *)model + 1; /* past render-mode byte */
         skipDisplayListByLod(&p);
         if ((*p & 0x60) == 0x60) g_objTransform[(*p) & 3] = g_spinAngle;
     }
@@ -2368,16 +2368,16 @@ int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
     if (g_dacSupported == 0) {
         *shade = 0;
     } else {
-        int h = (g_camTransYHi >> 8) & 0xff;
-        int v = (h & 0x80) ? 0 : (h >> 1);
+        int16 h = (g_camTransYHi >> 8) & 0xff;
+        int16 v = (h & 0x80) ? 0 : (h >> 1);
         if (v > 7) v = 7;
         *shade = (v << 4) + 0x80;
     }
 
     /* Combined orientation*view matrix — identical to processSceneObject. */
     {
-        int orv = g_objTransform[1] | g_objTransform[2] | g_objTransform[3];
-        int al = (orv | (orv >> 8)) & 0xff;
+        int16 orv = g_objTransform[1] | g_objTransform[2] | g_objTransform[3];
+        int16 al = (orv | (orv >> 8)) & 0xff;
         g_objHasRotation = (uint8)al;
         if (al == 0) {
             for (i = 0; i < 9; i++) g_objCombinedMatrix[i] = g_viewRotMatrix[i];
@@ -2405,8 +2405,8 @@ int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
  * still yields coords (the line is viewport-clipped, not dropped). Fills the
  * (screen-X axis, screen-Y axis, depth) triple. Used by the 3D line primitive
  * (drawWorldLine -> r3d_submitLine) for cannon tracers and explosion sparks. */
-void far r3d_worldPointToCameraFar(int relY, int relZ, int relX,
-                                   long *baseX, long *camX, long *camY) {
+void FAR r3d_worldPointToCameraFar(int16 relY, int16 relZ, int16 relX,
+                                   int32 *baseX, int32 *camX, int32 *camY) {
     int16 *m = g_viewRotMatrix;
     *baseX = (imul16(m[6], relY) + imul16(m[3], relZ) + imul16(m[0], relX)) << 1;
     *camX = (imul16(m[7], relY) + imul16(m[4], relZ) + imul16(m[1], relX)) << 1;
@@ -2458,7 +2458,7 @@ static void drawSortedObject(struct SortRec *r) {
  * model "line" primitive uses. Colour is the raw palette index. */
 static void drawSortedLine(struct LineRec *ln) {
     struct EdgeRec rec;
-    int dA, dB, x1, y1, x2, y2;
+    int16 dA, dB, x1, y1, x2, y2;
 
     VCAMX(0) = ln->baseXA;
     VCAMY(0) = ln->camXA;
@@ -2490,7 +2490,7 @@ static void drawSortedLine(struct LineRec *ln) {
         y2 = rec.y1;
     }
 
-    gfx_setColor((unsigned char)ln->color);
+    gfx_setColor((uint8)ln->color);
     g_lineX1 = (int16)x1;
     g_lineY1 = (int16)y1;
     g_lineX2 = (int16)x2;
@@ -2500,10 +2500,10 @@ static void drawSortedLine(struct LineRec *ln) {
 
 /* Queue a camera-space 3D line into the depth-sorted line list (farthest first,
  * same insertion order as insertSortedObject). */
-static void insertSortedLine(long baseXA, long camXA, long camYA,
-                             long baseXB, long camXB, long camYB, int color) {
-    int slot, i, pos, dLo, dHi;
-    long depth;
+static void insertSortedLine(int32 baseXA, int32 camXA, int32 camYA,
+                             int32 baseXB, int32 camXB, int32 camYB, int16 color) {
+    int16 slot, i, pos, dLo, dHi;
+    int32 depth;
     struct LineRec *r;
 
     if (g_sortedLineCount >= MAX_SORTED_LINES) {
@@ -2550,8 +2550,8 @@ static void insertSortedLine(long baseXA, long camXA, long camYA,
     g_sortedLineCount++;
 }
 
-void far r3d_submitLineFar(long baseXA, long camXA, long camYA,
-                           long baseXB, long camXB, long camYB, int color) {
+void FAR r3d_submitLineFar(int32 baseXA, int32 camXA, int32 camYA,
+                           int32 baseXB, int32 camXB, int32 camYB, int16 color) {
     insertSortedLine(baseXA, camXA, camYA, baseXB, camXB, camYB, color);
 }
 
@@ -2562,11 +2562,11 @@ void far r3d_submitLineFar(long baseXA, long camXA, long camYA,
 /* are occluded by scene geometry.                                           */
 /* ===================================================================== */
 int16 FAR renderSortedListFar(void) {
-    int i = 0, j = 0;
-    int no = g_sortedObjCount, nl = g_sortedLineCount;
+    int16 i = 0, j = 0;
+    int16 no = g_sortedObjCount, nl = g_sortedLineCount;
 
     while (i < no || j < nl) {
-        int drawObj;
+        int16 drawObj;
         if (j >= nl) {
             drawObj = 1;
         } else if (i >= no) {

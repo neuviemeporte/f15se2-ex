@@ -207,7 +207,7 @@ static void asnd_resetSynth(AsoundU16 setupValue) {
 
 /* ---- game-facing slot ABI (slot.h) --------------------------------------- */
 
-int FAR CDECL audio_setup(int16 sampleDataSeg, int16 variantSel) {
+int16 FAR CDECL audio_setup(int16 sampleDataSeg, int16 variantSel) {
     (void)sampleDataSeg; /* segments are meaningless natively; blob is loaded by loadF15DgtlBin */
     asnd_openDevice();
     if (!g_ready) return 0;
@@ -217,7 +217,7 @@ int FAR CDECL audio_setup(int16 sampleDataSeg, int16 variantSel) {
     return 0;
 }
 
-int FAR CDECL audio_shutdown(void) {
+int16 FAR CDECL audio_shutdown(void) {
     if (!g_ready) return 0;
     SDL_LockMutex(g_lock);
     sound_driver_shutdown();
@@ -255,7 +255,7 @@ static bool asnd_introVoicesActive(void) {
  * press), play the short release tail, and silence the chip. Blocking, like the
  * original - the title screen is a blocking wait regardless. Deadlines are
  * defensive caps so a stuck stream can never hang the title. */
-int FAR CDECL audio_playIntro(void) {
+int16 FAR CDECL audio_playIntro(void) {
     asnd_openDevice();
     if (!g_ready) return 0;
 
@@ -291,7 +291,7 @@ int FAR CDECL audio_playIntro(void) {
     return 0;
 }
 
-int FAR CDECL audio_engineDroneOn(void) {
+int16 FAR CDECL audio_engineDroneOn(void) {
     if (!g_ready) return 0;
     SDL_LockMutex(g_lock);
     sound_driver_enable_drone();
@@ -300,7 +300,7 @@ int FAR CDECL audio_engineDroneOn(void) {
     return 0;
 }
 
-int FAR CDECL audio_engineDroneOff(void) {
+int16 FAR CDECL audio_engineDroneOff(void) {
     if (!g_ready) return 0;
     SDL_LockMutex(g_lock);
     sound_driver_disable_drone();
@@ -330,8 +330,8 @@ int FAR CDECL audio_playSample(int sampleIdx) {
 
 /* The sequencer is driven from the audio callback, so the game's per-tick audio
  * hooks (originally the PIT IRQ path) are no-ops here. */
-int FAR CDECL audio_timerTick(void) { return 0; }
-int FAR CDECL audio_noiseTick(void) { return 0; }
+int16 FAR CDECL audio_timerTick(void) { return 0; }
+int16 FAR CDECL audio_noiseTick(void) { return 0; }
 
 /* ---- digitized sample blob ----------------------------------------------- */
 

@@ -18,7 +18,6 @@ typedef int8_t int8;
 #define cdecl
 #define far
 #define near
-#define pascal
 #define FAR
 #define NEAR
 #define CDECL

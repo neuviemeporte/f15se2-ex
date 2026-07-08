@@ -33,26 +33,26 @@ int16 FAR transformModelVerticesFar();
 int16 FAR projectModelEdgesFar();
 int16 FAR buildRotationMatrixFar(int16 *matrix, int16 angleX, int16 angleY, int16 angleZ);
 int16 FAR multiplyMatrix3x3Far(const int16 *matA, const int16 *matB, int16 *result);
-int FAR r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
-                            int posX, int posY, int posZ,
-                            int16 *combined, long *camBase, long *camX, long *camY,
-                            int *shade);
+int16 FAR r3d_objTransformFar(char FAR *model, int16 yaw, int16 pitch, int16 roll,
+                            int16 posX, int16 posY, int16 posZ,
+                            int16 *combined, int32 *camBase, int32 *camX, int32 *camY,
+                            int16 *shade);
 /* World point (view-relative, transformAndCullObject arg order) -> scene camera
  * space; the 3D line primitive (tracers / explosion sparks) transforms each
  * endpoint with this. */
-void FAR r3d_worldPointToCameraFar(int relY, int relZ, int relX,
-                                   long *baseX, long *camX, long *camY);
+void FAR r3d_worldPointToCameraFar(int16 relY, int16 relZ, int16 relX,
+                                   int32 *baseX, int32 *camX, int32 *camY);
 /* Queue a camera-space 3D line into the software depth-sorted line list (drawn,
  * occluded + interleaved with objects, by renderSortedListFar). */
-void FAR r3d_submitLineFar(long baseXA, long camXA, long camYA,
-                           long baseXB, long camXB, long camYB, int color);
+void FAR r3d_submitLineFar(int32 baseXA, int32 camXA, int32 camYA,
+                           int32 baseXB, int32 camXB, int32 camYB, int16 color);
 /* Widen the object frustum cull (transformAndCullObject) to a wider-than-4:3 view
  * cone, so widescreen 3D fetches the peripheral models the central frustum would
  * reject. The X/Y half-extents are scaled by numX/denX and numY/denY (window vs
  * the centred 4:3 sub-rect). Set 1,1,1,1 to disable (the software path default).
  * Only the angular cull is widened; the near/far depth and max-distance gates are
  * unchanged. The GL backend sets this per scene in gl_beginScene. */
-void r3d_setObjCullWiden(int numX, int denX, int numY, int denY);
+void r3d_setObjCullWiden(int16 numX, int16 denX, int16 numY, int16 denY);
 int16 FAR drawModelDisplayList();
 int16 FAR fillSpanRect(const int16 *dst, int16 left, int16 top, int16 right, int16 bottom);
 int16 FAR drawClipLineGlobal();

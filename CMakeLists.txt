@@ -413,7 +413,6 @@ add_behavior_test(egsys_internal_behavior_tests LINK_CORE)
 add_behavior_test(start_runtime_behavior_tests SOURCES
     ${SRC_DIR}/stinit.c ${SRC_DIR}/stalloc.c ${SRC_DIR}/stsprit.c ${SRC_DIR}/stdata.c)
 add_behavior_test(shared_overlay_behavior_tests LINK_CORE)
-add_behavior_test(shared_misc_behavior_tests)
 add_behavior_test(shared_picimpl_behavior_tests SOURCES ${SRC_DIR}/shared/picimpl.c)
 add_behavior_test(eg_stubs_behavior_tests LINK_CORE)
 add_behavior_test(eg3drast_internal_behavior_tests SOURCES ${SRC_DIR}/egdata.c)

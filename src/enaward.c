@@ -8,9 +8,6 @@
 #include "shared/common.h"
 #include <SDL3/SDL.h>
 
-void loadPicFromFile(const char *name, uint16 segment);
-void loadPicFromFileAt(const char *name, uint16 segment, int16 off, SDL_IOWhence whence);
-
 void loadPicFromFile(const char *name, uint16 segment) {
     SDL_IOStream *handle;
     handle = openFileWrapper(name, 0);

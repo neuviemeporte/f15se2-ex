@@ -371,7 +371,7 @@ static void fogVertex(float x, float y, float z) {
 
 static const char *gl_name(void) { return "opengl1"; }
 
-static int gl_init(void) { return s_active; } /* claims iff the context came up */
+static int16 gl_init(void) { return s_active; } /* claims iff the context came up */
 static void gl_shutdown(void) {}
 
 static R3DMesh gl_registerMesh(R3DMesh raw) { return raw; } /* decoded per submit */
@@ -834,15 +834,15 @@ static void gl_beginScene(const R3DScene *s) {
 static void gl_submit(const R3DSubmit *o) {
     GlSub *r;
     int16 combined[9];
-    long camBase, camTransX, camTransY, depth;
-    int shade, shift, i;
+    int32 camBase, camTransX, camTransY, depth;
+    int16 shade, shift, i;
 
     if (s_nSub >= GL_MAX_SUBS) {
         s_subOverflow++;
         return;
     }
 
-    if (r3d_objTransformFar((char far *)o->mesh, o->yaw, o->pitch, o->roll,
+    if (r3d_objTransformFar((char FAR *)o->mesh, o->yaw, o->pitch, o->roll,
                             o->posX, o->posY, o->posZ,
                             combined, &camBase, &camTransX, &camTransY, &shade))
         return; /* frustum-culled */

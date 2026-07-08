@@ -16,7 +16,7 @@ void far r3d_submitLineFar(long baseXA, long camXA, long camYA,
 static const char *sw_name(void) { return "software"; }
 
 /* The software rasterizer needs no environment probe; it always claims. */
-static int sw_init(void) { return 1; }
+static int16 sw_init(void) { return 1; }
 static void sw_shutdown(void) {}
 
 /* The raw display-list pointer is its own handle; nothing to upload or free. */

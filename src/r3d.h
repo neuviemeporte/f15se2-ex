@@ -28,9 +28,9 @@ typedef void *R3DMesh;
  * background sphere + shared-vertex precompute, 0 = MFD/target sub-view). */
 typedef struct {
     const int16 *viewport;
-    int angleX, angleY, angleZ;
-    int posX, posY, posZ;
-    int renderScene;
+    int16 angleX, angleY, angleZ;
+    int16 posX, posY, posZ;
+    int16 renderScene;
 } R3DScene;
 
 /* One object submitted to the current scene: a mesh plus its orientation and
@@ -39,8 +39,8 @@ typedef struct {
  * backend stops sharing those globals. */
 typedef struct {
     R3DMesh mesh;
-    int yaw, pitch, roll;
-    int posX, posY, posZ;
+    int16 yaw, pitch, roll;
+    int16 posX, posY, posZ;
 } R3DSubmit;
 
 /* One world-space line segment submitted to the current scene (cannon tracers,
@@ -51,15 +51,15 @@ typedef struct {
  * so a line consumes the exact coords models do. `color` is a final VGA palette
  * index (effect colours are palette indices, not colorLut bytes). */
 typedef struct {
-    long baseXA, camXA, camYA; /* endpoint A: screen-X axis, screen-Y axis, depth */
-    long baseXB, camXB, camYB; /* endpoint B */
-    int color;
+    int32 baseXA, camXA, camYA; /* endpoint A: screen-X axis, screen-Y axis, depth */
+    int32 baseXB, camXB, camYB; /* endpoint B */
+    int16 color;
 } R3DLine;
 
 /* A renderer backend. Selected once at startup by probe order. */
 typedef struct R3DBackend {
     const char *(*name)(void);
-    int (*init)(void); /* probe; nonzero = claims this environment */
+    int16 (*init)(void); /* probe; nonzero = claims this environment */
     void (*shutdown)(void);
 
     /* Mesh registry: decode/upload once, reference by handle. Software returns

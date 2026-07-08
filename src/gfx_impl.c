@@ -332,8 +332,8 @@ uint8 *gfx_pagePixels(int page, int *pitchOut) {
 #define MAX_SPRITE_BUFS 8
 static R2DImage *s_spriteBufs[MAX_SPRITE_BUFS];
 
-int gfx_allocSpriteBuf(void) {
-    int i;
+int16 gfx_allocSpriteBuf(void) {
+    int16 i;
     for (i = 0; i < MAX_SPRITE_BUFS; i++) {
         if (!s_spriteBufs[i]) {
             s_spriteBufs[i] = r2d_registerImage(LOGICAL_WIDTH, LOGICAL_HEIGHT);
