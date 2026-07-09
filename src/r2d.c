@@ -266,9 +266,9 @@ static int csClip(int *px1, int *py1, int *px2, int *py2,
 }
 
 void r2d_submitScopeLine(float x1, float y1, float x2, float y2, int color,
-                         int cx0, int cy0, int cx1, int cy1) {
+                         int cx0, int cy0, int cx1, int cy1, float widthScale) {
     if (r2d_vectorActive()) {
-        r3dgl_drawScopeLine(x1, y1, x2, y2, color, cx0, cy0, cx1, cy1);
+        r3dgl_drawScopeLine(x1, y1, x2, y2, color, cx0, cy0, cx1, cy1, widthScale);
     } else if (s_swLine) {
         int ix1 = (int)SDL_floorf(x1 + 0.5f), iy1 = (int)SDL_floorf(y1 + 0.5f);
         int ix2 = (int)SDL_floorf(x2 + 0.5f), iy2 = (int)SDL_floorf(y2 + 0.5f);

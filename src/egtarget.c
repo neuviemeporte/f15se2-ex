@@ -14,6 +14,7 @@
 #include "egui.h"
 #include "offsets.h"
 #include "log.h"
+#include "r2d.h"
 #include "const.h"
 
 #include "comm.h"
@@ -26,6 +27,7 @@
 
 /* Private helpers for this translation unit. */
 void drawTargetBox(int, int, int, int);
+void drawTargetBoxF(float centerX, float centerY, int size, int mode);
 void drawMissileLock(void);
 void __cdecl drawTargetLabel(const char *, int, int);
 void buildRangeString(int rangeRaw);
@@ -475,7 +477,7 @@ void drawHudWorldOverlay(void) {
             projectWorldToHudFine(g_projInterpX[idx], g_projInterpY[idx], g_projectiles[idx].alt);
             if (vtxScratch.vproj.x.lo != -1) {
                 setDrawColor(idx < 8 ? 0x0e : 0x0a);
-                drawTargetBox(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, 6, 0);
+                drawTargetBoxF(g_hudProjXf, g_hudProjYf, 6, 0);
             }
         }
     }
@@ -535,7 +537,7 @@ void drawHudWorldOverlay(void) {
                         g_lockToneFlag = 0;
                     }
 
-                    drawTargetBox(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, compat != 0 ? compat + 5 : 9, lockFlag);
+                    drawTargetBoxF(g_hudProjXf, g_hudProjYf, compat != 0 ? compat + 5 : 9, lockFlag);
                 }
             }
         }
@@ -580,7 +582,7 @@ void drawHudWorldOverlay(void) {
                     projectWorldToHudFine((int32)g_planeTable.planes[g_groundTargetLock].mapX << 5,
                                           (int32)g_planeTable.planes[g_groundTargetLock].mapY << 5, 0);
                     setDrawColor(COLOR_WHITE);;
-                    drawTargetBox(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, 8, 0);
+                    drawTargetBoxF(g_hudProjXf, g_hudProjYf, 8, 0);
                 } else if (g_targetSlots[0].planeIndex == g_groundTargetLock) {
                     drawStringActivePage(egPrimaryTarget, 0xec, 0x8e, 0x0f);
                 } else if (g_targetSlots[1].planeIndex == g_groundTargetLock) {
@@ -630,7 +632,7 @@ void drawHudWorldOverlay(void) {
                             }
                         }
                     }
-                    drawTargetBox(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, 9, lockFlag);
+                    drawTargetBoxF(g_hudProjXf, g_hudProjYf, 9, lockFlag);
                 }
             }
         }
@@ -773,6 +775,48 @@ void drawTargetBox(int centerX, int centerY, int size, int mode) {
     }
 }
 
+/* Sub-pixel target box for the GL native-res overlay: identical geometry to
+ * drawTargetBox but the corners are offset from the projector's fractional 320-space
+ * centre (g_hudProjXf/Yf), so the box glides instead of snapping to the 320x200 grid
+ * when the object is close. Box dimensions stay whole-pixel — only the centre is
+ * fractional. Without a vector overlay (software backend) it falls back to the
+ * integer drawTargetBox on the exact projected pixel, the faithful 320x200 raster. */
+void drawTargetBoxF(float centerX, float centerY, int size, int mode) {
+    int halfHeight, sz;
+    float left, top, right, bottom, hq;
+
+    if (g_hudVisible == 0) {
+        return;
+    }
+    if (!r2d_vectorActive()) {
+        drawTargetBox(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, size, mode);
+        return;
+    }
+    sz = size;
+    if (g_halfScaleRender != 0) {
+        sz >>= 1;
+    }
+    halfHeight = sz - (sz >> 2);
+    right = centerX + sz;
+    left = centerX - sz;
+    bottom = centerY + halfHeight;
+    top = centerY - halfHeight;
+    if (mode == 0) {
+        drawHudViewLineF(left, top, left, bottom);
+        drawHudViewLineF(left, bottom, right, bottom);
+        drawHudViewLineF(right, bottom, right, top);
+        drawHudViewLineF(right, top, left, top);
+    } else {
+        hq = (float)(halfHeight >> 1);
+        drawHudViewLineF(centerX, top, right, centerY - hq);
+        drawHudViewLineF(right, centerY - hq, right, centerY + hq);
+        drawHudViewLineF(right, centerY + hq, centerX, bottom);
+        drawHudViewLineF(centerX, bottom, left, centerY + hq);
+        drawHudViewLineF(left, centerY + hq, left, centerY - hq);
+        drawHudViewLineF(left, centerY - hq, centerX, top);
+    }
+}
+
 // ==== seg000:0xC2F8 ====
 void drawMissileLock(void) {
     int markX;
@@ -795,7 +839,7 @@ void drawTargetLabel(const char *text, int color, int size) {
     setDrawColor(color);
     if (size < vtxScratch.vproj.x.lo && 319 - size > vtxScratch.vproj.x.lo &&
         size < vtxScratch.vproj.y.lo && 88 - size > vtxScratch.vproj.y.lo) {
-        drawTargetBox(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo, size, 1);
+        drawTargetBoxF(g_hudProjXf, g_hudProjYf, size, 1);
     }
     if (vtxScratch.vproj.x.lo > 20 && vtxScratch.vproj.x.lo < 280 &&
         vtxScratch.vproj.y.lo > 0 && vtxScratch.vproj.y.lo < 82) {

@@ -447,6 +447,12 @@ static void glDrawSphere(float oLeft, float oRight, float oBottom, float oTop) {
     float rearX[17], rearY[17], foreX[17], foreY[17], facePts[8];
     int ringIx;
     float ringRad, radiusScale, i, j;
+    /* Ring Y is g_viewCenterY - (1 - vAspectK)*(pitch/roll term): the vertical
+     * grid-aspect must match the 3D terrain so the gradient horizon doesn't drift
+     * from the terrain horizon. buildProjection projects the GL world with a 5/6
+     * vertical aspect, so vAspectK = 1/6 here (1 - 1/6 = 5/6); the software sphere
+     * (egsphere.c) uses >>2 = 1/4 → 3/4, matching the software raster's 3/4 world. */
+    const float vAspectK = 1.0f / 6.0f;
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -479,8 +485,8 @@ static void glDrawSphere(float oLeft, float oRight, float oBottom, float oTop) {
         foreX[ringIx] = -i + g_viewCenterX - j;
         i = fmulQ15(ringRad, g_sphereRoll);
         j = fmulQ15(-0x5848, g_sphereTiltZ);
-        rearY[ringIx] = -(-(((i + j) * 0.25f) - i) + j) + g_viewCenterY;
-        foreY[ringIx] = (((i - j) * 0.25f) + g_viewCenterY) - i + j;
+        rearY[ringIx] = -(-(((i + j) * vAspectK) - i) + j) + g_viewCenterY;
+        foreY[ringIx] = (((i - j) * vAspectK) + g_viewCenterY) - i + j;
     }
     for (ringIx = 0; ringIx < 16; ringIx++) {
         facePts[0] = rearX[ringIx];     facePts[1] = rearY[ringIx];
@@ -503,8 +509,8 @@ static void glDrawSphere(float oLeft, float oRight, float oBottom, float oTop) {
         foreX[ringIx] = -i + g_viewCenterX - j;
         i = fmulQ15(ringRad, g_sphereRoll);
         j = fmulQ15(-0x5848, g_sphereTiltZ);
-        rearY[ringIx] = -(-(((i + j) * 0.25f) - i) + j) + g_viewCenterY;
-        foreY[ringIx] = (((i - j) * 0.25f) + g_viewCenterY) - i + j;
+        rearY[ringIx] = -(-(((i + j) * vAspectK) - i) + j) + g_viewCenterY;
+        foreY[ringIx] = (((i - j) * vAspectK) + g_viewCenterY) - i + j;
     }
     for (ringIx = 0; ringIx < 16; ringIx++) {
         facePts[0] = rearX[ringIx];     facePts[1] = rearY[ringIx];
@@ -1620,16 +1626,20 @@ void r3dgl_drawPoly(const short *xy, int n, int color,
 
 /* Radar/MFD line with fractional endpoints (no whole-pixel wobble); its ends are
  * cut by a GL scissor at the true MFD edge (cx0,cy0)-(cx1,cy1) rather than a
- * geometry clip — a crisp screen-edge cut, not a slanted butt-cap short of it. */
+ * geometry clip — a crisp screen-edge cut, not a slanted butt-cap short of it.
+ * widthScale multiplies the base per-virtual-pixel line width: the radar/MFD uses
+ * 0.5 (thin scope look), the HUD target box 1.0 (full weight, matching r3dgl_drawLine). */
 void r3dgl_drawScopeLine(float x1, float y1, float x2, float y2, int color,
-                         int cx0, int cy0, int cx1, int cy1) {
+                         int cx0, int cy0, int cx1, int cy1, float widthScale) {
     SDL_Palette *pal = gfx_getPalette();
     SDL_Color c;
+    float w;
     if (!pal) return;
     c = pal->colors[color & 0xff];
     overlay2DState();
     ovClipScissor(cx0, cy0, cx1, cy1);
-    glLineWidth(s_ov.lineW / 2);
+    w = s_ov.lineW * widthScale;
+    glLineWidth(w < 1.0f ? 1.0f : w);
     glColor3ub(c.r, c.g, c.b);
     glBegin(GL_LINES);
     glVertex2f(ovMapX(x1 + 0.5f), ovMapY(y1 + 0.5f));

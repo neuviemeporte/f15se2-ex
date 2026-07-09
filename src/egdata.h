@@ -329,6 +329,13 @@ extern int g_rollInput;
 extern uint16 keyScancode;
 extern int16 g_unusedEventHist2;
 extern int16 g_projDepth;
+/* Sub-pixel (fractional 320-space) screen position of the most recent
+ * projectWorldToHudFine(); the integer vtxScratch.vproj.x.lo/y.lo still drives the
+ * -1 off-screen sentinel and the reticle range tests, but the target box draws from
+ * these floats on the GL overlay so it glides instead of snapping to the 320x200
+ * grid up close (mirrors the radar scope's g_scopeFx/Fy). */
+extern float g_hudProjXf;
+extern float g_hudProjYf;
 extern int16 g_scopeClipLeft;
 extern int16 g_scopeClipTop;
 extern int32 g_viewTargetX;

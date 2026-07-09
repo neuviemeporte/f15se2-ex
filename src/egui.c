@@ -50,7 +50,7 @@ static int scopeRound(float v) {
 /* One radar/MFD line, drawn from the current fill colour and cut at the middle-MFD
  * box (the fillSpanRect region above, as a half-open scissor rect). */
 static void scopeLine(float x1, float y1, float x2, float y2) {
-    r2d_submitScopeLine(x1, y1, x2, y2, g_pageFront[2], 120, 104, 200, 176);
+    r2d_submitScopeLine(x1, y1, x2, y2, g_pageFront[2], 120, 104, 200, 176, 0.5f);
 }
 
 void drawTacticalMap(char page) {

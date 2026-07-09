@@ -160,9 +160,11 @@ void r2d_submitRect(int x0, int y0, int x1, int y1, int color);
  * On a GL vector frame records for a native-res replay whose ends are cut by a GL
  * scissor at the true MFD edge (not a geometry clip snapped to whole pixels, which
  * wobbles and leaves gaps); off a vector frame the software backend rounds to int,
- * clips the segment to the rect and rasterizes it into the page (unchanged look). */
+ * clips the segment to the rect and rasterizes it into the page (unchanged look).
+ * widthScale multiplies the base line width (0.5 = thin MFD/radar, 1.0 = full-weight
+ * HUD); ignored on the software backend, which is always one page pixel. */
 void r2d_submitScopeLine(float x1, float y1, float x2, float y2, int color,
-                         int clipX0, int clipY0, int clipX1, int clipY1);
+                         int clipX0, int clipY0, int clipX1, int clipY1, float widthScale);
 
 /* Submit a filled convex polygon: `n` vertices as interleaved x,y pairs in
  * absolute 320-space, filled with palette colour `color`. Only meaningful on a

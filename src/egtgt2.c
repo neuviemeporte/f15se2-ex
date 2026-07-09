@@ -153,6 +153,15 @@ void projectWorldToHudFine(int32 fineX, int32 fineY, int fineZ) {
     vtxScratch.vproj.y.lo -= vtxScratch.vproj.y.lo >> 1 >> 1;
     vtxScratch.vproj.y.lo += (g_pageFront[8] == 199) ? 100 : 56;
 
+    /* Same perspective divide in float: the box draws from these on the GL overlay
+     * so its centre isn't quantized to the 320x200 grid (worst up close). The GL 3D
+     * pass projects with a 5/6 vertical grid-aspect (buildProjection) — 10/9 taller
+     * than the software raster's 3/4 — so the box's fractional Y uses 5/6 too, or it
+     * would drift vertically from the 3D target proportional to screen Y. The integer
+     * vproj.y.lo keeps 3/4 for the software backend and the reticle range tests. */
+    g_hudProjXf = (float)(camX << 8) / (float)camDepth + 160.0f;
+    g_hudProjYf = (float)(camY << 8) / (float)camDepth * (5.0f / 6.0f) + ((g_pageFront[8] == 199) ? 100.0f : 56.0f);
+
     /* camDepth is in 2^sh-fine units; the coarse depth is camDepth * 2^(sh-5) and
      * g_projDepth is that >> 3, i.e. camDepth >> (8 - sh). */
     g_projDepth = (sh <= 8) ? (int)(camDepth >> (8 - sh)) : (int)(camDepth << (sh - 8));

@@ -964,11 +964,15 @@ void renderFrame() {
         g_viewHeading += 0x8000;
         g_viewRoll = 0x8000 - g_viewRoll;
     }
-    if (keyValue == 0) {
-        memcpy(g_camRotMatrix, g_orientMatrix, 18);
-    } else {
-        buildRotationMatrixFar(g_camRotMatrix, g_viewHeading, g_viewPitch, g_viewRoll);
-    }
+    /* Build the reticle/box rotation from the (interpolated) view angles every
+     * render frame — the very g_viewHeading/Pitch/Roll render3DView projects the
+     * world from — so the HUD boxes track the world smoothly as the player
+     * maneuvers. The forward view (keyValue 0) formerly copied the sim-rate
+     * g_orientMatrix here; g_orientMatrix is itself buildRotationMatrixFar of the
+     * player angles (rebuildOrientation), so this is the same matrix when static,
+     * but under the render/sim decouple the copy only updated the boxes at the sim
+     * rate while the world turned every render frame. */
+    buildRotationMatrixFar(g_camRotMatrix, g_viewHeading, g_viewPitch, g_viewRoll);
     if (g_camEyeZ < 0x10) {
         g_camEyeZ = 0x10;
         g_camEyeFracZ = 0;

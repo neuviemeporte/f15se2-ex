@@ -13,6 +13,7 @@
 #include "offsets.h"
 #include "log.h"
 #include "gfx.h"
+#include "r2d.h"
 #include "const.h"
 #include "comm.h"
 
@@ -478,6 +479,40 @@ void drawHudViewLine(int x1, int y1, int x2, int y2) {
     } else {
         drawViewportLine(x1, y1, x2, y2);
     }
+}
+
+/* Fractional-endpoint counterpart of drawHudViewLine for the GL native-res overlay.
+ * Picks the same clip region drawHudViewLine would (as a half-open scissor rect) and
+ * submits the segment with float 320-space endpoints via r2d_submitScopeLine, so HUD
+ * geometry (the target box) keeps its sub-pixel position instead of snapping to the
+ * 320x200 grid. Only meaningful while a GL vector frame is active; the software
+ * backend stays on the integer drawHudViewLine path (see drawTargetBoxF). */
+void drawHudViewLineF(float x1, float y1, float x2, float y2) {
+    int l, t, r, b;
+    if (g_halfScaleRender != 0) {
+        if (gameData->unk4 < 2) {
+            l = g_pageFront[9];
+            t = g_pageFront[7];
+            r = g_pageFront[10] + 1;
+            b = g_pageFront[8] + 1;
+        } else {
+            l = 104;
+            t = 62;
+            r = 217;
+            b = 97;
+        }
+    } else if (g_missionStatus != 0) {
+        l = 48;
+        t = 15;
+        r = 272;
+        b = 97;
+    } else {
+        l = g_pageFront[9];
+        t = g_pageFront[7];
+        r = g_pageFront[10] + 1;
+        b = g_pageFront[8] + 1;
+    }
+    r2d_submitScopeLine(x1, y1, x2, y2, g_pageFront[2], l, t, r, b, 1.0f);
 }
 
 // ==== seg000:0x9e44 ====

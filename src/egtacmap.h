@@ -19,6 +19,7 @@ void drawViewportLine(int x1, int y1, int x2, int y2);
 void drawClippedLineRegion(int x1, int y1, int x2, int y2, int clipLeft, int clipRight, int clipTop, int clipBottom, int drawBothPages);
 void drawScreenLineOnePage(int x1, int y1, int x2, int y2);
 void __cdecl drawHudViewLine(int, int, int, int);
+void drawHudViewLineF(float x1, float y1, float x2, float y2);
 void __cdecl setDrawColor(int);
 void fillRectBoth(int x1, int y1, int x2, int y2);
 void switchIndicatorColor(int indicatorIdx, int color);

@@ -73,7 +73,7 @@ void r3dgl_drawPoly(const short *xy, int n, int color,
 /* Sub-pixel radar/MFD line: fractional endpoints, ends cut by a scissor at the
  * half-open clip rect (cx0,cy0)-(cx1,cy1). */
 void r3dgl_drawScopeLine(float x1, float y1, float x2, float y2, int color,
-                         int cx0, int cy0, int cx1, int cy1);
+                         int cx0, int cy0, int cx1, int cy1, float widthScale);
 /* Sprite/HD image: source sub-rect (srcX,srcY,imgW,imgH) into destination footprint
  * (dstW,dstH) at (dstX,dstY); key<0 opaque, key>=0 transparent on index 0. */
 void r3dgl_drawImage(R2DImage *img, int srcX, int srcY, int imgW, int imgH,

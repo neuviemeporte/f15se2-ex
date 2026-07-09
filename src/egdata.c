@@ -2231,6 +2231,8 @@ int g_rollInput;
 uint16 keyScancode;
 int16 g_unusedEventHist2;
 int16 g_projDepth;
+float g_hudProjXf = 0.0f;
+float g_hudProjYf = 0.0f;
 int16 g_scopeClipLeft;
 int16 g_scopeClipTop;
 int32 g_viewTargetX;
