@@ -141,6 +141,9 @@ static int s_mainScene;      /* the current scene is the main out-the-window 3D 
                               * MFD target sub-scene) — gates the anchor page composite */
 static int s_glFlightLive;   /* the last present carried a live 3D flight frame (so a bare
                               * gfx_repaint must not blank it by re-presenting only the page) */
+static int s_pageComposited; /* the page backdrop was already laid down this frame (pure-2D
+                              * screens composite it at r3dgl_beginOverlay, under the immediate
+                              * overlay) so the present must not composite it again on top */
 static int s_wide = -1;      /* widescreen 3D (Hor+): -1 = not yet read from F15_WIDESCREEN */
 
 /* The 3D-viewport rect(s) the anchor page composite makes transparent so the GL 3D
@@ -624,10 +627,11 @@ static void gl_beginScene(const R3DScene *s) {
         gl_beginSubScene(s);
         return;
     }
-    /* This is a flight 3D frame: its HUD/MFD line & point submissions record for
-     * native-resolution replay (the 2D-only screens never reach here, so they
-     * keep rasterizing into the page). */
-    r2d_vectorBeginFrame();
+    /* This is a flight 3D frame: its HUD/MFD line & point submissions draw
+     * immediately at native resolution. The page backdrop is composited mid-frame
+     * at the gl_endScene anchor (after the 3D, before the HUD), so don't compose it
+     * here. */
+    r2d_vectorBeginFrame(0);
 
     if (s_wide < 0) {
         /* Widescreen 3D (Hor+): on by default; F15_WIDESCREEN=0 forces 4:3. The
@@ -1483,10 +1487,19 @@ static void overlaySetContext(int virtW, int virtH, int shakeOffset) {
     s_ov.lineW = m.scaleY < 1.0f ? 1.0f : m.scaleY;
 }
 
-void r3dgl_beginOverlay(void) {
+void r3dgl_beginOverlay(int composePage) {
     /* The flight overlay is authored in the 320x200 virtual box; shake is the live
      * explosion offset (read once per frame here, applied by every r3dgl_draw*). */
     overlaySetContext(LOGICAL_WIDTH, LOGICAL_HEIGHT, gfx_getShakeOffset());
+    /* Flight frames render the 3D and composite the page backdrop mid-frame (the
+     * gl_endScene anchor) before their immediate HUD draws. Pure-2D screens have no
+     * 3D pass, so lay the page down NOW — under the immediate overlay (map/lines/
+     * markers/popup) drawn next — instead of at present, where it would land on top
+     * and blank the overlay. The present then skips its own composite. */
+    if (composePage) {
+        composePageBackdrop(gfx_getCurPageSurface(), gfx_getShakeOffset());
+        s_pageComposited = 1;
+    }
 }
 
 /* Map a 320-space coordinate to window pixels through the shared letterbox+shake.
@@ -1932,13 +1945,14 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
     /* Flight frames composed the page backdrop at the main-scene anchor (before the
      * frame's immediate HUD/MFD draws); only pure-2D screens (no 3D pass) compose it
      * here, on top of the black-cleared window. */
-    if (!s_sceneRendered) composePageBackdrop(page, shakeOffset);
+    if (!s_sceneRendered && !s_pageComposited) composePageBackdrop(page, shakeOffset);
     /* Remember whether THIS present carried a live 3D view. gfx_repaint (window
      * expose/resize) re-presents only the page — which would blank the GL 3D (it
      * lives in the framebuffer, not the page) — so on a flight frame it must instead
      * leave the last composited frame alone (r3dgl_flightLive). */
     s_glFlightLive = s_sceneRendered;
     s_sceneRendered = 0;
+    s_pageComposited = 0;
     r2d_vectorMarkPresented();
     SDL_GL_SwapWindow(s_win);
 }

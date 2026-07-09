@@ -56,10 +56,12 @@ void r3dgl_present(struct SDL_Surface *page, int shakeOffset);
  * Coordinates are absolute 320-space; `color` is a VGA palette index. Cheap enough
  * to issue every frame; only the image *decode* is cached (per-image texture).
  */
-/* Open the immediate 2D overlay for a flight frame: sets the shared virtual->window
- * letterbox + screen-shake context the r3dgl_draw* primitives read. Called from
- * r2d_vectorBeginFrame. */
-void r3dgl_beginOverlay(void);
+/* Open the immediate 2D overlay: sets the shared virtual->window letterbox +
+ * screen-shake context the r3dgl_draw* primitives read. `composePage` nonzero (a
+ * pure-2D screen with no 3D pass) also lays the page backdrop down NOW, under the
+ * immediate overlay drawn next; the present then skips its own composite. Called
+ * from r2d_vectorBeginFrame. */
+void r3dgl_beginOverlay(int composePage);
 
 void r3dgl_drawLine(int x1, int y1, int x2, int y2, int color);
 void r3dgl_drawPoint(int x, int y, int color);

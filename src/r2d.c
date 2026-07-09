@@ -208,9 +208,12 @@ int r2d_submitImageRot(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
  * the page as before (accumulating, correctly ordered with their sprites). */
 static int s_vectorFrame;
 
-void r2d_vectorBeginFrame(void) {
+void r2d_vectorBeginFrame(int composePageFirst) {
     s_vectorFrame = 1;
-    if (r3dgl_active()) r3dgl_beginOverlay(); /* set the immediate-draw letterbox+shake context */
+    /* Set the immediate-draw letterbox+shake context. composePageFirst lays the
+     * page backdrop down under the overlay for a pure-2D screen (a flight frame
+     * passes 0 — its 3D pass composites the page mid-frame). */
+    if (r3dgl_active()) r3dgl_beginOverlay(composePageFirst);
 }
 
 int r2d_vectorActive(void) { return s_vectorFrame; }

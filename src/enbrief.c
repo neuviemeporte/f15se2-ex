@@ -663,8 +663,22 @@ static void drawPathSprites(unsigned int maxRecord) {
  * sprites) and on software it rasterizes into the page — the layering is the
  * submission order on both, with no retained page state to keep consistent. */
 static void debriefPresent(void) {
+    /* Menu labels, repainted in their current selection/blink/cycle colour
+     * (glyphs only write foreground pixels, so this recolours the same pixels
+     * the old in-place colour-replace touched). Baked into the page BEFORE the
+     * vector frame opens: on GL the page backdrop is composited under the immediate
+     * overlay when the frame begins, so the labels must already be on the page. */
+    {
+        int16 savedColor = debriefPage[2];
+        int i;
+        for (i = 0; i < 2; i++) {
+            debriefPage[2] = menuLabelColor[i];
+            drawStringAt(debriefPage, debriefMenuStrings[i], MENU_LABEL_X, MENU_LABEL_Y + i * MENU_LABEL_STEP);
+        }
+        debriefPage[2] = savedColor;
+    }
     if (r2d_hasNativeOverlay())
-        r2d_vectorBeginFrame();
+        r2d_vectorBeginFrame(1); /* pure-2D screen: lay the page backdrop down first */
     gfx_blitSprite(spriteMapArea);
     if (pathExtent > 0) {
         drawFullPathLines((unsigned)pathExtent);
@@ -679,18 +693,6 @@ static void debriefPresent(void) {
     if (popupVisible)
         gfx_drawSpriteOpaque(g_dbiconsBuf, popupSpriteX[popupSpriteIdx], popupSpriteY[popupSpriteIdx],
                              0, popupX, popupY, POPUP_WIDTH, POPUP_HEIGHT);
-    /* Menu labels, repainted in their current selection/blink/cycle colour
-     * (glyphs only write foreground pixels, so this recolours the same pixels
-     * the old in-place colour-replace touched). */
-    {
-        int16 savedColor = debriefPage[2];
-        int i;
-        for (i = 0; i < 2; i++) {
-            debriefPage[2] = menuLabelColor[i];
-            drawStringAt(debriefPage, debriefMenuStrings[i], MENU_LABEL_X, MENU_LABEL_Y + i * MENU_LABEL_STEP);
-        }
-        debriefPage[2] = savedColor;
-    }
     gfx_commitPage();
 }
 

@@ -119,11 +119,13 @@ void r2d_blit(struct SDL_Surface *src, int srcX, int srcY,
  * backend's.
  */
 
-/* Marks the start of a GL flight frame's 2D overlay (called from the 3D backend
- * once the main 3D view begins). Only between this and the present do 2D
- * submissions record for native replay; pure-2D screens (no 3D pass) rasterize
- * into the page as before. */
-void r2d_vectorBeginFrame(void);
+/* Marks the start of a vector 2D overlay: between this and the present, 2D
+ * submissions draw immediately at native resolution on GL (else bake into the
+ * page). A flight frame calls it from the 3D backend once the main 3D view begins,
+ * passing composePageFirst=0 (its 3D pass composites the page backdrop mid-frame).
+ * A pure-2D screen (debrief) passes composePageFirst=1 so the page backdrop is laid
+ * down under the immediate overlay now, rather than over it at present. */
+void r2d_vectorBeginFrame(int composePageFirst);
 
 /* Whether 2D primitive submissions draw immediately to the framebuffer this frame
  * (set between r2d_vectorBeginFrame and the present — i.e. a GL flight/vector frame)
