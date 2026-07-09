@@ -42,7 +42,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake \
-            libx11-dev libxext-dev libwayland-dev wayland-protocols \
+            libx11-dev libxext-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxrandr-dev libxss-dev libxtst-dev \
+            libwayland-dev wayland-protocols \
             libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev
 
       - name: Configure CMake
@@ -66,7 +68,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake gcovr \
-            libx11-dev libxext-dev libwayland-dev wayland-protocols \
+            libx11-dev libxext-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxrandr-dev libxss-dev libxtst-dev \
+            libwayland-dev wayland-protocols \
             libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev
 
       - name: Configure CMake (coverage)
