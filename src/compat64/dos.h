@@ -88,9 +88,9 @@ int kbhit(void);
 
 inline char *itoa(int value, char *str, int base) {
     if (base == 10) {
-        sprintf(str, "%d", value);
+        snprintf(str, 12, "%d", value);
     } else if (base == 16) {
-        sprintf(str, "%x", value);
+        snprintf(str, 9, "%x", value);
     } else {
         str[0] = '\0';
     }
