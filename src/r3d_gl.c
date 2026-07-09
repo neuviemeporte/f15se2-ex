@@ -1669,6 +1669,50 @@ void r3dgl_drawImage(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
     glDisable(GL_BLEND);
 }
 
+/* Like r3dgl_drawImage but with a fractional 320-space destination: the quad is
+ * NOT snapped to whole device pixels, so a sprite whose logical position moves
+ * sub-pixel per frame (a radar blip tracking the gliding scope grid) slides
+ * smoothly instead of stepping. Texcoords are inset half a source texel so NEAREST
+ * still can't bleed across a sprite-sheet cell boundary without the quad snapping. */
+void r3dgl_drawImageF(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
+                      float dstX, float dstY, float dstW, float dstH, int key) {
+    SDL_Palette *pal = gfx_getPalette();
+    SDL_Surface *surf = r2d_imageSurface(img);
+    GLuint itex;
+    float u0, v0, u1, v1, x0, y0, x1q, y1q, hu, hv;
+    if (!surf || !pal) return;
+    itex = imageTexture(img, pal, gfx_paletteGeneration());
+    if (!itex) return;
+    overlay2DState();
+    glEnable(GL_TEXTURE_2D);
+    glColor3ub(255, 255, 255);
+    if (key < 0) {
+        glDisable(GL_BLEND);
+    } else {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+    glBindTexture(GL_TEXTURE_2D, itex);
+    hu = 0.5f / (float)surf->w;
+    hv = 0.5f / (float)surf->h;
+    u0 = (float)srcX / (float)surf->w + hu;
+    v0 = (float)srcY / (float)surf->h + hv;
+    u1 = (float)(srcX + imgW) / (float)surf->w - hu;
+    v1 = (float)(srcY + imgH) / (float)surf->h - hv;
+    x0 = ovMapX(dstX);
+    y0 = ovMapY(dstY);
+    x1q = x0 + dstW * s_ov.scaleX;
+    y1q = y0 + dstH * s_ov.scaleY;
+    glBegin(GL_QUADS);
+    glTexCoord2f(u0, v0); glVertex2f(x0, y0);
+    glTexCoord2f(u1, v0); glVertex2f(x1q, y0);
+    glTexCoord2f(u1, v1); glVertex2f(x1q, y1q);
+    glTexCoord2f(u0, v1); glVertex2f(x0, y1q);
+    glEnd();
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_BLEND);
+}
+
 /* The retained page as a persistent GL texture + the dirty key it was built for.
  * Re-uploaded ONLY when its visible output could have changed (below), so the page
  * is NOT re-converted/re-uploaded every frame — the flight fire-palette cycle bumps

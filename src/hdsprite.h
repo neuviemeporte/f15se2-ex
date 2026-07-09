@@ -17,6 +17,6 @@
  * centred at (destX,destY), fixed orientation (the radar is plane-relative, so the
  * ownship always points up). Returns 0 when no HD asset is available or this is not
  * a native-overlay vector frame. */
-int hdsprite_drawRadarOwnship(int destX, int destY);
+int hdsprite_drawRadarOwnship(float destX, float destY);
 
 #endif /* HDSPRITE_H */

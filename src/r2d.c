@@ -187,6 +187,13 @@ void r2d_submitImageScaled(R2DImage *img, int srcX, int srcY, int srcW, int srcH
     r3dgl_drawImage(img, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH, key);
 }
 
+int r2d_submitImageF(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
+                     float dstX, float dstY, float dstW, float dstH, int key) {
+    if (!img || !r2d_vectorActive()) return 0;
+    r3dgl_drawImageF(img, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH, key);
+    return 1;
+}
+
 /* Set for the duration of a GL flight frame (between gl_beginScene's main 3D view
  * and the present). 2D submissions draw immediately while this is set — pure-2D
  * screens (debrief/briefing/menus) have no 3D pass, so their primitives bake into

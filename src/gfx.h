@@ -61,6 +61,9 @@ int gfx_readImagePixel(struct R2DImage *img, int x, int y);
  * popup icons), as distinct from gfx_blitSprite's transparent (skip-index-0) blit. */
 void gfx_drawSpriteOpaque(int handle, int srcX, int srcY, int dstPage,
                           int dstX, int dstY, int w, int h);
+/* The R2DImage behind sprite-buffer `handle` (1-based; 0 = none), or NULL. Lets
+ * game code submit a sheet sprite through the renderer's float image path. */
+struct R2DImage *gfx_spriteBufImage(int handle);
 
 /* ---- graphics slots (the public draw API, first slot 0, 84 used) ---- */
 /* dseg:0xab8 */

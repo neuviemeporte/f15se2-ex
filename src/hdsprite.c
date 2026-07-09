@@ -36,15 +36,15 @@ static R2DImage *radarOwnship(void) {
     return img;
 }
 
-int hdsprite_drawRadarOwnship(int destX, int destY) {
+int hdsprite_drawRadarOwnship(float destX, float destY) {
     R2DImage *hd = radarOwnship();
     SDL_Surface *s;
     int f = RADAR_OWNSHIP_FOOTPRINT;
     if (!hd || !r2d_vectorActive()) return 0;
     s = r2d_imageSurface(hd);
     if (!s) return 0;
-    /* Centre the footprint on (destX,destY), matching the legacy icon's destX-3. */
-    r2d_submitImageScaled(hd, 0, 0, s->w, s->h,
-                          destX - f / 2, destY - f / 2, f, f, 0);
-    return 1;
+    /* Centre the footprint on the sub-pixel (destX,destY) so the ownship marker
+     * glides with the scope grid, matching the legacy icon's destX-3 centring. */
+    return r2d_submitImageF(hd, 0, 0, s->w, s->h,
+                            destX - f / 2.0f, destY - f / 2.0f, f, f, 0);
 }

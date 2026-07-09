@@ -95,7 +95,7 @@ Problems with the game that were introduces by the port, and to the best of our 
 1. In the debriefing screen, plane names are only the long string e.g. "Flogger shot down".
 1. When starting a new mission after a previous one has been completed, the sound for the previous flight's landing ("Nice landing") is played, looks as if the sound queue is not drained before terminating the previous mission?
 1. When on the airfield/carrier, can see through to the ground on the sides of the view (exposed by widescreen support). Also, aircraft geometry sometimes flickers beneath the player.
-1. Missile markers on radar are too short/thick and should be drawn on top everything else as the most important threat that should be very visible.
+1. Missile markers on radar should be drawn on top everything else as the most important threat that should be very visible.
 1. Pausing the game (`Alt-P`) appears to be busy waiting, CPU/GPU not idle.
 
 ## Building

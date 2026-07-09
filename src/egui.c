@@ -147,10 +147,17 @@ void drawTacticalMap(char page) {
                 if (i >= 8) {
                     setDrawColor(COLOR_WHITE);;
                 }
+                /* Missile heading tick. radius (the zoom index, 1-3) is a tiny
+                 * magnitude, so the original's integer sinMul/cosMul rounded the
+                 * offset to a handful of whole-pixel pairs — the blip snapped to ~8
+                 * compass directions with uneven lengths. Build the offset in float
+                 * (sine/cosine over 32768, matching sinMul/cosMul without the Q15
+                 * truncation) so the tick points in the true heading at a consistent
+                 * length, like the scope's grid lines. */
                 code = g_projectiles[i].worldX - g_ourHead;
                 scopeLine(g_scopeFx, g_scopeFy,
-                          g_scopeFx - (float)sinMul(code, radius),
-                          g_scopeFy + (float)cosMul(code, radius) * scopeAspectY());
+                          g_scopeFx - (float)sine(code) * (radius / 32768.0f),
+                          g_scopeFy + (float)cosine(code) * (radius / 32768.0f) * scopeAspectY());
             }
         }
     }
@@ -180,7 +187,7 @@ void drawTacticalMap(char page) {
     }
     projectMapPoint(g_viewX_, g_viewY_);
     if (g_projDepth != -1) {
-        if (!hdsprite_drawRadarOwnship(vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo)) {
+        if (!hdsprite_drawRadarOwnship(g_scopeFx, g_scopeFy)) {
             blitGaugeSprite(0, 3, vtxScratch.vproj.x.lo, vtxScratch.vproj.y.lo);
         }
     }
@@ -246,9 +253,19 @@ void projectMapPoint(int mapX, int mapY) {
 
 // ==== seg000:0xa872 ====
 void blitGaugeSprite(int srcCol, int srcRow, int destX, int destY) {
+    int srcX = srcCol * 8 + 1;
+    int srcY = srcRow * 8 + 31;
+    /* On the GL scope, centre the 7x7 icon on the sub-pixel projected blip
+     * (g_scopeFx/y, the floats the scope's lines already use) so it glides with the
+     * grid instead of stepping a whole 320-space pixel at a time. destX/destY equal
+     * round(g_scopeFx/y); the software backend (no float blit) uses them below. */
+    if (r2d_submitImageF(gfx_spriteBufImage((int)gfxBufPtr), srcX, srcY, 7, 7,
+                         g_scopeFx - 3.0f, g_scopeFy - 3.0f, 7, 7, 0)) {
+        return;
+    }
     gaugeSpriteParams.bufPtr = gfxBufPtr;
-    gaugeSpriteParams.srcX = srcCol * 8 + 1;
-    gaugeSpriteParams.srcY = srcRow * 8 + 31;
+    gaugeSpriteParams.srcX = srcX;
+    gaugeSpriteParams.srcY = srcY;
     gaugeSpriteParams.page = 0;
     gaugeSpriteParams.dstX = destX - 3;
     gaugeSpriteParams.dstY = destY - 3;

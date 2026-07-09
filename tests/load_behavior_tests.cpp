@@ -561,6 +561,7 @@ void shiftLongLeftInPlace(int, long *) {}
 void shiftLongRightInPlace(int, long *) {}
 void r3d_worldPointToCameraFar(int, int, int, long *, long *, long *) {}
 int fillSpanRect(const int16 *, int, int, int, int) { return 0; }
+int fillSpanRectImmediate(const int16 *, int, int, int, int) { return 0; }
 int getTimeOfDay() { return 0; }
 void drawStringActivePage(const char *, int, int, int) {}
 int misc_readJoystick(int16) { return 0; }

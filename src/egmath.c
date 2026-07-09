@@ -163,8 +163,41 @@ void drawWorldLine(long worldX1, long worldY1, int alt1,
     r3d_submitLine(&ln);
 }
 
+static int roundToInt(float v) {
+    return (int)(v < 0.0f ? v - 0.5f : v + 0.5f);
+}
+
+/* Fast 2D distance approximation (rangeApprox) at full 32-bit width: no int16
+ * truncation and no 0x7FFF cap, so it can feed a bearing off FINE world deltas. */
+static int32 rangeApprox32(int32 dx, int32 dy) {
+    if (dx < 0) dx = -dx;
+    if (dy < 0) dy = -dy;
+    return dx > dy ? dx + (dy >> 1) : dy + (dx >> 1);
+}
+
+/* computeBearing on a delta pair too wide for its int16 inputs: shift both by the
+ * same amount (the angle depends only on the ratio) until they fit. Lets the target
+ * view take the bearing off the FINE world deltas instead of the coarse (>>5) map
+ * units the original fed it — those coarse deltas requantize every render frame
+ * under the sim/render decouple, so the tracked model shivered; the fine deltas
+ * vary smoothly, so it steps at most one pixel at a time. */
+static int bearingFromFine(int32 deltaX, int32 deltaY) {
+    int32 m = (deltaX < 0 ? -deltaX : deltaX) | (deltaY < 0 ? -deltaY : deltaY);
+    int sh = 0;
+    while ((m >> sh) > 0x3fff) sh++;
+    return computeBearing((int)(deltaX >> sh), (int)(deltaY >> sh));
+}
+
 // ==== seg000:0xcb42 ====
-void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYaw, int objPitch, int objRoll, int mode, int shift) {
+/* worldX/worldY are the target's FINE world position (mapX<<5 scale, matching
+ * g_ViewX/g_ViewY and SimObject.worldX). The original took the coarse map coords
+ * (posX/mapX) and subtracted the coarse g_viewX_; with the port's render/sim
+ * decouple both operands round to the ÷32 grid independently and beat ±1 against
+ * each other between sim ticks, so the tracked model jittered on a ~32-unit grid.
+ * Differencing the fine coords (once, below) and taking the bearing/pitch off those
+ * fine deltas removes both the beat and the coarse angular snapping. */
+void drawTargetView(int shapeId, int32 worldX, int32 worldY, int altitude, int objYaw, int objPitch, int objRoll, int mode, int shift) {
+    int32 dxFine, dyFine, dzFine;
     int unused;
     int horizonY;
     int bearing;
@@ -174,11 +207,11 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
     int pitch;
     int dataOff;
     int colorIdx;
-    int radius;
     int bearingDelta;
     int relX;
     int relY;
     int relZ;
+    int fracX = 0, fracY = 0, fracZ = 0; /* Q8 sub-unit remainders of the submit position */
     char categoryLow;
 
     g_targetInHudFlag = 1;
@@ -186,13 +219,19 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
     dataOff = shapeDataOffset(shapeId);
     *g_targetViewParams = 1;
 
+    dxFine = worldX - g_ViewX;
+    dyFine = worldY - g_ViewY;
+    dzFine = altitude - g_viewZ;
+
     if (mode < 2) {
         g_trkRoll = 0;
-        relX = worldX - g_viewX_;
-        relY = worldY - g_viewY_;
-        relZ = (altitude - g_viewZ) >> 5;
-        bearing = computeBearing(relX, -relY);
-        pitch = computeBearing(relZ, rangeApprox(relX, relY));
+        relX = (int)(dxFine >> 5);
+        relY = (int)(dyFine >> 5);
+        relZ = (int)(dzFine >> 5);
+        /* Bearing/pitch off the fine deltas so the tracked model glides; the range
+         * (model size / tracking scale) keeps the original coarse magnitude. */
+        bearing = bearingFromFine(dxFine, -dyFine);
+        pitch = bearingFromFine(dzFine, rangeApprox32(dxFine, dyFine));
         range = rangeApprox(relZ, rangeApprox(relX, relY));
 
         if (mode == 1) {
@@ -223,19 +262,37 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
             range = (g_trkSize << 5) / g_trkScale << 2;
         }
 
-        radius = cosMul(pitch, range);
         g_extraScaleShift = 2;
         if (shift < 0) {
             g_extraScaleShift = (uint8)(shift + 2);
             shift = 0;
         }
-        relX = sinMul(bearing, radius) >> (char)shift;
-        relY = -(cosMul(bearing, radius)) >> (char)shift;
-        relZ = sinMul(pitch, range) >> (char)shift;
+        /* The MFD is a ~1° telephoto: one whole unit of this offset is ~3 screen
+         * pixels, and the original's integer sinMul/cosMul (truncating to whole
+         * units) made the model saw-tooth around the aim point as the quantized
+         * bearing/position raced each other. Compute the offset in float off the
+         * same sine table the view matrix uses, round once, and hand the sub-unit
+         * remainder to the transform as the Q8 viewer fraction — the model then
+         * tracks the quantized camera exactly and sits still. */
+        {
+            float radiusF = (float)cosine(pitch) * (float)range * (1.0f / 32768.0f);
+            float div = (float)(1 << (char)shift);
+            float relXf = (float)sine(bearing) * radiusF * (1.0f / 32768.0f) / div;
+            float relYf = -((float)cosine(bearing) * radiusF * (1.0f / 32768.0f)) / div;
+            float relZf = (float)sine(pitch) * (float)range * (1.0f / 32768.0f) / div;
+            relX = roundToInt(relXf);
+            relY = roundToInt(relYf);
+            relZ = roundToInt(relZf);
+            /* transformAndCullObject folds `true rel = rel - frac/256`; the Y axis
+             * is submitted negated (see the R3DSubmit below). */
+            fracX = roundToInt((relX - relXf) * 256.0f);
+            fracY = roundToInt((relYf - relY) * 256.0f);
+            fracZ = roundToInt((relZ - relZf) * 256.0f);
+        }
     } else {
-        relX = (worldX - g_viewX_) << 4;
-        relY = (worldY - g_viewY_) << 4;
-        relZ = (altitude - g_viewZ) >> 1;
+        relX = (int)(dxFine >> 5) << 4;
+        relY = (int)(dyFine >> 5) << 4;
+        relZ = (int)(dzFine >> 1);
         g_trkBearing = g_ourHead;
         g_trkPitch = g_extViewPitch;
         g_trkRoll = g_ourRoll;
@@ -274,6 +331,8 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
         R3DScene scene = {g_targetViewParams, -g_trkBearing, g_trkPitch, g_trkRoll, 0, 0, 0, 0};
         R3DSubmit obj = {g_world3dData + dataOff, -objYaw, objPitch, objRoll, relX, -relY, relZ};
         r3d_beginScene(&scene);
+        /* after beginScene: setup3DTransform's setViewPosition cleared the frac */
+        setViewPositionFrac(fracX, fracY, fracZ);
         r3d_submit(&obj);
         r3d_endScene();
     }

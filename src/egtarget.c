@@ -553,7 +553,11 @@ void drawHudWorldOverlay(void) {
 
                 wpIdx = g_groundTargetLock & 0x7f;
 
-                drawTargetView(getTargetSymbol(wpIdx), g_planeTable.planes[wpIdx].mapX, g_planeTable.planes[wpIdx].mapY,
+                /* Ground targets only carry coarse map coords; scale to the fine
+                 * (mapX<<5) space drawTargetView now differences against g_ViewX. */
+                drawTargetView(getTargetSymbol(wpIdx),
+                               (int32)g_planeTable.planes[wpIdx].mapX << 5,
+                               (int32)g_planeTable.planes[wpIdx].mapY << 5,
                                0, 0, 0, 0, 1, -1);
                 drawMissileLock();
                 buildRangeString(computeMapTargetRange(wpIdx));
@@ -631,9 +635,11 @@ void drawHudWorldOverlay(void) {
     if (g_activePanelMode == 0x13 && g_currentWeaponType == 1 && g_airTargetLock != -1) {
         wpIdx = g_airTargetLock & 0x7f;
 
+        /* Fine (integrated) world position, not the coarse posX/posY seed, so the
+         * tracked model doesn't jitter on the ÷32 grid as the view interpolates. */
         drawTargetView(aircraftTypes[g_simObjects[wpIdx].spec].viewModelId,
-                       g_simObjects[wpIdx].posX,
-                       g_simObjects[wpIdx].posY,
+                       g_simObjects[wpIdx].worldX,
+                       g_simObjects[wpIdx].worldY,
                        g_simObjects[wpIdx].alt,
                        g_simObjects[wpIdx].heading.w,
                        g_simObjects[wpIdx].pitch,

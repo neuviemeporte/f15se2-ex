@@ -200,6 +200,14 @@ void r2d_submitImage(R2DImage *img, int srcX, int srcY, int w, int h,
 void r2d_submitImageScaled(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
                            int dstX, int dstY, int dstW, int dstH, int key);
 
+/* Fractional-destination scaled image: like r2d_submitImageScaled but the 320-space
+ * destination is float, so a sprite that moves sub-pixel per frame (a radar blip
+ * gliding with the scope grid) slides smoothly instead of snapping to whole pixels.
+ * GL-only; returns 1 if it drew (active vector frame) and 0 otherwise, so callers
+ * can fall back to the whole-pixel software path. */
+int r2d_submitImageF(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
+                     float dstX, float dstY, float dstW, float dstH, int key);
+
 /* The software backend registers how it rasterizes a submitted image into the
  * back buffer (r2d need not own the page surface). */
 void r2d_registerSoftwareImage(void (*image)(R2DImage *img, int srcX, int srcY,

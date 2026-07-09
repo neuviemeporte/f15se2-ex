@@ -76,5 +76,9 @@ void r3dgl_drawScopeLine(float x1, float y1, float x2, float y2, int color,
  * (dstW,dstH) at (dstX,dstY); key<0 opaque, key>=0 transparent on index 0. */
 void r3dgl_drawImage(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
                      int dstX, int dstY, int dstW, int dstH, int key);
+/* Fractional-destination variant: sub-pixel quad (no whole-pixel snap) for a
+ * smoothly-moving sprite such as a radar blip. GL only. */
+void r3dgl_drawImageF(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
+                      float dstX, float dstY, float dstW, float dstH, int key);
 
 #endif /* R3D_GL_H */

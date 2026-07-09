@@ -358,6 +358,10 @@ static R2DImage *gfx_spriteImage(int handle) {
     return s_spriteBufs[handle - 1];
 }
 
+R2DImage *gfx_spriteBufImage(int handle) {
+    return gfx_spriteImage(handle);
+}
+
 /* Software realization of an image submission: clipped blit into the back buffer.
  * Registered with r2d so a submitted sprite rasterizes straight into the page. */
 static void gfx_swImage(R2DImage *img, int srcX, int srcY, int w, int h,

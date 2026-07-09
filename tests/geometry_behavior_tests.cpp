@@ -50,8 +50,19 @@ extern void projectModelVertices(int screenX, int screenY);
 extern int aspectScaleY(int screenY);
 extern int readAxisInput(int axisIdx);
 extern int shapeDataOffset(int shapeId);
+extern int sine(int angle);
+extern int cosine(int angle);
 
 namespace {
+
+// The scope's 5/6 vertical aspect (see projectMapPoint / scopeAspectY in egui.c):
+// the projection pre-divides the vertical offset so the GL x1.2 present restores a
+// square top-down scope. Rounds to whole 320-space pixels the same way scopeRound
+// does (half away from zero).
+constexpr float kScopeAspectY = 5.0f / 6.0f;
+inline int scopeRoundExpect(float v) {
+    return static_cast<int>(v < 0.0f ? v - 0.5f : v + 0.5f);
+}
 
 // Behavior-sensitive constants are named here or explained at the use site.
 // Remaining numeric literals are fixture data, indices, loop/math mechanics,
@@ -473,13 +484,22 @@ int main() {
     g_radarScopeRange = 1;
     projectMapPoint(0x2100, 0x2F00);
     {
+        // projectMapPoint carries the fraction the original's >>shift dropped: it
+        // scales the world delta in float, rotates by g_ourHead with the shared
+        // sine table, applies the 5/6 vertical aspect, then rounds. Reproduce that
+        // to track the intended projection rather than the old pure-integer form.
         const int shift = kRadarBaseShift - static_cast<char>(g_radarScopeRange);
-        const int scaledX = (0x2100 - 0x2000) >> shift;
-        const int scaledY = (0x3000 - 0x2F00) >> shift;
-        require(vtxScratch.vproj.x.lo == kRadarProjectionCenterX + scaledX &&
-                    vtxScratch.vproj.y.lo == kRadarProjectionCenterY - scaledY &&
+        const float inv = 1.0f / static_cast<float>(1 << shift);
+        const float c = static_cast<float>(cosine(g_ourHead)) / 32768.0f;
+        const float s = static_cast<float>(sine(g_ourHead)) / 32768.0f;
+        const float fsx = static_cast<float>(0x2100 - 0x2000) * inv;
+        const float fsy = static_cast<float>(0x3000 - 0x2F00) * inv;
+        const int expX = scopeRoundExpect(kRadarProjectionCenterX + (c * fsx - s * fsy));
+        const int expY = scopeRoundExpect(kRadarProjectionCenterY - (c * fsy + s * fsx) * kScopeAspectY);
+        require(vtxScratch.vproj.x.lo == expX &&
+                    vtxScratch.vproj.y.lo == expY &&
                     g_projDepth == 0,
-                "projectMapPoint preserves original radar-center projection for visible points");
+                "projectMapPoint projects to the float radar-center mapping (5/6 aspect) for visible points");
     }
     projectMapPoint(0x4000, 0x3000);
     require(g_projDepth == -1 && vtxScratch.vproj.x.lo > kRadarClipRight,
