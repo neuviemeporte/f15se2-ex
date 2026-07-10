@@ -14,6 +14,7 @@ try:
         parse_3d3,
         export_3d3_to_gltf,
         export_3d3_to_glb,
+        export_3d3_gltf_to_glb,
         parse_3dg,
         parse_3dt,
         parse_wld,
@@ -29,6 +30,7 @@ except ModuleNotFoundError:
         parse_3d3,
         export_3d3_to_gltf,
         export_3d3_to_glb,
+        export_3d3_gltf_to_glb,
         parse_3dg,
         parse_3dt,
         parse_wld,
@@ -119,6 +121,11 @@ def _write_gltf_binary(path: Path, payload: Dict[str, Any]) -> None:
     path.write_bytes(glb_data)
 
 
+def _write_gltf_binary_doc(path: Path, gltf: Dict[str, Any]) -> None:
+    glb_data = export_3d3_gltf_to_glb(gltf)
+    path.write_bytes(glb_data)
+
+
 def _write_yaml(path: Path, payload: Dict[str, Any]) -> None:
     try:
         import yaml
@@ -131,6 +138,45 @@ def _write_yaml(path: Path, payload: Dict[str, Any]) -> None:
 
 def _detect_format(path: Path) -> str:
     return ASSET_EXT_FORMATS.get(path.suffix.lower(), "")
+
+
+def _log_3d3_gltf_diagnostics(gltf: Dict[str, Any], source_path: Path | None) -> None:
+    label = str(source_path) if source_path is not None else "3D3"
+    skipped = gltf.get("extras", {}).get("skipped_shapes", [])
+    if isinstance(skipped, list):
+        for item in skipped:
+            if not isinstance(item, dict):
+                continue
+            meta = item.get("shape_payload")
+            if not isinstance(meta, dict):
+                meta = {}
+            reason = (
+                meta.get("render_error")
+                or meta.get("edge_decode_error")
+                or "no_renderable_primitives"
+            )
+            print(
+                "warning: "
+                f"{label}: skipped shape {item.get('shape_index')} "
+                f"{item.get('shape_name')} "
+                f"offset {item.get('shape_offset')}..{item.get('shape_end')} "
+                f"render_mode={item.get('render_mode')} "
+                f"reason={reason} "
+                f"metadata={json.dumps(meta, sort_keys=True)}",
+                file=sys.stderr,
+            )
+
+    raw_color_usage = gltf.get("extras", {}).get("raw_color_usage", {})
+    point_counts = {}
+    if isinstance(raw_color_usage, dict) and isinstance(raw_color_usage.get("points"), dict):
+        point_counts = raw_color_usage["points"]
+    if point_counts:
+        print(
+            "info: "
+            f"{label}: exported degenerate source lines as POINTS "
+            f"colors={json.dumps(point_counts, sort_keys=True)}",
+            file=sys.stderr,
+        )
 
 
 def _dac6_to_rgb8(data: bytes) -> bytes:
@@ -246,10 +292,12 @@ def _decode_asset(
             gltf_path = Path(args.gltf)
             if gltf_path.suffix.lower() not in {".gltf", ".glb"}:
                 raise ValueError("--gltf expects a .gltf or .glb output path")
+            gltf = export_3d3_to_gltf(payload)
+            _log_3d3_gltf_diagnostics(gltf, source_path)
             if gltf_path.suffix.lower() == ".glb":
-                _write_gltf_binary(gltf_path, payload)
+                _write_gltf_binary_doc(gltf_path, gltf)
             else:
-                _write_gltf(gltf_path, export_3d3_to_gltf(payload), pretty=args.pretty)
+                _write_gltf(gltf_path, gltf, pretty=args.pretty)
         return payload
 
     if fmt == "3DT":
