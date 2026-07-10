@@ -168,6 +168,7 @@ doSrand:
         commData->trainingFlag = 0;
     }
 #endif /* !DEBUG_AUTOSTART */
+    briefingSceneEnd(); /* briefing board is done; stop the HD scene recorder + hook */
     misc_clearKeyFlags();
     clearRect(bufPtr, 0, 0, SCREEN_MAXX, SCREEN_MAXY);
     return exitCode;

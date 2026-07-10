@@ -202,6 +202,18 @@ int r2d_submitImageRot(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
     return 1;
 }
 
+int r2d_submitImageWindow(R2DImage *img) {
+    if (!img || !r2d_vectorActive()) return 0;
+    r3dgl_drawImageWindow(img);
+    return 1;
+}
+
+int r2d_submitImageWindowBoxX(R2DImage *img, float boxLeftX) {
+    if (!img || !r2d_vectorActive()) return 0;
+    r3dgl_drawImageWindowBoxX(img, boxLeftX);
+    return 1;
+}
+
 /* Set for the duration of a GL flight frame (between gl_beginScene's main 3D view
  * and the present). 2D submissions draw immediately while this is set — pure-2D
  * screens (debrief/briefing/menus) have no 3D pass, so their primitives bake into

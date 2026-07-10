@@ -36,6 +36,93 @@ static R2DImage *radarOwnship(void) {
     return img;
 }
 
+/* Debrief theatre map: one HD PNG per theatre (parallel to endata's
+ * theaterSprFiles). A missing file leaves the slot NULL → legacy SPR. */
+static const char *const debriefMapPaths[8] = {
+    "assets/end/map/lb.png", /* Libya */
+    "assets/end/map/pg.png", /* Persian Gulf */
+    "assets/end/map/vn.png", /* Vietnam */
+    "assets/end/map/me.png", /* Middle East */
+    "assets/end/map/nc.png", /* North Cape */
+    "assets/end/map/ce.png", /* Central Europe */
+    "assets/end/map/jp.png", /* Japan */
+    "assets/end/map/na.png", /* North Africa */
+};
+
+int hdsprite_drawDebriefTheatreMap(int theatre) {
+    static R2DImage *img[8];
+    static int tried[8];
+    R2DImage *hd;
+    SDL_Surface *s;
+
+    if (theatre < 0 || theatre >= 8 || !r2d_vectorActive()) return 0;
+    if (!tried[theatre]) {
+        tried[theatre] = 1;
+        if (r2d_hasNativeOverlay()) img[theatre] = loadHdPng(debriefMapPaths[theatre]);
+    }
+    hd = img[theatre];
+    if (!hd) return 0;
+    s = r2d_imageSurface(hd);
+    if (!s) return 0;
+
+    /* Scale the whole HD image into the legacy map footprint (spriteMapAreaDef:
+     * origin 8,10; 224×168 in 320-space) so it shares the overlay's 4:3-corrected
+     * coordinate space — the flight-path lines and event markers are plotted in
+     * that same space and must line up with the terrain. */
+    r2d_submitImageScaled(hd, 0, 0, s->w, s->h, 8, 10, 224, 168, 0);
+    return 1;
+}
+
+/* Pre-mission briefing (START mission-select) HD art: a window-filling widescreen
+ * room/officer backdrop plus 7 pointer-arm poses. The arm poses are authored as
+ * full-frame cels the same size as the wall (transparent except the forearm), so
+ * they register over the wall with no per-frame placement — see hdsprite.h. */
+#define BRIEFING_ARM_FRAMES 7
+
+static R2DImage *briefingWall(void) {
+    static R2DImage *img;
+    static int tried;
+    if (tried) return img;
+    tried = 1;
+    if (!r2d_hasNativeOverlay()) return NULL;
+    img = loadHdPng("assets/start/menu/wall.png");
+    return img;
+}
+
+int hdsprite_hasBriefingWall(void) { return briefingWall() != NULL; }
+
+/* 320-space x for the LEFT edge of the arm cels within the 4:3 menu box. The legacy
+ * arm sits at [60,174]; the HD cel, scaled to the room height, is wider (~173 units
+ * at the reference window), so left-aligning to the box (0) lands the pointer near the
+ * legacy 174 with the extra width tucked behind the officer. Raise toward 60 to match
+ * the legacy left edge instead (pointer then overshoots to the right). */
+#define BRIEFING_ARM_BOX_LEFT_X 0.0f
+
+void hdsprite_drawBriefingWall(void) {
+    R2DImage *w = briefingWall();
+    if (w && r2d_vectorActive()) r2d_submitImageWindow(w); /* room centred */
+}
+
+void hdsprite_drawBriefingArm(int frame) {
+    static R2DImage *img[BRIEFING_ARM_FRAMES];
+    static int tried[BRIEFING_ARM_FRAMES];
+    R2DImage *a;
+    if (frame < 0 || frame >= BRIEFING_ARM_FRAMES) return;
+    if (!tried[frame]) {
+        tried[frame] = 1;
+        if (r2d_hasNativeOverlay()) {
+            char path[48];
+            SDL_snprintf(path, sizeof(path), "assets/start/menu/arm/%d.png", frame);
+            img[frame] = loadHdPng(path);
+        }
+    }
+    a = img[frame];
+    /* Arm cels are the officer's forearm; draw at the room's height scale with the
+     * cel left-aligned in the 4:3 menu box, so the pointer reaches across the box to
+     * the menu rows (see BRIEFING_ARM_BOX_LEFT_X). */
+    if (a && r2d_vectorActive()) r2d_submitImageWindowBoxX(a, BRIEFING_ARM_BOX_LEFT_X);
+}
+
 int hdsprite_drawRadarOwnship(float destX, float destY) {
     R2DImage *hd = radarOwnship();
     SDL_Surface *s;

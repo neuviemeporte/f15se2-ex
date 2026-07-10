@@ -637,7 +637,7 @@ static void gl_beginScene(const R3DScene *s) {
      * immediately at native resolution. The page backdrop is composited mid-frame
      * at the gl_endScene anchor (after the 3D, before the HUD), so don't compose it
      * here. */
-    r2d_vectorBeginFrame(0);
+    r2d_vectorBeginFrame(R2D_COMPOSE_NONE);
 
     if (s_wide < 0) {
         /* Widescreen 3D (Hor+): on by default; F15_WIDESCREEN=0 forces 4:3. The
@@ -1502,8 +1502,19 @@ void r3dgl_beginOverlay(int composePage) {
      * 3D pass, so lay the page down NOW — under the immediate overlay (map/lines/
      * markers/popup) drawn next — instead of at present, where it would land on top
      * and blank the overlay. The present then skips its own composite. */
-    if (composePage) {
+    if (composePage == 1) {
         composePageBackdrop(gfx_getCurPageSurface(), gfx_getShakeOffset());
+        s_pageComposited = 1;
+    } else if (composePage == 2) {
+        /* Self-backdrop (HD briefing): the caller draws its own window-filling
+         * backdrop as the first overlay draw, so the legacy 320x200 page is never
+         * composited. Clear the window to black (uncovered margins) and mark the page
+         * handled so the present skips its own composite (which would land the page
+         * ON TOP of the overlay). */
+        glViewport(0, 0, s_ov.winW, s_ov.winH);
+        glDisable(GL_SCISSOR_TEST);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
         s_pageComposited = 1;
     }
 }
@@ -1648,6 +1659,24 @@ void r3dgl_drawScopeLine(float x1, float y1, float x2, float y2, int color,
     glDisable(GL_SCISSOR_TEST);
 }
 
+/* Shrink a device-space rect to the largest centred sub-rect with the source's
+ * srcW:srcH aspect (square pixels). HD art is authored square, so it fills its
+ * footprint region without the 320-space 4:3 stretch that paletted sprites want
+ * (the same rigid-square principle r3dgl_drawImageRot already uses for rotated
+ * contacts). Placement still comes from the per-axis footprint mapping; only the
+ * art's own grid is left unstretched. */
+static void fitContainSquare(float *x0, float *y0, float *x1, float *y1, int srcW, int srcH) {
+    float rw = *x1 - *x0, rh = *y1 - *y0, sc, dw, dh;
+    if (srcW <= 0 || srcH <= 0 || rw <= 0.0f || rh <= 0.0f) return;
+    sc = (rw / (float)srcW < rh / (float)srcH) ? rw / (float)srcW : rh / (float)srcH;
+    dw = (float)srcW * sc;
+    dh = (float)srcH * sc;
+    *x0 += (rw - dw) * 0.5f;
+    *y0 += (rh - dh) * 0.5f;
+    *x1 = *x0 + dw;
+    *y1 = *y0 + dh;
+}
+
 /* One sprite/HD image as a textured quad from the per-image decode cache. Source
  * sub-rect (srcX,srcY,imgW,imgH); destination footprint (dstW,dstH) in 320-space
  * may differ from the source size (a scaled HD sprite). key<0 opaque (blend off,
@@ -1678,10 +1707,23 @@ void r3dgl_drawImage(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
     v0 = (float)srcY / (float)surf->h;
     u1 = (float)(srcX + imgW) / (float)surf->w;
     v1 = (float)(srcY + imgH) / (float)surf->h;
-    x0 = SDL_floorf(ovMapX((float)dstX) + 0.5f);
-    y0 = SDL_floorf(ovMapY((float)dstY) + 0.5f);
-    x1q = x0 + SDL_floorf((float)dstW * s_ov.scaleX + 0.5f);
-    y1q = y0 + SDL_floorf((float)dstH * s_ov.scaleY + 0.5f);
+    if (surf->format != SDL_PIXELFORMAT_INDEX8) {
+        /* HD (RGBA) art: place in the footprint region, don't stretch the art. */
+        x0 = ovMapX((float)dstX);
+        y0 = ovMapY((float)dstY);
+        x1q = x0 + (float)dstW * s_ov.scaleX;
+        y1q = y0 + (float)dstH * s_ov.scaleY;
+        fitContainSquare(&x0, &y0, &x1q, &y1q, imgW, imgH);
+        x0 = SDL_floorf(x0 + 0.5f);
+        y0 = SDL_floorf(y0 + 0.5f);
+        x1q = SDL_floorf(x1q + 0.5f);
+        y1q = SDL_floorf(y1q + 0.5f);
+    } else {
+        x0 = SDL_floorf(ovMapX((float)dstX) + 0.5f);
+        y0 = SDL_floorf(ovMapY((float)dstY) + 0.5f);
+        x1q = x0 + SDL_floorf((float)dstW * s_ov.scaleX + 0.5f);
+        y1q = y0 + SDL_floorf((float)dstH * s_ov.scaleY + 0.5f);
+    }
     glBegin(GL_QUADS);
     glTexCoord2f(u0, v0); glVertex2f(x0, y0);
     glTexCoord2f(u1, v0); glVertex2f(x1q, y0);
@@ -1726,6 +1768,9 @@ void r3dgl_drawImageF(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
     y0 = ovMapY(dstY);
     x1q = x0 + dstW * s_ov.scaleX;
     y1q = y0 + dstH * s_ov.scaleY;
+    /* HD art keeps square pixels; the fractional (unsnapped) quad glides smoothly. */
+    if (surf->format != SDL_PIXELFORMAT_INDEX8)
+        fitContainSquare(&x0, &y0, &x1q, &y1q, imgW, imgH);
     glBegin(GL_QUADS);
     glTexCoord2f(u0, v0); glVertex2f(x0, y0);
     glTexCoord2f(u1, v0); glVertex2f(x1q, y0);
@@ -1793,6 +1838,58 @@ void r3dgl_drawImageRot(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
     glEnd();
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_BLEND);
+}
+
+/* Draw a whole HD image scaled to the window HEIGHT (aspect preserved), full window
+ * height, its left edge at window-x `leftWinX` — the shared body of the two window-
+ * fill entry points below. Always alpha-blended. */
+static void drawImageWindowFitH(R2DImage *img, float leftWinX) {
+    SDL_Surface *surf = r2d_imageSurface(img);
+    GLuint itex;
+    float sc, dw, x0, x1q, y1q;
+    if (!surf) return;
+    itex = imageTexture(img, gfx_getPalette(), gfx_paletteGeneration());
+    if (!itex) return;
+    overlay2DState();
+    glEnable(GL_TEXTURE_2D);
+    glColor3ub(255, 255, 255);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindTexture(GL_TEXTURE_2D, itex);
+    sc = (float)s_ov.winH / (float)surf->h;
+    dw = (float)surf->w * sc;
+    x0 = leftWinX;
+    x1q = x0 + dw;
+    y1q = (float)s_ov.winH;
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.0f, 0.0f); glVertex2f(x0, 0.0f);
+    glTexCoord2f(1.0f, 0.0f); glVertex2f(x1q, 0.0f);
+    glTexCoord2f(1.0f, 1.0f); glVertex2f(x1q, y1q);
+    glTexCoord2f(0.0f, 1.0f); glVertex2f(x0, y1q);
+    glEnd();
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_BLEND);
+}
+
+/* Window-filling widescreen 2D art that lives OUTSIDE the 320-space overlay box,
+ * scaled to the window height and CENTRED horizontally (sides cropped to fit) — the
+ * briefing room backdrop. */
+void r3dgl_drawImageWindow(R2DImage *img) {
+    SDL_Surface *surf = r2d_imageSurface(img);
+    float dw;
+    if (!surf) return;
+    dw = (float)surf->w * ((float)s_ov.winH / (float)surf->h);
+    drawImageWindowFitH(img, ((float)s_ov.winW - dw) * 0.5f - s_ov.shake);
+}
+
+/* Same window-height scale as the centred room (so the cel matches the room art's
+ * scale), but with the image's LEFT edge at 320-space `boxLeftX` mapped through the
+ * 4:3 overlay letterbox — the briefing arm cels are authored at the room's height
+ * (the forearm meets the officer's body) yet must sit in the 4:3 menu box they point
+ * into. The cel is wider than the legacy arm, so left-aligning tucks the extra width
+ * behind the officer while the pointer lands on the menu. */
+void r3dgl_drawImageWindowBoxX(R2DImage *img, float boxLeftX) {
+    drawImageWindowFitH(img, ovMapX(boxLeftX));
 }
 
 /* The retained page as a persistent GL texture + the dirty key it was built for.

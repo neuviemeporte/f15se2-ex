@@ -118,8 +118,10 @@ open_dbicons:
     g = 0;
     ejectedFlag = 1;
     curRecordIdx = 0;
-    gfx_commitPage();
-    gfx_flipPage();
+    /* Present the initial map through debriefPresent so the HD theatre map (GL)
+     * lands on the first frame too — the page-baked legacy blit above is the
+     * backdrop it composites over (and the software fallback). */
+    debriefPresent();
     setTimerIrqHandler();
     b = 1;
 

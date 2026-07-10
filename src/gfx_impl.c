@@ -491,6 +491,14 @@ void FAR CDECL gfx_flipPage(void) {
     gfx_presentPage(0);
 }
 
+/* A screen that draws HD/native-overlay content each frame (not into the page) can
+ * register a hook that fully reproduces its current frame; gfx_repaint calls it
+ * instead of the bare page re-present, so an expose/focus event redraws the overlay
+ * (e.g. the briefing's HD wall + pointer arm) rather than dropping to the page's
+ * legacy sprites. NULL (the default) restores the plain page re-present. */
+static void (*g_repaintHook)(void);
+void gfx_setRepaintHook(void (*hook)(void)) { g_repaintHook = hook; }
+
 /* Re-present the current visible frame (page 0, or the hi-res title surface).
  * gfx_presentPage already redirects to the hi-res path when the title is up. */
 void gfx_repaint(void) {
@@ -500,6 +508,10 @@ void gfx_repaint(void) {
      * frame, so skip the bare re-present. Pure-2D screens (menus/briefing/debrief,
      * which block in key-waits and produce no frame of their own) still need it. */
     if (r3dgl_active() && r3dgl_flightLive()) return;
+    if (g_repaintHook) {
+        g_repaintHook();
+        return;
+    }
     gfx_presentPage(0);
 }
 

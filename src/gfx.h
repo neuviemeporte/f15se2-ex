@@ -26,6 +26,12 @@ void gfx_toggleFullscreen(void);
  * a static screen that is blocked in a key-wait and produces no game frame. */
 void gfx_repaint(void);
 
+/* Register a callback that fully reproduces the current frame for a screen whose
+ * content is drawn as native/HD overlay each frame rather than baked into the page
+ * (so gfx_repaint reproduces the overlay on expose/focus instead of dropping to the
+ * page's legacy sprites). Pass NULL to restore the plain page re-present. */
+void gfx_setRepaintHook(void (*hook)(void));
+
 /* SDL text input (IME composition) is only needed for pilot-name entry in the
  * menus; the input pump disables it in flight so a desktop IME can't
  * intercept/delay editing keys it treats specially (Backspace above all). */

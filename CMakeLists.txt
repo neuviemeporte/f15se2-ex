@@ -346,11 +346,20 @@ endif()
 
 # HD assets (optional high-res sprite art, GPU backends only) live in assets/ and are
 # mirrored next to the binary so the runtime finds them relative to the working dir.
-add_custom_command(TARGET f15se2 POST_BUILD
+# Driven by the asset files themselves (not the f15se2 target) so editing or adding a
+# PNG re-copies it on the next build without a relink or `make clean`. CONFIGURE_DEPENDS
+# re-globs at build time, so new files are picked up too; the stamp makes it incremental
+# (the copy runs only when an asset actually changed).
+file(GLOB_RECURSE ASSET_FILES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/assets/*)
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/assets.stamp
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets
-    $<TARGET_FILE_DIR:f15se2>/assets
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:f15se2>/assets
+    COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/assets.stamp
+    DEPENDS ${ASSET_FILES}
+    COMMENT "Mirroring assets to the build dir"
 )
+add_custom_target(mirror_assets ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/assets.stamp)
 
 #==============================================================================
 # Behavior tests

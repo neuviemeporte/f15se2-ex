@@ -16,6 +16,13 @@ void cleanup(void);
 /* string drawing - drawstr.c */
 void drawStringAt(int16 *pageNum, const char *string, int x, int y);
 
+/* Optional per-string recorder: when non-NULL, drawStringAt reports every string it
+ * draws (final position + current colour/font) so a screen can rebuild its text as a
+ * per-frame overlay scene rather than have it bake once into the page. Only the START
+ * briefing sets this (to layer live text over the HD room); NULL everywhere else, so
+ * END/flight text bakes as before. */
+extern void (*g_textRecorder)(const char *str, int x, int y, int color, int font);
+
 /* text layout & number formatting - textfmt.c */
 void drawStringCentered(int16 *page, const char *str, int startx, int y, int endx);
 int stringWidth(int16 *page, const char *str);

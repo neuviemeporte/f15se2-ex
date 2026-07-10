@@ -119,12 +119,21 @@ void r2d_blit(struct SDL_Surface *src, int srcX, int srcY,
  * backend's.
  */
 
+/* Backdrop handling for a vector frame (r2d_vectorBeginFrame argument):
+ *  - NONE: the caller's 3D pass composites the legacy page backdrop mid-frame
+ *          (flight); the present must not composite it again.
+ *  - PAGE: pure-2D screen — lay the legacy 320x200 page down NOW, under the
+ *          immediate overlay (debrief map/lines/markers), not over it at present.
+ *  - SELF: pure-2D screen that draws its OWN window-filling backdrop as the first
+ *          overlay draw (the HD briefing room) — the legacy page is not composited
+ *          at all; the window is just cleared to black first. */
+#define R2D_COMPOSE_NONE 0
+#define R2D_COMPOSE_PAGE 1
+#define R2D_COMPOSE_SELF 2
+
 /* Marks the start of a vector 2D overlay: between this and the present, 2D
  * submissions draw immediately at native resolution on GL (else bake into the
- * page). A flight frame calls it from the 3D backend once the main 3D view begins,
- * passing composePageFirst=0 (its 3D pass composites the page backdrop mid-frame).
- * A pure-2D screen (debrief) passes composePageFirst=1 so the page backdrop is laid
- * down under the immediate overlay now, rather than over it at present. */
+ * page). `composePageFirst` is one of R2D_COMPOSE_* above. */
 void r2d_vectorBeginFrame(int composePageFirst);
 
 /* Whether 2D primitive submissions draw immediately to the framebuffer this frame
@@ -219,6 +228,18 @@ int r2d_submitImageF(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
 int r2d_submitImageRot(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
                        float cx, float cy, float dstW, float dstH,
                        float angleRad, int key);
+
+/* Whole image scaled to the window height (aspect-preserved), CENTRED horizontally —
+ * for window-filling widescreen 2D art that lives outside the 320-space overlay box
+ * (the briefing room backdrop; sides cropped to fit). GL-only; returns 1 if it drew
+ * (active vector frame), 0 otherwise. */
+int r2d_submitImageWindow(R2DImage *img);
+
+/* Like r2d_submitImageWindow (same window-height scale) but the image's LEFT edge is
+ * placed at 320-space boxLeftX, mapped through the 4:3 overlay letterbox — for art
+ * that belongs in the menu box it overlays (the briefing pointer-arm cels). GL-only;
+ * returns 1 if it drew, 0 otherwise. */
+int r2d_submitImageWindowBoxX(R2DImage *img, float boxLeftX);
 
 /* The software backend registers how it rasterizes a submitted image into the
  * back buffer (r2d need not own the page surface). */

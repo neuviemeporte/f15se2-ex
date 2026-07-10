@@ -87,5 +87,13 @@ void r3dgl_drawImageF(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
 void r3dgl_drawImageRot(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
                         float cx, float cy, float dstW, float dstH,
                         float angleRad, int key);
+/* Whole image scaled to the window height (aspect-preserved) — window-filling
+ * widescreen 2D art outside the 320-space box, centred horizontally (the briefing
+ * room; sides cropped). GL only. */
+void r3dgl_drawImageWindow(R2DImage *img);
+/* Window-height scale like r3dgl_drawImageWindow, but the image's LEFT edge sits at
+ * 320-space boxLeftX (mapped through the 4:3 overlay letterbox) — the briefing arm
+ * cels, positioned in the menu box they point into. GL only. */
+void r3dgl_drawImageWindowBoxX(R2DImage *img, float boxLeftX);
 
 #endif /* R3D_GL_H */

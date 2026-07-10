@@ -5,6 +5,7 @@
 #include "endtypes.h"
 
 void animateFlightPath(int16 *gfxPage);
+void debriefPresent(void); /* compose+present the debrief map (HD-aware map, path, markers) */
 void menuLabelsReset(void);
 long calcMissionScore(int param);
 void processMenuItems(MenuItem *items, int unused, int itemCount, int cursorStartX, int cursorStartY, int16 *gfxPage);

@@ -15,6 +15,8 @@
 #include "stpilot.h"
 #include "stsprit.h"
 #include "sttypes.h"
+#include "hdsprite.h"
+#include "r2d.h"
 
 #include <stdio.h>
 #include <dos.h>
@@ -26,6 +28,95 @@ void drawLine(const int16 *pageNum, int x1, int y1, int x2, int y2, int color);
 int missionMenuSelect(const char **names, const char **desc, const char *title, int s);
 void animateArm(int, int);
 void clearBriefing(void);
+static void briefingRepaint(void);
+static void briefingScenePresent(void);
+static void briefingSceneBegin(void);
+
+/* --- Briefing scene: a recorded 2D draw list, replayed layered each present -----
+ *
+ * On a native-overlay backend with the HD briefing wall present, the board is a
+ * per-frame layered scene: HD room backdrop -> menu text -> row highlight -> pointer
+ * arm, drawn in that order every present. The menu text can no longer bake into the
+ * page (the opaque HD room would cover it), so every string/line issued while the
+ * board is built is recorded here and re-issued INSIDE the vector frame, where
+ * drawStringCore submits each glyph as a native-resolution point on top of the room.
+ * The screen is thus a pure function of (recorded board + armPosition + highlight),
+ * so the repaint hook reproduces it on expose/focus with no save-under.
+ *
+ * Without the HD wall (software backend, or no asset present) the recorder is inert
+ * and the legacy page path runs unchanged — byte-identical to upstream. */
+typedef struct {
+    char text[72];
+    int16 x, y, color, font;
+} BriefStr;
+typedef struct {
+    int16 x1, y1, x2, y2, color;
+} BriefLine;
+#define BRIEF_MAX_STR 64
+#define BRIEF_MAX_LINE 8
+static BriefStr g_briefStr[BRIEF_MAX_STR];
+static BriefLine g_briefLine[BRIEF_MAX_LINE];
+static int g_briefStrN, g_briefLineN;
+static int g_briefRecording; /* the board is being recorded for HD replay */
+
+/* Registered as g_textRecorder while a briefing screen is up (HD path only). */
+static void briefRecordString(const char *s, int x, int y, int color, int font) {
+    BriefStr *c;
+    if (!g_briefRecording || g_briefStrN >= BRIEF_MAX_STR || !s) return;
+    c = &g_briefStr[g_briefStrN++];
+    SDL_strlcpy(c->text, s, sizeof(c->text));
+    c->x = (int16)x;
+    c->y = (int16)y;
+    c->color = (int16)color;
+    c->font = (int16)font;
+}
+
+void briefingSceneEnd(void) {
+    g_briefRecording = 0;
+    g_textRecorder = NULL;
+    gfx_setRepaintHook(NULL);
+}
+
+static void briefingSceneBegin(void) {
+    g_briefStrN = 0;
+    g_briefLineN = 0;
+    /* Record + layer only when the HD room is available; otherwise the legacy page
+     * path handles everything and recording would be dead work. */
+    g_briefRecording = hdsprite_hasBriefingWall();
+    g_textRecorder = g_briefRecording ? briefRecordString : NULL;
+    gfx_setRepaintHook(briefingRepaint);
+}
+
+/* Rebuild and present the whole HD briefing board: room backdrop, then the recorded
+ * menu text (native-res points on top of the room, the selected row's description
+ * recoloured to the highlight), then the pointer arm for the current position. */
+static void briefingScenePresent(void) {
+    int i, hlRow;
+    hlRow = (enableHighlight != 0 && armPosition >= 0 && armPosition < 5) ? armPosition : -1;
+    r2d_vectorBeginFrame(R2D_COMPOSE_SELF);
+    hdsprite_drawBriefingWall();
+    for (i = 0; i < g_briefLineN; i++)
+        r2d_submitLine(g_briefLine[i].x1, g_briefLine[i].y1,
+                       g_briefLine[i].x2, g_briefLine[i].y2, g_briefLine[i].color);
+    for (i = 0; i < g_briefStrN; i++) {
+        int color = g_briefStr[i].color;
+        /* Highlight = the selected row's description (drawn NORMAL in the
+         * [row*21+34 .. +42] band) recoloured, matching the legacy gfx_switchColor. */
+        if (hlRow >= 0 && color == COLOR_BRIEF_DESC_NORMAL &&
+            g_briefStr[i].y >= hlRow * 21 + 34 && g_briefStr[i].y <= hlRow * 21 + 42)
+            color = COLOR_BRIEF_DESC_HL;
+        page1NumPtr[2] = (int16)color;
+        page1NumPtr[6] = g_briefStr[i].font;
+        /* Call the glyph engine directly (not drawStringAt) so the replay does not
+         * feed the recorder; a vector frame is active, so it submits native points. */
+        page1NumPtr[4] = g_briefStr[i].x;
+        page1NumPtr[5] = g_briefStr[i].y;
+        gfx_drawString(page1NumPtr, g_briefStr[i].text);
+    }
+    if (armPosition >= 0 && armPosition <= 6)
+        hdsprite_drawBriefingArm(armPosition);
+    gfx_commitPage();
+}
 
 void clearKeybuf() {
     while (misc_checkKeyBuf() == 0) {
@@ -65,6 +156,14 @@ void waitMdaCgaStatus(int16 iter) {
 
 void drawLine(const int16 *pageNum, int x1, int y1, int x2, int y2, int color) {
     (void)pageNum; /* single back buffer now */
+    if (g_briefRecording && g_briefLineN < BRIEF_MAX_LINE) {
+        BriefLine *l = &g_briefLine[g_briefLineN++];
+        l->x1 = (int16)x1;
+        l->y1 = (int16)y1;
+        l->x2 = (int16)x2;
+        l->y2 = (int16)y2;
+        l->color = (int16)color;
+    }
     gfx_setColor(color);
     lineX1 = x1;
     lineY1 = y1;
@@ -91,6 +190,7 @@ void missionSelect() {
     gfx_setDac(1);
     gfx_setFadeSteps(0);
     openShowPic("Wall.Pic", *page1NumPtr);
+    briefingSceneBegin(); /* start recording the board so it can be layered over the HD room */
     clearBriefing();
     nearmemset(scenarioFoundArr, 0, 5);
     gameData->difficulty = missionMenuSelect(missDiffLevels, missDiffDesc, "DIFFICULTY", gameData->difficulty);
@@ -136,6 +236,8 @@ selectTheater:
             } while ((missionPick = missionMenuSelect(missHistorical2Names, missHistorical2Desc, missionStr, 4) + 4) == 8);
         }
     }
+    /* The board (and its recorder + repaint hook) stays live through the mission
+     * printout and disk prompt; start_main ends the scene once START is done. */
 }
 
 int missionMenuSelect(const char **names, const char **desc, const char *title, int selection) {
@@ -189,11 +291,41 @@ int missionMenuSelect(const char **names, const char **desc, const char *title, 
     return selection;
 }
 
+/* Reproduce the briefing's current frame on an expose/focus repaint (registered as
+ * the gfx repaint hook while a mission-select screen is up). On the HD path the whole
+ * board is a per-frame scene, so just rebuild it. On the legacy page path animateArm
+ * leaves the page holding the clean board (the arm is a transient draw), so redraw
+ * the current arm pose over it without advancing any state. */
+static void briefingRepaint(void) {
+    int b = armPosition, idx;
+    if (hdsprite_hasBriefingWall()) {
+        briefingScenePresent();
+        return;
+    }
+    if (b < 0 || b > 6) {
+        gfx_commitPage();
+        return;
+    }
+    idx = armSpriteIndex[b];
+    showSprite(*page1NumPtr, armBlitX[idx], armBlitY[idx], armSrcX[idx], armSrcY[idx], armBlitW[idx], armBlitH[idx]);
+    gfx_commitPage();
+    gfx_restoreFromImage(g_stBacking, *page1NumPtr, armBlitX[idx], armBlitY[idx], armBlitX[idx], armBlitY[idx], armBlitW[idx], armBlitH[idx]);
+}
+
 void animateArm(int a, int b) {
     int spriteIdx;
     while (timerCounter3 < 6) timerYield();
     timerCounter3 = 0;
     armPosition = b;
+    if (hdsprite_hasBriefingWall()) {
+        /* HD path: rebuild the whole board each present (room -> text -> highlight
+         * -> arm). No page save-under and no page highlight recolour — the scene is
+         * a pure function of the recorded board + armPosition + enableHighlight. */
+        (void)a;
+        briefingScenePresent();
+        return;
+    }
+    /* Legacy page path (software / no HD art) — byte-identical to upstream. */
     spriteIdx = armSpriteIndex[b];
     if (a == -1) {
         /* Snapshot the clean briefing into the save-under backing image. The
@@ -207,16 +339,14 @@ void animateArm(int a, int b) {
         }
         showSprite(*page1NumPtr, armBlitX[spriteIdx], armBlitY[spriteIdx], armSrcX[spriteIdx], armSrcY[spriteIdx], armBlitW[spriteIdx], armBlitH[spriteIdx]);
     }
-    {
-        gfx_commitPage();
-        spriteBlitX = armBlitX[spriteIdx];
-        spriteBlitY = armBlitY[spriteIdx];
-        spriteBlitW = armBlitW[spriteIdx];
-        spriteBlitH = armBlitH[spriteIdx];
-        gfx_restoreFromImage(g_stBacking, *page1NumPtr, spriteBlitX, spriteBlitY, spriteBlitX, spriteBlitY, spriteBlitW, spriteBlitH);
-        if (b < 5 && enableHighlight != 0) {
-            gfx_switchColor(page1NumPtr, 113, b * 21 + 34, 297, b * 21 + 42, COLOR_BRIEF_DESC_HL, COLOR_BRIEF_DESC_NORMAL);
-        }
+    gfx_commitPage();
+    spriteBlitX = armBlitX[spriteIdx];
+    spriteBlitY = armBlitY[spriteIdx];
+    spriteBlitW = armBlitW[spriteIdx];
+    spriteBlitH = armBlitH[spriteIdx];
+    gfx_restoreFromImage(g_stBacking, *page1NumPtr, spriteBlitX, spriteBlitY, spriteBlitX, spriteBlitY, spriteBlitW, spriteBlitH);
+    if (b < 5 && enableHighlight != 0) {
+        gfx_switchColor(page1NumPtr, 113, b * 21 + 34, 297, b * 21 + 42, COLOR_BRIEF_DESC_HL, COLOR_BRIEF_DESC_NORMAL);
     }
 }
 
@@ -396,5 +526,9 @@ int pollMenuInput() {
 
 void clearBriefing(void) {
     // clear briefing board
+    if (g_briefRecording) { /* wiping the board also empties the recorded scene */
+        g_briefStrN = 0;
+        g_briefLineN = 0;
+    }
     clearRect(page1NumPtr, 113, 13, 297, 126);
 }

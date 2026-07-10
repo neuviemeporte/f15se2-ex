@@ -12,6 +12,7 @@
 #include "enbrief.h"
 #include "eninput.h"
 #include "entext.h"
+#include "hdsprite.h"
 
 /* Private helpers for this translation unit. */
 int mapToScreenY(unsigned char mapCoord);
@@ -30,7 +31,6 @@ void plotMapPoint(int x, int y, int color, int unused);
 void timerWait(unsigned int ticks);
 void processDebriefInput(const int16 *cursorBounds, const MenuItem *menuItem);
 void drawMenuItem(const MenuItem *items, unsigned int index, int16 *gfxPage);
-static void debriefPresent(void);
 static void drawEventBlinkSprite(int recordIdx);
 
 /* Popup icon (index into popupSpriteX/Y) drawn by debriefPresent while
@@ -662,7 +662,7 @@ static void drawPathSprites(unsigned int maxRecord) {
  * whole stack replays as one ordered native-resolution overlay (crisp lines and
  * sprites) and on software it rasterizes into the page — the layering is the
  * submission order on both, with no retained page state to keep consistent. */
-static void debriefPresent(void) {
+void debriefPresent(void) {
     /* Menu labels, repainted in their current selection/blink/cycle colour
      * (glyphs only write foreground pixels, so this recolours the same pixels
      * the old in-place colour-replace touched). Baked into the page BEFORE the
@@ -678,8 +678,12 @@ static void debriefPresent(void) {
         debriefPage[2] = savedColor;
     }
     if (r2d_hasNativeOverlay())
-        r2d_vectorBeginFrame(1); /* pure-2D screen: lay the page backdrop down first */
-    gfx_blitSprite(spriteMapArea);
+        r2d_vectorBeginFrame(R2D_COMPOSE_PAGE); /* pure-2D screen: lay the page backdrop down first */
+
+    /* Try to use HD theatre map; fall back to legacy SPR if unavailable. */
+    if (!hdsprite_drawDebriefTheatreMap(gameData->theater))
+        gfx_blitSprite(spriteMapArea);
+
     if (pathExtent > 0) {
         drawFullPathLines((unsigned)pathExtent);
         drawPathSprites((unsigned)pathExtent);
