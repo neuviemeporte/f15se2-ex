@@ -954,6 +954,17 @@ def _shape_label(shape_names: object, shape_index: int) -> str:
     return f"shape_{shape_index:03d}"
 
 
+def _color_key(color: object) -> str:
+    if color is None:
+        return "none"
+    return f"0x{int(color) & 0xFF:02x}"
+
+
+def _bump_color_count(bucket: Dict[str, int], color: object, amount: int = 1) -> None:
+    key = _color_key(color)
+    bucket[key] = bucket.get(key, 0) + int(amount)
+
+
 def parse_3d3(data: bytes) -> Dict[str, Any]:
     if len(data) < 6:
         raise ValueError(".3D3 data too short")
@@ -1098,15 +1109,34 @@ def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
             "has_shared_vertex_pool": bool(shared_pool),
             "shared_vertex_pool": shared_pool_summary,
             "skipped_shapes": [],
+            "raw_color_usage": {"faces": {}, "lines": {}, "points": {}},
         },
     }
 
     for shape_index, shape_offset in enumerate(shape_offsets):
         if shape_offset >= model_data_size:
+            gltf["extras"]["skipped_shapes"].append(
+                {
+                    "shape_index": shape_index,
+                    "shape_name": _shape_label(shape_names, shape_index),
+                    "shape_offset": shape_offset,
+                    "shape_end": model_data_size,
+                    "render_mode": None,
+                    "shape_payload": {
+                        "render_error": "shape_offset_outside_model_data",
+                        "model_data_size": model_data_size,
+                    },
+                }
+            )
             continue
         shape_end = model_data_size
         color_materials: Dict[int, int] = {}
         fallback_face_material = 1
+        shape_color_usage: Dict[str, Dict[str, int]] = {
+            "faces": {},
+            "lines": {},
+            "points": {},
+        }
         if shape_index + 1 < len(shape_offsets):
             shape_end = min(model_data_size, shape_offsets[shape_index + 1])
             if shape_end < shape_offset:
@@ -1184,6 +1214,8 @@ def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
                         if tri_index < len(triangle_colors)
                         else None
                     )
+                    _bump_color_count(shape_color_usage["faces"], color)
+                    _bump_color_count(gltf["extras"]["raw_color_usage"]["faces"], color)
                     triangles_by_color.setdefault(color, []).extend(int(v) for v in tri)
 
                 for color, tri_indices in triangles_by_color.items():
@@ -1230,6 +1262,7 @@ def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
                     )
 
             lines_by_color: Dict[Optional[int], set[Tuple[int, int]]] = {}
+            points_by_color: Dict[Optional[int], set[int]] = {}
             for line in lines:
                 if len(line) == 2:
                     a, b = int(line[0]), int(line[1])
@@ -1239,8 +1272,56 @@ def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
                     color = line[2]
                     color = None if color is None else int(color)
                 if a == b:
+                    if 0 <= a < len(vertices):
+                        points_by_color.setdefault(color, set()).add(a)
+                        _bump_color_count(shape_color_usage["points"], color)
+                        _bump_color_count(gltf["extras"]["raw_color_usage"]["points"], color)
                     continue
                 lines_by_color.setdefault(color, set()).add(tuple(sorted((a, b))))
+                _bump_color_count(shape_color_usage["lines"], color)
+                _bump_color_count(gltf["extras"]["raw_color_usage"]["lines"], color)
+
+            for color, point_set in sorted(points_by_color.items(), key=lambda item: -1 if item[0] is None else item[0]):
+                uniq_points = sorted(point_set)
+                if not uniq_points:
+                    continue
+                point_bin, point_type = _pack_indices(uniq_points)
+                point_view = _emit_buffer_view(gltf, point_bin, 34963)
+                point_acc = _emit_accessor(
+                    gltf,
+                    point_view,
+                    component_type=point_type,
+                    type_name="SCALAR",
+                    count=len(uniq_points),
+                )
+                gltf["accessors"][point_acc]["min"] = [0]
+                gltf["accessors"][point_acc]["max"] = [max(0, len(vertices) - 1)]
+
+                if color is None:
+                    material_index = 0
+                else:
+                    r, g, b, a = _face_material_color(color)
+                    material_index = len(gltf["materials"])
+                    gltf["materials"].append(
+                        {
+                            "name": f"points_color_0x{color:02x}",
+                            "doubleSided": True,
+                            "pbrMetallicRoughness": {
+                                "baseColorFactor": [r, g, b, a],
+                                "metallicFactor": 0.0,
+                                "roughnessFactor": 1.0,
+                            },
+                        }
+                    )
+
+                primitives.append(
+                    {
+                        "attributes": {"POSITION": pos_acc},
+                        "indices": point_acc,
+                        "mode": 0,
+                        "material": material_index,
+                    }
+                )
 
             for color, line_set in sorted(lines_by_color.items(), key=lambda item: -1 if item[0] is None else item[0]):
                 uniq_lines = sorted(line_set)
@@ -1314,6 +1395,7 @@ def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
                 "shape_offset": shape_offset,
                 "shape_end": shape_end,
                 "shape_payload": shape_parse["metadata"],
+                "raw_color_usage": shape_color_usage,
             },
         }
         gltf["meshes"].append(mesh)
@@ -1336,6 +1418,11 @@ def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
 def export_3d3_to_glb(payload: Dict[str, Any]) -> bytes:
     """Export a ``3D3`` payload as a binary glTF (`.glb`) blob."""
     gltf = export_3d3_to_gltf(payload)
+    return export_3d3_gltf_to_glb(gltf)
+
+
+def export_3d3_gltf_to_glb(gltf: Dict[str, Any]) -> bytes:
+    """Pack a generated 3D3 glTF document as a binary glTF (`.glb`) blob."""
     buffer_uri = gltf["buffers"][0].get("uri", "")
     if not buffer_uri.startswith("data:application/octet-stream;base64,"):
         raise ValueError("expected embedded binary buffer URI in glTF payload")
