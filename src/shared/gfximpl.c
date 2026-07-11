@@ -36,17 +36,17 @@ void drawLineWrapper(void) {
 /* NOTE: The original clearRect uses the dirty rect system and operates on
  * curPageSeg. We use the page index from the page descriptor to look up
  * the correct segment directly, matching gfx_switchColor's approach. */
-void clearRect(int16 *pageNum, int x1, int y1, int x2, int y2) {
+void clearRect(int16 *pageNum, int16 x1, int16 y1, int16 x2, int16 y2) {
     uint8 color;
     uint16 pageSeg;
-    uint8 far *page;
-    int row, col;
+    uint8 FAR *page;
+    int16 row, col;
 
     color = (uint8)pageNum[3];
     gfx_setPageN(*pageNum);
     /* slot 0x10 (getCurPageSeg2) is the no-arg getter; slot 0x0f is a setter. */
     pageSeg = (uint16)gfx_getCurPageSeg();
-    page = (uint8 far *)MK_FP(pageSeg, 0);
+    page = (uint8 FAR *)MK_FP(pageSeg, 0);
     if (x2 > 319) x2 = 319;
     if (y2 > 199) y2 = 199;
     for (row = y1; row <= y2; row++) {

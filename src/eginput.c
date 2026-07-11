@@ -32,33 +32,33 @@
  * g_kbdDirKeyTable). Indexed by (scancode & 0x7f) - 0x29, range 0..0x28.
  * bit0 = Left, bit1 = Right, bit2 = Up, bit3 = Down (0x80 = centre key, no
  * direction). The non-zero entries are the numeric-keypad / arrow scancodes. */
-static unsigned char kbdDirKeyTable[41] = {
+static uint8 kbdDirKeyTable[41] = {
     1, 0, 4,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0, 0, /* 27 zero entries (idx 3..29) */
     5, 1, 9, 2, 4, 0x80, 8, 8, 6, 2, 0x0A};
 
 /* ISR-private state (egslots.asm globals in the ASM build). */
-static unsigned char kbdActiveScan = 0;   /* direction mask of the held key */
-static unsigned int kbdLastTick = 0;      /* BIOS tick at last press */
-static unsigned char kbdPrevScan = 0;     /* previous raw scancode (E0/E1 prefix) */
-static unsigned char kbdLastDirKey = 0;   /* last direction mask seen */
-static unsigned char kbdDelayCounter = 0; /* skip N bytes after an E0/E1 prefix */
+static uint8 kbdActiveScan = 0;   /* direction mask of the held key */
+static uint16 kbdLastTick = 0;    /* BIOS tick at last press */
+static uint8 kbdPrevScan = 0;     /* previous raw scancode (E0/E1 prefix) */
+static uint8 kbdLastDirKey = 0;   /* last direction mask seen */
+static uint8 kbdDelayCounter = 0; /* skip N bytes after an E0/E1 prefix */
 
-static void(interrupt far *oldInt9)(void);
+static void(interrupt FAR *oldInt9)(void);
 
-static void interrupt far kbdInt9Handler(void) {
-    unsigned char far *biosb = (unsigned char far *)MK_FP(0x40, 0);
-    unsigned int far *biosw = (unsigned int far *)MK_FP(0x40, 0);
-    unsigned char scan, key, mask, bl, bh;
-    unsigned int head;
+static void interrupt FAR kbdInt9Handler(void) {
+    uint8 FAR *biosb = (uint8 FAR *)MK_FP(0x40, 0);
+    uint16 FAR *biosw = (uint16 FAR *)MK_FP(0x40, 0);
+    uint8 scan, key, mask, bl, bh;
+    uint16 head;
 
     if (kbdDelayCounter != 0) {
         kbdDelayCounter--;
         goto flush;
     }
 
-    scan = (unsigned char)inp(0x60);
+    scan = (uint8)inp(0x60);
     if (kbdPrevScan == 0xE0) {
         /* extended-key prefix consumed last time; this is the real scancode */
         kbdPrevScan = scan;
@@ -82,7 +82,7 @@ static void interrupt far kbdInt9Handler(void) {
     {
         /* When NumLock xor Shift is active the numeric keypad types digits, so
          * ignore it as a direction stick (matches the asm's parity test). */
-        unsigned char t = 0;
+        uint8 t = 0;
         if (biosb[0x17] & 0x20) t ^= 1; /* NumLock */
         if (biosb[0x17] & 0x03) t ^= 1; /* Shift */
         if (t != 0) goto flush;
@@ -115,8 +115,8 @@ processKey:
         bh = 0x5A;
     }
     kbdLastDirKey = mask;
-    bl = (unsigned char)(0x80 - bh);
-    bh = (unsigned char)(bh + 0x80);
+    bl = (uint8)(0x80 - bh);
+    bh = (uint8)(bh + 0x80);
     if (mask & 1) g_joyRawY = bl; /* left  */
     if (mask & 2) g_joyRawY = bh; /* right */
     if (mask & 4) g_joyRawX = bl; /* up    */
@@ -127,7 +127,7 @@ flush:
     /* Drop consecutive duplicate keys queued in the BIOS buffer (typeahead). */
     head = biosw[0x1A / 2];
     if (head != biosw[0x1C / 2]) {
-        unsigned int firstKey = biosw[head / 2];
+        uint16 firstKey = biosw[head / 2];
         for (;;) {
             head += 2;
             if (head >= biosw[0x82 / 2]) head = biosw[0x80 / 2];
@@ -140,8 +140,8 @@ flush:
     _chain_intr(oldInt9);
 }
 
-int far setInt9Handler(void) {
-    unsigned char far *biosFlags = (unsigned char far *)MK_FP(0x40, 0x17);
+int16 FAR setInt9Handler(void) {
+    uint8 FAR *biosFlags = (uint8 FAR *)MK_FP(0x40, 0x17);
     *biosFlags &= 0xDF; /* force NumLock off */
     kbdActiveScan = 0;
     kbdLastTick = 0;
@@ -155,7 +155,7 @@ int far setInt9Handler(void) {
     return 0;
 }
 
-int far restoreInt9Handler(void) {
+int16 FAR restoreInt9Handler(void) {
     _dos_setvect(0x09, oldInt9);
     return 0;
 }

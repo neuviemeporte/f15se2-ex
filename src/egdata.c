@@ -8,6 +8,7 @@
  */
 #include "egtypes.h"
 #include "inttype.h"
+#include "pointers.h"
 #include "struct.h"
 #include "comm.h"
 #include <stdio.h>
@@ -28,7 +29,7 @@ const char *scenarioPlh[8] = {
     "lb.xxx", "pg.xxx", "vn.xxx", "me.xxx",
     "nc.xxx", "ce.xxx", "jp.xxx", "na.xxx"};
 
-int allocSize = 0;
+int16 allocSize = 0;
 int16 g_sphereColor = 0xC4;
 int16 g_viewCenterX = 160;
 int16 g_viewCenterY = 100;
@@ -497,7 +498,7 @@ uint16 g_frameRateAccum = 0;
    twice as fast; the tac map shows "ACCEL"). */
 int16 g_timeAccelMode = 1;
 int16 g_directorEventDeadline = -1;
-int g_directorMode = 0;
+int16 g_directorMode = 0;
 int16 g_resupplyCount = 1;
 int16 g_autoLandingActive = 0;
 int16 g_landingTimer = 0;
@@ -562,7 +563,7 @@ size_t size3d3 = 1;
  * words. sizes3dt: per-LOD vertex counts (5 entries, each <=0x20). matrix3dt:
  * 5 LODs x 32 vertex words. */
 uint16 buf3d3[100] = {0};
-unsigned int size3d3_2 = 0;
+uint16 size3d3_2 = 0;
 int16 sign3dt = 0x3131;
 uint16 sizes3dt[5] = {32, 32, 32, 32, 32};
 uint16 matrix3dt[5][32] = {{0}};
@@ -709,7 +710,7 @@ int16 g_posVisibleFlag = 0;
 /* g_modelStreamPtr: model-data read cursor (far pointer into the loaded 3D model data).
  * egseg1/egcode advance it through the model byte stream as they decode shapes;
  * eg3dmap.c/eg3dproj.c walk it the same way. */
-char far *g_modelStreamPtr = 0;
+char FAR *g_modelStreamPtr = 0;
 int16 g_objRelX = 0;
 int16 g_objRelY = 0;
 /* g_objTransform: head of a 4-word run that storeObjTransformByOpcode indexes by a model opcode
@@ -1848,7 +1849,7 @@ int16 g_ourHead = 0;
 int16 g_viewZ; /* altitude-Z */
 
 /* g_altitude: airspeed/velocity magnitude. */
-unsigned int g_altitude = 0;
+uint16 g_altitude = 0;
 int16 g_rotationCounter = 0;
 char g_rollWasNonzero = 0;
 /* g_orientationDirty: orientation-dirty flag. Set when heading/pitch/roll change so the
@@ -1993,7 +1994,7 @@ uint8 picBuf[0x200] = {0};
 
 /* g_eventLogCount, g_objLocalX..672: standalone int16 flags. */
 int16 g_eventLogCount = 0;
-uint8 far *farPointer = 0;
+uint8 FAR *farPointer = 0;
 int16 g_objLocalX = 0;
 int16 g_objLocalY = 0;
 int16 g_objLocalZ = 0;
@@ -2031,7 +2032,7 @@ int16 g_rngSeed = 0;
 /* g_unusedFrameVal: frame-init scalar seeded in initFrameRandom from the target-slot
    counts ((p & 0xF) << 8); written but never read (dead). */
 int16 g_unusedFrameVal;
-int g_scopeArcColor;
+int16 g_scopeArcColor;
 /* strBuf: scratch buffer for building status/event message strings (assembled
    with strcpy/strcat/itoa, then drawn or queued). 24 labelled bytes plus the
    slack run up to g_sphereTiltZ give it 78 bytes of capacity. */
@@ -2047,10 +2048,10 @@ int16 g_extViewPitch;
 /* g_geeStringBuf: g-meter readout string ("<g>.<tenths>G") built by drawGMeter and
    drawn by the HUD string-blit (egseg2). */
 char g_geeStringBuf[12];
-int g_detailLevel;
+int16 g_detailLevel;
 int16 g_autoCrashDive;
 int16 g_missionTick;
-uint8 far *g_floppyMotorPtr;
+uint8 FAR *g_floppyMotorPtr;
 FILE *fileHandle;
 int16 g_gunFiredFlag;
 int16 g_damageTakenFlag;
@@ -2059,7 +2060,7 @@ int16 g_nearestThreatRange;
 
 /* gameData: far pointer to the shared Game struct, set at startup.
  * g_biosPixelX/g_biosPixelY: tacmap screenX/screenY scratch. */
-struct Game far *gameData = 0;
+struct Game FAR *gameData = 0;
 int16 g_finalThreatScore;
 int16 g_tileEntryCount;
 int16 g_targetEntityCount;
@@ -2071,7 +2072,7 @@ int16 g_attackRangeY;
 uint8 buf3_3dg[0x200];
 int16 g_targetInHudFlag;
 int16 g_lockedTargetKilled;
-int g_hitEffectTimer;
+int16 g_hitEffectTimer;
 uint8 buf2_3dg[0x200];
 /* g_nearestTileObj: nearest-tile-object pointer; result of findNearestTileObject(),
    pointing at the nearestTile scratch record below. */
@@ -2087,7 +2088,7 @@ int16 g_stallSpeed;
  * [66] = 64 grid bytes + 2 pad. */
 uint8 g_topLodGrid[66];
 int16 g_lastMissileSlot;
-int g_velocity;
+int16 g_velocity;
 int16 g_enemyThreatCount;
 int16 g_camRotMatrix[9];
 struct ViewSnapshot g_viewSnapshotRing[16];
@@ -2186,7 +2187,7 @@ uint8 g_shapeTargetCategory[UNIT_STATE_COUNT];
 int16 g_flightPathMarkerY;
 int16 g_aamLockActive;
 int16 g_unusedSavedWord;
-int g_rollInput;
+int16 g_rollInput;
 int16 flagFarToNear;
 int16 keyScancode;
 int16 g_unusedEventHist2;
@@ -2237,17 +2238,17 @@ int16 *g_overlayCenterY;
 int16 g_aamSeekerX;
 
 /* commData: far pointer to the shared inter-process game-state record. */
-struct GameComm far *commData = 0;
+struct GameComm FAR *commData = 0;
 int16 g_threatRadarFlag;
 int16 g_aamSeekerY;
-int g_jiffiesPerFrame;
+int16 g_jiffiesPerFrame;
 uint8 g_missionEndedFlag[2];
 
 /* g_proj3d: projectObjects() world-space projection origin (three longs). */
 struct Proj3d g_proj3d;
 int16 g_viewHeadingOffset;
 int16 gfxBufPtr;
-int g_gees;
+int16 g_gees;
 int16 g_climbRate;
 /* size3d3_7: vertex count for the secondary (g_modelOffsetTable) loader buffer. */
 size_t size3d3_7;

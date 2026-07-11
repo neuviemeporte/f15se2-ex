@@ -21,11 +21,11 @@
 #include <string.h>
 
 /* Private helpers for this translation unit. */
-void __cdecl drawCockpit();
+void drawCockpit();
 void runGameSession();
 void doNothing3();
 void doNothing4();
-void __cdecl gfxInit();
+void gfxInit();
 
 // ==== seg000:0x10 ====
 int main(void) {
@@ -51,7 +51,7 @@ int main(void) {
     FP_OFF(gameData) = COMM_GAMEDATA_OFFSET;
     Log(("main: commData=%04x:%04x gameData=%04x:%04x", FP_SEG(commData), FP_OFF(commData), FP_SEG(gameData), FP_OFF(gameData)));
     LogInfo(("SIG@startup: commData-4/-2 (=MCB magic now) = %04x/%04x",
-             *(int far *)((char far *)commData - 4), *(int far *)((char far *)commData - 2)));
+             *(int16 FAR *)((char FAR *)commData - 4), *(int16 FAR *)((char FAR *)commData - 2)));
     setupOverlaySlots(commData->gfxOvlAddr);
     setupOverlaySlots(commData->miscOvlAddr);
     setupOverlaySlots(commData->sndOvlAddr);
@@ -150,7 +150,7 @@ void doNothing4() {
 
 // ==== seg000:0x29a ====
 void gfxInit() {
-    int var_2;
+    int16 var_2;
     gfx_allocPage(0);
     var_2 = gfx_allocPage(1);
     gfx_storeBufPtr(var_2, 1);

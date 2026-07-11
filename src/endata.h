@@ -2,59 +2,60 @@
 #define F15_SE2_ENDATA
 /* Public data globals defined in endata.c (debrief state, strings, sprites). */
 #include "inttype.h"
+#include "pointers.h"
 #include "struct.h"
 #include "comm.h"
 #include "endtypes.h"
 #include <dos.h>
 #include <stdio.h>
 
-extern unsigned char timerCounter;
+extern uint8 timerCounter;
 extern int16 lineX1;
 extern int16 lineY1;
 extern int16 lineX2;
 extern int16 lineY2;
 extern int16 clipMaxX;
 extern int16 clipMaxY;
-extern int lastDrawX;
-extern int prevDrawX;
-extern int lastDrawY;
-extern int prevDrawY;
+extern int16 lastDrawX;
+extern int16 prevDrawX;
+extern int16 lastDrawY;
+extern int16 prevDrawY;
 extern char popupVisible;
 extern int32 missionScore;
-extern int popupX;
-extern int popupY;
+extern int16 popupX;
+extern int16 popupY;
 extern char scoreString[];
 extern TargetBlock targetBlock;
 extern int16 randSeed;
 extern int16 randState;
-extern const int mapViewX1;
-extern const int mapViewY1;
-extern const int mapViewX2;
-extern const int mapViewY2;
+extern const int16 mapViewX1;
+extern const int16 mapViewY1;
+extern const int16 mapViewX2;
+extern const int16 mapViewY2;
 extern uint16 cursorX;
 extern uint16 cursorY;
-extern struct GameComm far *commData;
+extern struct GameComm FAR *commData;
 extern uint8 quitFlag;
-extern unsigned int *colorTablePtr;
+extern uint16 *colorTablePtr;
 extern char inputChanged;
-extern int colorAnimIdx;
-extern int colorAnimEnabled;
+extern int16 colorAnimIdx;
+extern int16 colorAnimEnabled;
 extern char joyRepeatFlag;
 extern char spriteToggle;
 extern char animDone;
 extern uint8 timerCounter2;
 extern uint8 timerCounter3;
 extern char enterPressed;
-extern int colorStyleTable[];
+extern int16 colorStyleTable[];
 extern struct SpriteParams *spriteAirBlink;
 extern struct SpriteParams *spriteSamBlink;
 extern struct SpriteParams *spriteGroundBlink;
 extern struct SpriteParams *spriteWaypointBlink;
-extern int curRecordIdx;
+extern int16 curRecordIdx;
 extern char slotInfoTable[]; /* slot info table, 16 bytes per slot */
 extern char ejectedFlag;
-extern const int popupSpriteY[];
-extern const int popupSpriteX[];
+extern const int16 popupSpriteY[];
+extern const int16 popupSpriteX[];
 extern struct SpriteParams *spriteAir;
 extern struct SpriteParams *spriteSam;
 extern struct SpriteParams *spriteGround;
@@ -79,7 +80,7 @@ extern int16 *cursorBoundsPtr;
 extern const char *theaterSprFiles[];
 extern const char *debriefMenuStrings[];
 extern MenuItem debriefMenuItems[];
-extern int worldDataReady;
+extern int16 worldDataReady;
 extern char *worldStrings[];
 extern char worldStringBuf[];
 extern FILE *worldBufHandle;
@@ -93,8 +94,8 @@ extern int16 worldGridSize;
 extern uint8 worldMiscHeader[];
 extern struct WeaponDataBlock weaponDataBlock;
 extern uint16 worldObjectCount;
-extern int worldSamCount;
-extern int totalFlightRecords;
+extern int16 worldSamCount;
+extern int16 totalFlightRecords;
 
 /* The flight recording read back from the COMM block is one contiguous 0x600
  * block. The DOS build viewed it as a 2-byte time head plus a FlightRecord
@@ -112,31 +113,31 @@ extern struct PageDesc awardPageDesc;
 extern int16 *awardPage;
 extern char textBuf[];
 extern const char *rankNames[];
-extern const long promoThresholds[];
+extern const int32 promoThresholds[];
 extern const char *medalNames[];
-extern const long medalThresholds[];
-extern int secondaryHit;
-extern int primaryHit;
-extern int airMissed;
-extern int airKilled;
-extern int groundMissed;
-extern int samMissed;
-extern int groundKilled;
-extern int samKilled;
+extern const int32 medalThresholds[];
+extern int16 secondaryHit;
+extern int16 primaryHit;
+extern int16 airMissed;
+extern int16 airKilled;
+extern int16 groundMissed;
+extern int16 samMissed;
+extern int16 groundKilled;
+extern int16 samKilled;
 extern char unitTypeTable[];
 extern char gridFlags[];
-extern struct Game far *gameData;
+extern struct Game FAR *gameData;
 extern char hercFlag;
 extern uint8 joyAxisY;
 extern uint8 joyAxisX;
-extern int hasVgaMode;
+extern int16 hasVgaMode;
 extern int16 gfxBufSeg;
-extern int vgaBufSeg;
-extern int vgaBufSeg2;
-extern int vgaBufOffset;
-extern int spriteBufSeg;
-extern int missionResult;
-extern int selectedMenuItem;
+extern int16 vgaBufSeg;
+extern int16 vgaBufSeg2;
+extern int16 vgaBufOffset;
+extern int16 spriteBufSeg;
+extern int16 missionResult;
+extern int16 selectedMenuItem;
 extern int16 worldBufOffset;
 extern int16 worldBufSegment;
 
@@ -145,9 +146,9 @@ extern int16 worldBufSegment;
  *   samWeaponTable +0x3B6  Sam[]          — SAM/missile entries
  *   nightMission   +0x6DA  int16          — night-mission flag
  */
-#define planeArray ((struct SamDataEntry *)((unsigned char *)&weaponDataBlock + 0x156))
-#define samWeaponTable ((struct Sam *)((unsigned char *)&weaponDataBlock + 0x3B6))
-#define nightMission (*(int16 *)((unsigned char *)&weaponDataBlock + 0x6DA))
+#define planeArray ((struct SamDataEntry *)((uint8 *)&weaponDataBlock + 0x156))
+#define samWeaponTable ((struct Sam *)((uint8 *)&weaponDataBlock + 0x3B6))
+#define nightMission (*(int16 *)((uint8 *)&weaponDataBlock + 0x6DA))
 
 /* Award screen page descriptor views (awardPageDesc defined in endata.c) */
 #define awardFont (awardPageDesc.font)

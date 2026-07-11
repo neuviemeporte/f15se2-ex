@@ -29,9 +29,9 @@ void stepFlightModel();
 void applyRotationDelta(const int16 *matA, const int16 *matB);
 void computeAttitudeAngles(void);
 void rebuildOrientation();
-unsigned signedRatio16(int, int);
-int valueToAngle(int value);
-int complementAngle(int value);
+uint16 signedRatio16(int16, int16);
+int16 valueToAngle(int16 value);
+int16 complementAngle(int16 value);
 void renderFrame();
 void drawVectorShape(const int16 *shapeData);
 void waitForKeyPress(void);
@@ -78,7 +78,7 @@ void stepFlightModel(void) {
         }
 
         if (g_planeTable.planes[g_targetSlots[0].viewIndex].flags & 0x200) {
-            *((unsigned char *)&g_ourHead + 1) += 4;
+            *((uint8 *)&g_ourHead + 1) += 4;
         }
 
         rebuildOrientation();
@@ -101,7 +101,7 @@ void stepFlightModel(void) {
     }
 
     // Main key dispatch logic
-    switch ((unsigned)keyScancode) {
+    switch ((uint16)keyScancode) {
     case 0x0C2D: // Minus
         g_setThrust = clampRange(g_setThrust - 10, 0, 100);
         UpdateThrottleState();
@@ -109,17 +109,17 @@ void stepFlightModel(void) {
     case 0x0D3D: // Equal
         g_setThrust = clampRange(g_setThrust + ((g_setThrust < 10) ? 5 : 10), 0, 100);
         UpdateThrottleState();
-        *((unsigned char *)&g_playerPlaneFlags) &= 0xF7; // ~8
+        *((uint8 *)&g_playerPlaneFlags) &= 0xF7; // ~8
         goto switch_break;
     case 0x1E61: // A
         g_setThrust = 0x90;
         UpdateThrottleState();
-        *((unsigned char *)&g_playerPlaneFlags) &= 0xF7; // ~8
+        *((uint8 *)&g_playerPlaneFlags) &= 0xF7; // ~8
         goto switch_break;
     case 0x0D2B: // Shift-Equal
         g_setThrust = 100;
         UpdateThrottleState();
-        *((unsigned char *)&g_playerPlaneFlags) &= 0xF7; // ~8
+        *((uint8 *)&g_playerPlaneFlags) &= 0xF7; // ~8
         goto post_key_B_check;
     case 0x0C5F: // Shift-Minus
         g_setThrust = 0;
@@ -127,9 +127,9 @@ void stepFlightModel(void) {
         UpdateThrottleState();
         goto switch_break;
     case 0x3062: // B
-        *((unsigned char *)&g_playerPlaneFlags) ^= 8;
+        *((uint8 *)&g_playerPlaneFlags) ^= 8;
     post_key_B_check:
-        if (!(*((unsigned char *)&g_playerPlaneFlags) & 8) && g_groundAltitude != 0 && g_setThrust == 100) {
+        if (!(*((uint8 *)&g_playerPlaneFlags) & 8) && g_groundAltitude != 0 && g_setThrust == 100) {
             g_velocity = 1350;
             makeSound(28, 2);
         }
@@ -181,9 +181,9 @@ switch_break:
         } else {
 
             // temp_si = g_kbdSensitivity + 1;
-            joyAxes[0] = (unsigned char)(((int)((unsigned char)g_joyRawX - 0x80) * (g_kbdSensitivity + 1)) / 3) - 0x80;
+            joyAxes[0] = (uint8)(((int16)((uint8)g_joyRawX - 0x80) * (g_kbdSensitivity + 1)) / 3) - 0x80;
 
-            joyAxes[1] = (unsigned char)(((int)((unsigned char)g_joyRawY - 0x80) * (g_kbdSensitivity + 1)) / 3) - 0x80;
+            joyAxes[1] = (uint8)(((int16)((uint8)g_joyRawY - 0x80) * (g_kbdSensitivity + 1)) / 3) - 0x80;
         }
     }
 
@@ -203,15 +203,15 @@ switch_break:
         g_pitchInput = 0;
     }
 
-    if (g_knots > 350 && !(*((unsigned char *)&g_playerPlaneFlags) & 1) && g_gearDownArmed != 0) {
+    if (g_knots > 350 && !(*((uint8 *)&g_playerPlaneFlags) & 1) && g_gearDownArmed != 0) {
         g_gearDownArmed = 0;
-        *((unsigned char *)&g_playerPlaneFlags) |= 1;
+        *((uint8 *)&g_playerPlaneFlags) |= 1;
         tempStrcpy("Landing gear raised");
         makeSound(32, 2);
     }
 
-    if (g_groundAltitude == g_viewZ && g_setThrust == 0 && !(*((unsigned char *)&g_playerPlaneFlags) & 8)) {
-        *((unsigned char *)&g_playerPlaneFlags) |= 8;
+    if (g_groundAltitude == g_viewZ && g_setThrust == 0 && !(*((uint8 *)&g_playerPlaneFlags) & 8)) {
+        *((uint8 *)&g_playerPlaneFlags) |= 8;
         tempStrcpy("Brakes on");
     }
 
@@ -268,7 +268,7 @@ switch_break:
 
             dy += clampRange((abs(dx) * 4) + (headingErr / 16), 0, 0xC00) * nsSign;
 
-            *((unsigned char *)&g_playerPlaneFlags) &= 0xF7;
+            *((uint8 *)&g_playerPlaneFlags) &= 0xF7;
 
             if (headingErr > 0x4000) {
                 dx = g_planeTable.planes[tgtIdx].mapX;
@@ -276,7 +276,7 @@ switch_break:
             } else {
                 dx = g_planeTable.planes[tgtIdx].mapX + (nsSign * dx * 2);
                 if (g_setThrust * 80 < g_knots) {
-                    *((unsigned char *)&g_playerPlaneFlags) |= 8;
+                    *((uint8 *)&g_playerPlaneFlags) |= 8;
                 }
             }
 
@@ -299,7 +299,7 @@ switch_break:
             g_pitchInput = clampRange(tmpVal - (g_ourPitch >> 7), -16, 16);
 
             if (g_knots < 350) {
-                *((unsigned char *)&g_playerPlaneFlags) &= 0xFE;
+                *((uint8 *)&g_playerPlaneFlags) &= 0xFE;
             }
 
             if (g_groundAltitude == g_viewZ) {
@@ -426,7 +426,7 @@ switch_break:
     strcat(g_geeStringBuf, itoa((abs(g_gees) & 0xF) >> 1, strBuf, 10));
     strcat(g_geeStringBuf, "G");
 
-    speedCalc = ((long)(g_thrust - sinMul(g_ourPitch, 80)) * 800L) / 100L;
+    speedCalc = ((int32)(g_thrust - sinMul(g_ourPitch, 80)) * 800L) / 100L;
 
     g_cornerSpeed = 100;
     speedCalc = ((((uint16)g_viewZ >> 7) + 0x0400) * (int32)(speedCalc & speedCalc)) >> 10; // speedCalc & speedCalc folds to a plain load but ranks the operand "heavy", so the shift-expr is evaluated/pushed first like the ref
@@ -440,7 +440,7 @@ switch_break:
     g_cornerSpeed = ((int32)isqrt(g_gees * 4) * (int32)g_cornerSpeed) >> 3;
     g_cornerSpeed = abs(g_cornerSpeed);
 
-    if (!(*((unsigned char *)&g_playerPlaneFlags) & 1)) {
+    if (!(*((uint8 *)&g_playerPlaneFlags) & 1)) {
         speedCalc -= speedCalc >> 3;
     }
 
@@ -454,7 +454,7 @@ switch_break:
 
     g_rollPitchTrim = cosMul(g_ourRoll, g_liftForce - 0x300);
 
-    if (*((unsigned char *)&g_playerPlaneFlags) & 8) {
+    if (*((uint8 *)&g_playerPlaneFlags) & 8) {
         if (g_groundAltitude == g_viewZ) {
             g_velocity -= (-((gameData->unk4 * 8) - 32) * 27) / g_frameRateScaling;
             if (g_groundAltitude != 0 && (uint16)g_velocity < 0x1B0) {
@@ -615,8 +615,7 @@ switch_break:
 }
 
 void applyRotationDelta(const int16 *matA, const int16 *matB) {
-    int p;
-    int a;
+    int16 p, a;
 
     g_rotationCounter++;
     if (!(*(char *)&g_rotationCounter & 7)) {
@@ -627,15 +626,15 @@ void applyRotationDelta(const int16 *matA, const int16 *matB) {
 }
 
 void computeAttitudeAngles(void) {
-    int cosPitch;
+    int16 cosPitch;
 
     g_ourPitch = valueToAngle(-g_orientMatrix[5]);
     cosPitch = cosine(g_ourPitch);
     if (cosPitch != 0) {
         if (abs(g_orientMatrix[2]) < 0x5a81) {
-            g_ourHead = valueToAngle(abs((int)signedRatio16(g_orientMatrix[2], cosPitch)));
+            g_ourHead = valueToAngle(abs((int16)signedRatio16(g_orientMatrix[2], cosPitch)));
         } else {
-            g_ourHead = complementAngle(abs((int)signedRatio16(g_orientMatrix[8], cosPitch)));
+            g_ourHead = complementAngle(abs((int16)signedRatio16(g_orientMatrix[8], cosPitch)));
         }
         if (g_orientMatrix[2] <= 0 && g_orientMatrix[8] < 0) {
             (*((char *)&g_ourHead + 1)) += 0x80;
@@ -647,9 +646,9 @@ void computeAttitudeAngles(void) {
             g_ourHead = -g_ourHead;
         }
         if (abs(g_orientMatrix[3]) < 0x5a81) {
-            g_ourRoll = valueToAngle(abs((int)signedRatio16(g_orientMatrix[3], cosPitch)));
+            g_ourRoll = valueToAngle(abs((int16)signedRatio16(g_orientMatrix[3], cosPitch)));
         } else {
-            g_ourRoll = complementAngle(abs((int)signedRatio16(g_orientMatrix[4], cosPitch)));
+            g_ourRoll = complementAngle(abs((int16)signedRatio16(g_orientMatrix[4], cosPitch)));
         }
         if (g_orientMatrix[3] <= 0 && g_orientMatrix[4] < 0) {
             *((char *)&g_ourRoll + 1) += 0x80;
@@ -691,36 +690,34 @@ void rebuildOrientation() {
     g_rotationCounter = 0;
 }
 
-unsigned signedRatio16(int numerator, int denominator) { /* Original: IntDiv(A,B). Divide two signed 15-bit fractions. */
+uint16 signedRatio16(int16 numerator, int16 denominator) { /* Original: IntDiv(A,B). Divide two signed 15-bit fractions. */
     char numeratorSign = 1;
     char denominatorSign = 1;
-    long absNumerator;
-    long absDenominator;
+    int32 absNumerator;
+    int32 absDenominator;
 
     /* Divide two signed 15-bit fractions, then restore the combined sign. */
     if (numerator < 0) numeratorSign = -1;
     if (denominator < 0) denominatorSign = -1;
-    absNumerator = (long)(numerator < 0 ? -numerator : numerator);
-    absDenominator = (long)(denominator < 0 ? -denominator : denominator);
-    return (unsigned)((unsigned int)((((unsigned long)(unsigned int)absNumerator) << 16) / absDenominator >> 1)) * (unsigned)(int)numeratorSign * (unsigned)(int)denominatorSign;
+    absNumerator = (int32)(numerator < 0 ? -numerator : numerator);
+    absDenominator = (int32)(denominator < 0 ? -denominator : denominator);
+    return (uint16)((uint16)((((uint32)(uint16)absNumerator) << 16) / absDenominator >> 1)) * (uint16)(int16)numeratorSign * (uint16)(int16)denominatorSign;
 done:;
 }
 
-int valueToAngle(int value) { /* Original: Iasin(A). Return 16-bit word-degree arcsin by table interpolation. */
-    enum { ASIN_TABLE_SHIFT = 9,
-           WORD_DEGREE_STEP = 256 };
-    int angle;
-    int magnitude;
-    int tableIndex;
-    int tableSpan;
+#define ASIN_TABLE_SHIFT 9
+#define WORD_DEGREE_STEP 256
 
-    if (value == (int)0x8000) return (int)0xc000;
+int16 valueToAngle(int16 value) { /* Original: Iasin(A). Return 16-bit word-degree arcsin by table interpolation. */
+    int16 angle, magnitude, tableIndex, tableSpan;
+
+    if (value == (int16)0x8000) return (int16)0xc000;
     magnitude = abs(value);
     tableIndex = (magnitude >> ASIN_TABLE_SHIFT) + 1;
     for (; tableIndex >= 0; tableIndex--) {
         if (g_angleLut[tableIndex] <= magnitude) {
             tableSpan = g_angleLut[tableIndex + 1] - g_angleLut[tableIndex];
-            angle = (int)((long)(magnitude - g_angleLut[tableIndex]) * WORD_DEGREE_STEP / (long)tableSpan) + tableIndex * WORD_DEGREE_STEP;
+            angle = (int16)((int32)(magnitude - g_angleLut[tableIndex]) * WORD_DEGREE_STEP / (int32)tableSpan) + tableIndex * WORD_DEGREE_STEP;
             break;
         }
     }
@@ -730,14 +727,13 @@ int valueToAngle(int value) { /* Original: Iasin(A). Return 16-bit word-degree a
     return angle;
 }
 
-int complementAngle(int value) { /* Original: Iacos(A). Return 16-bit word-degree arccos as quarter-turn minus arcsin. */
+int16 complementAngle(int16 value) { /* Original: Iacos(A). Return 16-bit word-degree arccos as quarter-turn minus arcsin. */
     enum { WORD_DEGREES_QUARTER_TURN = 0x4000 };
     return WORD_DEGREES_QUARTER_TURN - valueToAngle(value);
 }
 
-int isqrt(int value) { /* Original: Sqrt(N). Return integer square root using Newton iteration. */
-    int quotient;
-    int guess;
+int16 isqrt(int16 value) { /* Original: Sqrt(N). Return integer square root using Newton iteration. */
+    int16 quotient, guess;
     /* Integer square root using Newton iteration seeded from value >> 2. */
     value = abs(value);
     if (value < 4) {
@@ -753,7 +749,7 @@ int isqrt(int value) { /* Original: Sqrt(N). Return integer square root using Ne
 
 // something to do with view switching?
 void renderFrame() {
-    int camDist, savedCamDist, range, camOffset, dx, dy, tmp;
+    int16 camDist, savedCamDist, range, camOffset, dx, dy, tmp;
     g_camEyeX = g_viewTargetX = g_ViewX;
     g_camEyeY = g_ViewY;
     g_viewTargetY = 0x100000 - g_ViewY;
@@ -1023,7 +1019,7 @@ void drawVectorShape(const int16 *shapeData) {
 }
 
 void waitForKeyPress(void) {
-    int savedTiming;
+    int16 savedTiming;
 
     audio_engineDroneOff();
     savedTiming = g_frameTimingAccum;

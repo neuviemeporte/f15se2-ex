@@ -21,22 +21,11 @@
 #include <string.h>
 
 /* Private helpers for this translation unit. */
-int far transformAndCullObjectFar(int, int, int);
+int16 FAR transformAndCullObjectFar(int16, int16, int16);
 
-void projectObjects(int heading, int rangeGate, long worldX, long worldY, long worldZ) {
-    int gridX;
-    int gridY;
-    int dirSector;
-    int fracX;
-    int subIdx;
-    int fracY;
-    int sampleIdx;
-    int tmp0;
-    int tileX;
-    int tileY;
-    int tmp1;
-    long scaled;
-    int cell;
+void projectObjects(int16 heading, int16 rangeGate, int32 worldX, int32 worldY, int32 worldZ) {
+    int16 gridX, gridY, dirSector, fracX, subIdx, fracY, sampleIdx, tmp0, tileX, tileY, tmp1, cell;
+    int32 scaled;
 
     g_proj3d.x = worldX;
     g_proj3d.y = worldY;
@@ -57,21 +46,21 @@ void projectObjects(int heading, int rangeGate, long worldX, long worldY, long w
             continue;
         }
         scaled = scaleCoordToLod(g_curLod, worldX);
-        tileX = (unsigned long)scaled >> 12;
-        fracX = (int)scaled & 0xfff;
+        tileX = (uint32)scaled >> 12;
+        fracX = (int16)scaled & 0xfff;
         scaled = scaleCoordToLod(g_curLod, worldY);
-        tileY = (unsigned long)scaled >> 12;
-        fracY = (int)scaled & 0xfff;
+        tileY = (uint32)scaled >> 12;
+        fracY = (int16)scaled & 0xfff;
         scaled = scaleCoordToLod(g_curLod, worldZ);
-        if ((unsigned long)scaled < 0x7FFFUL) {
-            g_objLocalZ = (int)(((unsigned long)scaled < 2UL) ? 2UL : (unsigned long)scaled);
+        if ((uint32)scaled < 0x7FFFUL) {
+            g_objLocalZ = (int16)(((uint32)scaled < 2UL) ? 2UL : (uint32)scaled);
             for (sampleIdx = 0;; sampleIdx++) {
                 if (g_curLod == 4 && g_detailLevel >= 2) {
                     if (sampleIdx == 15) {
                         break;
                     }
-                    gridX = *(const int16 *)((const char *)g_dirGridOffsets + sampleIdx * 2 + (unsigned)18 * (unsigned)dirSector);
-                    gridY = *(const int16 *)((const char *)g_dirGridOffsets + sampleIdx * 2 + (unsigned)18 * (unsigned)((dirSector + 2) & 7));
+                    gridX = *(const int16 *)((const char *)g_dirGridOffsets + sampleIdx * 2 + (uint16)18 * (uint16)dirSector);
+                    gridY = *(const int16 *)((const char *)g_dirGridOffsets + sampleIdx * 2 + (uint16)18 * (uint16)((dirSector + 2) & 7));
                     g_objLocalX = fracX - (gridX << 12) - 0x800;
                     g_objLocalY = fracY - (gridY << 12) - 0x800;
                     g_objRenderMode = 7;
@@ -85,12 +74,12 @@ void projectObjects(int heading, int rangeGate, long worldX, long worldY, long w
                     if (g_curLod != 4 && g_detailLevel < 2 && sampleIdx < 4) {
                         goto next_iter;
                     }
-                    if (rangeGate < (int)0xd555) {
+                    if (rangeGate < (int16)0xd555) {
                         gridX = g_neighborSampling.gridX[sampleIdx];
                         gridY = g_neighborSampling.gridY[sampleIdx];
                     } else {
-                        gridX = *(const int16 *)((const char *)g_dirGridOffsets + sampleIdx * 2 + (unsigned)18 * (unsigned)dirSector);
-                        gridY = *(const int16 *)((const char *)g_dirGridOffsets + sampleIdx * 2 + (unsigned)18 * (unsigned)((dirSector + 2) & 7));
+                        gridX = *(const int16 *)((const char *)g_dirGridOffsets + sampleIdx * 2 + (uint16)18 * (uint16)dirSector);
+                        gridY = *(const int16 *)((const char *)g_dirGridOffsets + sampleIdx * 2 + (uint16)18 * (uint16)((dirSector + 2) & 7));
                     }
                     g_objLocalX = fracX - (gridX << 12) - 0x800;
                     g_objLocalY = fracY - (gridY << 12) - 0x800;
@@ -101,12 +90,12 @@ void projectObjects(int heading, int rangeGate, long worldX, long worldY, long w
                     goto next_iter;
                 }
                 if (sampleIdx >= 4 || g_detailLevel >= 2) {
-                    g_objColorBase = (g_detailLevel == 2) ? 0 : ((unsigned char)g_curLod << 8);
+                    g_objColorBase = (g_detailLevel == 2) ? 0 : ((uint8)g_curLod << 8);
                     g_curTileEntry = matrix3dt_2[g_curLod][cell];
                     for (subIdx = 0; subIdx < matrix3dt[g_curLod][cell]; subIdx++) {
                         if (g_curTileEntry->shape & 0x80) {
                             g_modelStreamPtr = g_world3dData + lookupTileEntry(g_curLod, subIdx, tileX + gridX, tileY + gridY);
-                            if (g_modelStreamPtr == (char far *)g_world3dData) {
+                            if (g_modelStreamPtr == (char FAR *)g_world3dData) {
                                 g_modelStreamPtr = g_world3dData + buf3d3[g_curTileEntry->shape & 0x7f];
                             }
                         } else {
@@ -138,7 +127,7 @@ void projectObjects(int heading, int rangeGate, long worldX, long worldY, long w
 // Once implemented, try merging egame2.c + egame1e.c (if register spill doesn't affect codegen)
 
 // ==== seg000:0x26b4 ====
-uint32 scaleCoordToLod(int level, uint32 coord) {
+uint32 scaleCoordToLod(int16 level, uint32 coord) {
     switch (level) {
     case 4:
         return (coord + 0x20) >> 6;

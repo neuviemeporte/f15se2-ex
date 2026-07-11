@@ -10,8 +10,8 @@
 #include <dos.h>
 #include <conio.h>
 
-extern int FAR CDECL gfx_setPageN(uint16 pageNum);
-extern int FAR CDECL gfx_getCurPageSeg(void);
+extern int16 FAR CDECL gfx_setPageN(uint16 pageNum);
+extern int16 FAR CDECL gfx_getCurPageSeg(void);
 
 void picdbg(const char *msg) {
     (void)msg;
@@ -20,9 +20,9 @@ void picdbg(const char *msg) {
 /* Pic decode work data */
 extern uint8 picDecodedRowBuf[320];
 /* Large buffers allocated from DOS to save DGROUP space */
-static uint8 far *picWorkDataFar;
-static uint16 far *picDecodeDictionaryFar;
-static uint16 far *picDecodeIncrementFar;
+static uint8 FAR *picWorkDataFar;
+static uint16 FAR *picDecodeDictionaryFar;
+static uint16 FAR *picDecodeIncrementFar;
 static uint16 picBufSeg = 0;
 #define picWorkData picWorkDataFar
 #define picDecodeDictionary picDecodeDictionaryFar
@@ -31,7 +31,7 @@ uint16 dictionaryIndex = 0;
 
 /* File I/O state */
 static uint8 picFileReadBuf[512];
-static int picFileHandle;
+static int16 picFileHandle;
 static uint16 picBufPos;
 
 /* Bit reader state - matches ASM exactly */
@@ -60,9 +60,9 @@ static void picAllocBuffers(void) {
     intdos(&r, &r);
     if (r.x.cflag) return;
     picBufSeg = r.x.ax;
-    picWorkDataFar = (uint8 far *)MK_FP(picBufSeg, 0);
-    picDecodeDictionaryFar = (uint16 far *)MK_FP(picBufSeg, 4096);
-    picDecodeIncrementFar = (uint16 far *)MK_FP(picBufSeg, 4096 + 8192);
+    picWorkDataFar = (uint8 FAR *)MK_FP(picBufSeg, 0);
+    picDecodeDictionaryFar = (uint16 FAR *)MK_FP(picBufSeg, 4096);
+    picDecodeIncrementFar = (uint16 FAR *)MK_FP(picBufSeg, 4096 + 8192);
 }
 
 /* Dictionary - 2048 entries max */
@@ -73,7 +73,7 @@ static uint8 dictChar[2048];
 static uint8 lzwOutBuf[4096]; /* must cover the stackTop<4096 traversal guard */
 static uint16 lzwOutPos;
 static uint16 lzwOutLen;
-static int lzwFirstCode; /* flag: first code after init/reset */
+static int16 lzwFirstCode; /* flag: first code after init/reset */
 
 static void read512FromFile(void) {
     union REGS r;
@@ -257,11 +257,11 @@ static void decodeRow(uint8 *outBuf, uint16 count) {
  * via the Sequencer Map Mask (port 0x3C4 index 2). The original game does this
  * conversion inside EGRAPHIC.EXE's fillRow; the NO_ASM build has no overlay
  * driver, so we do it here. (Mode-13h pics use planar=0: a plain linear copy.) */
-static void picDecodeToSegment(int handle, uint16 pageSeg, uint16 rowCount,
-                               uint16 rowStride, int planar) {
+static void picDecodeToSegment(int16 handle, uint16 pageSeg, uint16 rowCount,
+                               uint16 rowStride, int16 planar) {
     uint16 row;
     uint16 i;
-    uint8 far *dst;
+    uint8 FAR *dst;
     static uint8 tempBuf[160];
 
     picAllocBuffers();
@@ -309,19 +309,19 @@ static void picDecodeToSegment(int handle, uint16 pageSeg, uint16 rowCount,
             decodeRow(picDecodedRowBuf, 320);
         }
 
-        dst = (uint8 far *)MK_FP(pageSeg, (uint16)(row * rowStride));
+        dst = (uint8 FAR *)MK_FP(pageSeg, (uint16)(row * rowStride));
         if (planar) {
             /* 320 8bpp pixels -> 40 packed bytes per plane (8 px/byte, MSB =
              * leftmost). Map Mask selects one plane per pass so the four writes
              * to the same 40 addresses land in separate bit-planes. */
-            int plane;
+            int16 plane;
             for (plane = 0; plane < 4; plane++) {
-                int byteIdx;
+                int16 byteIdx;
                 outp(0x3C4, 2);
                 outp(0x3C5, 1 << plane);
                 for (byteIdx = 0; byteIdx < 40; byteIdx++) {
                     uint8 packed = 0;
-                    int bit;
+                    int16 bit;
                     for (bit = 0; bit < 8; bit++)
                         packed = (uint8)((packed << 1) | ((picDecodedRowBuf[byteIdx * 8 + bit] >> plane) & 1));
                     dst[byteIdx] = packed;
@@ -339,7 +339,7 @@ static void picDecodeToSegment(int handle, uint16 pageSeg, uint16 rowCount,
     }
 }
 
-void showPicFile(int handle, int page) {
+void showPicFile(int16 handle, int16 page) {
     uint16 pageSeg;
 
     if (handle < 0) return;
@@ -352,13 +352,13 @@ void showPicFile(int handle, int page) {
     picDecodeToSegment(handle, pageSeg, 200, 320, 0);
 }
 
-void decodePic(int handle, int segment) {
+void decodePic(int16 handle, int16 segment) {
     /* See showPicFile: the full-page decode makes gfx_clearPage() redundant
      * (and unsafe to call from C). */
     picDecodeToSegment(handle, segment, 200, 320, 0);
 }
 
-void decodePicRaw(int handle, uint16 segment) {
+void decodePicRaw(int16 handle, uint16 segment) {
     /* Same as decodePic: decodes PIC row-by-row, fully overwriting the page. */
     picDecodeToSegment(handle, segment, 200, 320, 0);
 }
@@ -368,17 +368,17 @@ void decodePicRaw(int handle, uint16 segment) {
  * EGA-title layout: 0x2BC (700) rows at a 0x28 (40) byte stride, written to the
  * resolved page segment. (decodePic, by contrast, takes a real segment and the
  * mode-13h 200x320 layout.) */
-void picBlit(int handle, int pageIndex) {
+void picBlit(int16 handle, int16 pageIndex) {
     uint16 seg;
     uint16 i;
-    uint8 far *page;
+    uint8 FAR *page;
 
     if (handle < 0) return;
 
     gfx_setPageN((uint16)pageIndex);
     seg = (uint16)gfx_getCurPageSeg();
     /* mirror the _gfx_clearPage that _picBlit issues before decoding */
-    page = (uint8 far *)MK_FP(seg, 0);
-    for (i = 0; i < 32000u; i++) ((uint16 far *)page)[i] = 0;
+    page = (uint8 FAR *)MK_FP(seg, 0);
+    for (i = 0; i < 32000u; i++) ((uint16 FAR *)page)[i] = 0;
     picDecodeToSegment(handle, seg, 0x2BC, 0x28, 1);
 }

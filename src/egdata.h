@@ -25,14 +25,14 @@
  * the flat 64-bit layout, with no dependence on linker placement.
  */
 #ifdef BUGFIX
-extern char far g_world3dData[];
+extern char FAR g_world3dData[];
 #else
-extern unsigned char far g_world3dData[];
+extern uint8 FAR g_world3dData[];
 #endif
 #ifdef NO_ASM
 #define g_aircraftModels (g_world3dData + AIRCRAFT_MODELS_OFFSET)
 #else
-extern char far g_aircraftModels[];
+extern char FAR g_aircraftModels[];
 #endif
 
 extern struct SpriteParams gaugeSpriteParams;
@@ -44,7 +44,7 @@ extern int16 gfxModeUnset;
 extern int16 f15DgtlResult;
 extern char *regnStr;
 extern const char *scenarioPlh[];
-extern int allocSize;
+extern int16 allocSize;
 extern int16 g_sphereColor;
 extern int16 g_viewCenterX;
 extern int16 g_viewCenterY;
@@ -95,7 +95,7 @@ extern int16 g_landingDoneFlag;
 extern uint16 g_frameRateAccum;
 extern int16 g_timeAccelMode;
 extern int16 g_directorEventDeadline;
-extern int g_directorMode;
+extern int16 g_directorMode;
 extern int16 g_resupplyCount;
 extern int16 g_autoLandingActive;
 extern int16 g_landingTimer;
@@ -109,7 +109,7 @@ extern const int16 g_lodObjectCount[];
 extern const int16 g_lodGridDim[];
 extern size_t size3d3;
 extern uint16 buf3d3[];
-extern unsigned int size3d3_2;
+extern uint16 size3d3_2;
 extern int16 sign3dt;
 extern uint16 sizes3dt[];
 extern uint16 matrix3dt[5][32];
@@ -161,7 +161,7 @@ extern uint16 g_viewZ;
 #else
 extern int16 g_viewZ;
 #endif
-extern unsigned int g_altitude;
+extern uint16 g_altitude;
 extern char g_orientationDirty;
 extern int16 g_setThrust;
 extern int16 g_joyCalibTimer;
@@ -186,12 +186,12 @@ extern uint8 g_extraScaleShift;
 extern char a15flt_xxx[];
 extern int16 g_axisInputAccum[];
 extern const int16 voiceCueThresholds[];
-extern uint8 far *farPointer;
+extern uint8 FAR *farPointer;
 extern int16 flt15HeaderWord;
 extern uint8 flt15_buf1[];
 extern size_t flt15_size;
 extern int16 g_unusedFrameVal;
-extern int g_scopeArcColor;
+extern int16 g_scopeArcColor;
 extern char strBuf[];
 extern uint8 g_strTruncDot;
 extern uint8 g_strTruncTerm[];
@@ -201,17 +201,17 @@ extern int16 g_scopeCenterX;
 extern int16 g_scopeCenterY;
 extern int16 g_extViewPitch;
 extern char g_geeStringBuf[];
-extern int g_gees;
-extern int g_detailLevel;
+extern int16 g_gees;
+extern int16 g_detailLevel;
 extern int16 g_autoCrashDive;
 extern int16 g_missionTick;
-extern uint8 far *g_floppyMotorPtr;
+extern uint8 FAR *g_floppyMotorPtr;
 extern FILE *fileHandle;
 extern int16 g_gunFiredFlag;
 extern int16 g_damageTakenFlag;
 extern int16 g_threatRefHead;
 extern int16 g_nearestThreatRange;
-extern struct Game far *gameData;
+extern struct Game FAR *gameData;
 extern int16 g_finalThreatScore;
 extern int16 g_tileEntryCount;
 extern int16 g_targetEntityCount;
@@ -222,7 +222,7 @@ extern int16 g_attackRangeY;
 extern uint8 buf3_3dg[];
 extern int16 g_targetInHudFlag;
 extern int16 g_lockedTargetKilled;
-extern int g_hitEffectTimer;
+extern int16 g_hitEffectTimer;
 extern uint8 buf2_3dg[];
 extern struct TileObject *g_nearestTileObj;
 extern uint8 buf1_3dg[];
@@ -232,7 +232,7 @@ extern uint8 buf_3dt[]; // #define MAX_TILE_DATA
 extern int16 g_stallSpeed;
 extern uint8 g_topLodGrid[];
 extern int16 g_lastMissileSlot;
-extern int g_velocity;
+extern int16 g_velocity;
 extern int16 g_enemyThreatCount;
 extern int16 g_camRotMatrix[];
 extern struct ViewSnapshot g_viewSnapshotRing[];
@@ -305,7 +305,7 @@ extern uint8 g_shapeTargetCategory[UNIT_STATE_COUNT];
 extern int16 g_flightPathMarkerY;
 extern int16 g_aamLockActive;
 extern int16 g_unusedSavedWord;
-extern int g_rollInput;
+extern int16 g_rollInput;
 extern int16 flagFarToNear;
 extern int16 keyScancode;
 extern int16 g_unusedEventHist2;
@@ -350,10 +350,10 @@ extern int16 g_planeScanCount;
 extern uint8 g_highGeeFlag[];
 extern int16 *g_overlayCenterY;
 extern int16 g_aamSeekerX;
-extern struct GameComm far *commData;
+extern struct GameComm FAR *commData;
 extern int16 g_threatRadarFlag;
 extern int16 g_aamSeekerY;
-extern int g_jiffiesPerFrame;
+extern int16 g_jiffiesPerFrame;
 extern uint8 g_missionEndedFlag[];
 extern int16 g_viewHeadingOffset;
 extern int16 gfxBufPtr;
@@ -411,7 +411,7 @@ extern int16 g_lodDistBase;
 extern int16 g_lodDistScale;
 extern int16 g_lodDistNear;
 extern int16 g_lodDistFar;
-extern char far *g_modelStreamPtr;
+extern char FAR *g_modelStreamPtr;
 extern int16 g_objRelX;
 extern int16 g_objRelY;
 extern int16 g_objTransform[4];

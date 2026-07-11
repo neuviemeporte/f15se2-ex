@@ -1,4 +1,5 @@
 #include "inttype.h"
+#include "pointers.h"
 #include "struct.h"
 #include "comm.h"
 #include <stdio.h>
@@ -19,10 +20,10 @@ const char aTheater_0[] = "THEATER";
 /* === Group 3 (0x0830-0x0a98): Rank, roster, overlay strings === */
 
 /* Overlay loader variables */
-int ovlSeg1 = 0;
-int ovlParCnt = 0;
-int ovlParBlock = 0;
-int ovlSeg2 = 0;
+int16 ovlSeg1 = 0;
+int16 ovlParCnt = 0;
+int16 ovlParBlock = 0;
+int16 ovlSeg2 = 0;
 char ovlInsaneFlag = 0;
 
 /* Overlay error strings */
@@ -49,9 +50,9 @@ const char aWriteError[] = "Write error$";
 int16 enableHighlight = 1;
 
 /* Direction/level lookup tables */
-extern const int dirDeltaX[] = {-1, 1, 1, -1, 0, 1, 0, -1, 0};
-extern const int dirDeltaY[] = {1, 1, -1, -1, 1, 0, -1, 0, 0, -8192, -4096};
-extern const int gridLevelSize[] = {0, 0x1000, 0x2000, 0x400, 0x100, 0x40, 0x10, 4};
+extern const int16 dirDeltaX[] = {-1, 1, 1, -1, 0, 1, 0, -1, 0};
+extern const int16 dirDeltaY[] = {1, 1, -1, -1, 1, 0, -1, 0, 0, -8192, -4096};
+extern const int16 gridLevelSize[] = {0, 0x1000, 0x2000, 0x400, 0x100, 0x40, 0x10, 4};
 
 /* === Group 6 (0x1632-0x1763): Terrain/grid file strings === */
 int16 gridSignature = 0x3232;
@@ -85,7 +86,7 @@ uint8 timerCounter = 0;
 uint8 timerCounter2 = 0;
 uint8 timerCounter3 = 0;
 uint8 timerCounter4 = 0;
-uint8 far *moveDst = 0;
+uint8 FAR *moveDst = 0;
 
 /* Sprite blit params struct */
 struct SpriteParams spriteParams = {
@@ -253,11 +254,11 @@ int16 picRow = 0;
 int16 picReadFromFilePtr = 0;
 
 /* Sprite blit state */
-int armPosition = 0;
-int spriteBlitX = 0;
-int spriteBlitY = 0;
-int spriteBlitW = 0;
-int spriteBlitH = 0;
+int16 armPosition = 0;
+int16 spriteBlitX = 0;
+int16 spriteBlitY = 0;
+int16 spriteBlitW = 0;
+int16 spriteBlitH = 0;
 
 /* Pic decode scalar state */
 int16 picReadBufEndPtr = 0;
@@ -287,8 +288,8 @@ const char *worldFiles[] = {"Libya.wld", "gulf.wld", "vn.wld", "me.wld", "nc.wld
 /* Mission coordinate state */
 int16 missionMidX = 0;
 int16 missionMidY = 0;
-unsigned int missionTargetX = 0;
-unsigned int missionTargetY = 0;
+uint16 missionTargetX = 0;
+uint16 missionTargetY = 0;
 int16 missionTarget2X = 0;
 int16 missionTarget2Y = 0;
 int16 missionBase2X = 0;
@@ -434,7 +435,7 @@ extern const struct UnitTypeRemap unitTypeRemapTable[] = {
 };
 
 /* Difficulty level saved from game state */
-int difficultySaved = 1;
+int16 difficultySaved = 1;
 
 /* Mission table - 56 entries defining mission types per theater/tension */
 extern const struct MissionTableEntry missionTable[56] = {
@@ -529,15 +530,15 @@ extern const int16 targetCoordsCount[9] = {3, 2, 2, 3, 4, 1, 8, 3, 0};
 /* === BSS variables === */
 
 struct Pilot hallfameBuf[8];
-struct GameComm far *commData;
-struct Game far *gameData;
+struct GameComm FAR *commData;
+struct Game FAR *gameData;
 FILE *fileHandle;
-int far *needSplash;
-int far *gfxModeSetPtr;
+int16 FAR *needSplash;
+int16 FAR *gfxModeSetPtr;
 uint8 hercFlag;
-int selectedPilotIdx;
-int readItemSize;
-int flightUnitCount;
+int16 selectedPilotIdx;
+int16 readItemSize;
+int16 flightUnitCount;
 uint8 joyReady[4];
 uint8 intRegs[12];
 char todayMissStrBuf[0x1D];

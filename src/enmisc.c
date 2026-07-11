@@ -11,17 +11,16 @@
 #include "enworld.h"
 
 /* Private helpers for this translation unit. */
-void drawStringAtPos(int16 *s, const char far *str, int x, int y);
-void drawFarString(int16 *s, const char far *str);
-void farStrcpy(char *dst, const char far *src);
-void outportByte(int port, int value);
+void drawStringAtPos(int16 *s, const char FAR *str, int16 x, int16 y);
+void drawFarString(int16 *s, const char FAR *str);
+void farStrcpy(char *dst, const char FAR *src);
+void outportByte(int16 port, int16 value);
 void restoreVideoMode(void);
 void restoreInterrupts(void);
 void setupWorldBufPtr(void);
 
 void loadWorldStrings(void) {
-    int strIdx;
-    int pos;
+    int16 strIdx, pos;
     setupWorldBufPtr();
     worldDataReady = 1;
     readWorldData();
@@ -36,17 +35,17 @@ void loadWorldStrings(void) {
     }
 }
 
-void drawStringAtPos(int16 *s, const char far *str, int x, int y) {
+void drawStringAtPos(int16 *s, const char FAR *str, int16 x, int16 y) {
     s[4] = x;
     s[5] = y;
     drawFarString(s, str);
 }
 
-void farStrcpy(char *dst, const char far *src) {
+void farStrcpy(char *dst, const char FAR *src) {
     while ((*dst++ = *src++) != '\0');
 }
 
-void drawFarString(int16 *s, const char far *str) {
+void drawFarString(int16 *s, const char FAR *str) {
     char buf[200];
     farStrcpy(buf, str);
     gfx_drawString(s, buf);
@@ -58,7 +57,7 @@ void restoreVideoMode(void) {
 void restoreInterrupts(void) {
 }
 
-void outportByte(int port, int value) {
+void outportByte(int16 port, int16 value) {
     outp(port, value);
 }
 

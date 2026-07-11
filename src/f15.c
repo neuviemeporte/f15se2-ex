@@ -44,9 +44,9 @@ const char *GAME_FLIGHT = "EGAME.EXE";
 const char *GAME_DEBRIEFING = "END.EXE";
 const char *DEBUGGER = "Z:\\DEBUG.COM";
 const uint16 GFX_INIT_ARG = 2;
-const int RET_MENU = 0xc;
-const int RET_DEBRIEFING = 0x23;
-const int RET_NONZERO = -1;
+const int16 RET_MENU = 0xc;
+const int16 RET_DEBRIEFING = 0x23;
+const int16 RET_NONZERO = -1;
 enum { CMDLINE_LEN = 128 };
 char cmdlineBuf[CMDLINE_LEN] = "";
 const char FAR *CMDLINE = (const char FAR *)cmdlineBuf;
@@ -61,19 +61,19 @@ uint16 commSegment = 0;
  * change and aborts with "R6001 - null pointer assignment". Snapshot the guard
  * at startup and repair it after every child run so the check passes. */
 enum { NULLGUARD_SIZE = 66 };
-static unsigned char nullGuard[NULLGUARD_SIZE];
-static unsigned char FAR *nullGuardPtr(void) {
+static uint8 nullGuard[NULLGUARD_SIZE];
+static uint8 FAR *nullGuardPtr(void) {
     void FAR *fp = (void FAR *)&commSegment; /* any DGROUP global → DS:0 */
-    return (unsigned char FAR *)MK_FP(FP_SEG(fp), 0);
+    return (uint8 FAR *)MK_FP(FP_SEG(fp), 0);
 }
 static void nullGuardSave(void) {
-    unsigned char FAR *p = nullGuardPtr();
-    int i;
+    uint8 FAR *p = nullGuardPtr();
+    int16 i;
     for (i = 0; i < NULLGUARD_SIZE; ++i) nullGuard[i] = p[i];
 }
 static void nullGuardRestore(void) {
-    unsigned char FAR *p = nullGuardPtr();
-    int i;
+    uint8 FAR *p = nullGuardPtr();
+    int16 i;
     for (i = 0; i < NULLGUARD_SIZE; ++i) p[i] = nullGuard[i];
 }
 #ifdef NO_ASM
@@ -100,7 +100,7 @@ void game_init(void) {
     size_t freeMemory;
     int8 FAR *charPtr;
     uint16 gfxBufAddress;
-    int err;
+    int16 err;
 #ifndef NO_ASM
     OverlayFunc gfxInit = NULL;
     uint16 gfxDrvAddress;
@@ -191,8 +191,8 @@ void game_init(void) {
     LogInfo(("Initialization complete, free memory = %s", sizeString(dos_getfree())));
 }
 
-bool game_run(const char *filename, const int returnCode, const bool debug) {
-    int err;
+bool game_run(const char *filename, const int16 returnCode, const bool debug) {
+    int16 err;
     /* launch game executable */
     if (debug) {
         LogInfo(("Executing %s under the debugger", filename));
@@ -225,7 +225,7 @@ uint16 load_segment(const uint16 envParagraphs) {
 
 int main(int argc, char *argv[]) {
     /* process cmdline args */
-    int argIdx, charIdx;
+    int16 argIdx, charIdx;
     bool debugMenu = false, debugFlight = false, debugDebrief = false;
 
     log_set_app("f15");

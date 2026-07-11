@@ -16,13 +16,11 @@ extern char animExitFlag;
 
 void debriefMainLoop(void) {
     char p[2];
-    int a;
-    int b;
-    int c;
+    int16 a, b, c;
     char d[3];
-    int e;
+    int16 e;
     char f[2];
-    int g;
+    int16 g;
     char h[2];
 
     p[0] = 0x0d;
@@ -151,7 +149,7 @@ open_dbicons:
     if (commData->trainingFlag == 0) {
         gameData->hallOfFameEligible = missionScore;
 
-        if ((unsigned long)gameData->lastScore < (unsigned long)missionScore) {
+        if ((uint32)gameData->lastScore < (uint32)missionScore) {
             gameData->lastScore = missionScore;
         }
 

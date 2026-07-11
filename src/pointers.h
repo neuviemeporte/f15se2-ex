@@ -17,9 +17,10 @@
 #define FAR
 #define CDECL
 #define HUGE
+#define pascal
 #endif
 
-#define MK_FP(a, off) ((void FAR *)(((unsigned long)(a) << 16) | (unsigned long)(off)))
+#define MK_FP(a, off) ((void FAR *)(((uint32)(a) << 16) | (uint32)(off)))
 #define MAKEFAR(type, seg, off) ((type FAR *)MK_FP(seg, off))
 
 /* PTR_OFF(p): the 16-bit DOS offset of a (near) pointer, as needed to load a
