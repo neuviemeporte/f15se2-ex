@@ -213,6 +213,15 @@ void updateThreatTargeting(void) {
                 best = 0x7fff;
                 if (mode == 7) {
                     for (scan = 0; scan < g_groundUnitCount; scan++) {
+                        /* A2A: once the shot has a remembered launch target
+                           (targetLock, a g_simObjects index) only that contact is
+                           eligible, so the missile tracks the target that was
+                           locked at fire time instead of re-acquiring the nearest
+                           one each frame. targetLock == -1 (boresight shot) keeps
+                           the original nearest-contact scan. */
+                        if (g_projectiles[slot].targetLock != -1 &&
+                            scan != g_projectiles[slot].targetLock)
+                            continue;
                         if ((g_simObjects[scan].flags.b[0] & 2) &&
                             g_simObjects[scan].speed != 0) {
                             acq = samCanAcquireTarget(slot, g_simObjects[scan].posX,
@@ -281,7 +290,14 @@ void updateThreatTargeting(void) {
                 }
             }
 
-            if (aimY != 0 && locked != 0) {
+            /* Steer whenever a target is locked. aimY is the target *bearing*, and
+               0x0000 (due north) is a valid bearing — gating on aimY != 0 dropped
+               all guidance for a target lying due north, so a shot at a contact
+               spawned directly ahead (mission start puts you dead astern of the
+               locked target, bearing exactly 0) flew its launch attitude (pitched
+               down 0x1000) ballistically into the ground. locked is the real
+               have-a-target flag. */
+            if (locked != 0) {
                 delta = aimY - g_projectiles[slot].worldX;
                 if (slot < 8)
                     delta = clampRange(delta, -(g_missionStatus + 1) << 8,
@@ -714,6 +730,15 @@ void fireMissile() {
 
     if (g_groundTargetLock >= 0 && sams[spec].weaponClass == 5 && (g_planeTable.planes[g_groundTargetLock].flags & 8)) {
         g_projectiles[slot].targetLock = g_groundTargetLock;
+    }
+
+    /* A2A missiles (weaponClass 7): remember the air contact the HUD had locked
+       (g_airTargetLock, a g_simObjects index) so the shot tracks that specific
+       target for its whole flight — the mode-7 update reuses this rather than
+       re-acquiring the nearest contact each frame. Firing without an air lock
+       (g_airTargetLock == -1) leaves targetLock -1 → boresight nearest-scan. */
+    if (g_airTargetLock >= 0 && sams[spec].weaponClass == 7) {
+        g_projectiles[slot].targetLock = g_airTargetLock;
     }
 
     if (spec == 29) {
