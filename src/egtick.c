@@ -12,8 +12,9 @@
  *      "wrong spawn position" symptom - it is actually a pacing bug, not a
  *      mission-init bug).
  * g_frameTimingAccum is also bumped (the frame-rate pacer recalibrates against
- * it). audio_timerTick and the PIT rate-recalibration the original also did here
- * are out of scope: audio is stubbed and the C timer runs a fixed PIT rate.
+ * it). audio_timerTick is a no-op here (the sequencer runs off the audio
+ * callback, not this tick) and the PIT rate-recalibration the original also
+ * did here is skipped: the C timer runs a fixed rate.
  *
  * Lives in its own far code segment (/NT EGTICK_TEXT): the shared _TEXT is full,
  * and the callback is reached through a far function pointer so its segment is

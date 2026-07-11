@@ -303,12 +303,10 @@ static void picDecodeToSurface(SDL_IOStream *handle, SDL_Surface *dst) {
     }
 }
 
-/* A scratch surface for decode targets that are not (yet) backed by a real
- * SDL surface — the sprite-buffer "segment" loads (decodePic/decodePicRaw).
- * Those consumers still go through the unported fake-segment sprite path, so
- * the decoded pixels currently have no destination; decode into a throwaway
- * surface so the call is harmless instead of writing through a bogus pointer.
- * TODO: give these real surface targets once the sprite-buffer path is ported. */
+/* Defensive scratch target for a decode whose segment has no registered sprite
+ * buffer. Live loads (loadPic / loadPicFromFile) always pass an allocated handle
+ * that resolves to a real surface, so this only guards an unregistered-segment
+ * decode from writing through a null pointer. */
 static SDL_Surface *picScratchSurface(void) {
     static SDL_Surface *scratch;
     if (!scratch)
@@ -331,8 +329,10 @@ void decodePic(SDL_IOStream *handle, int segment) {
 }
 
 void decodePicRaw(SDL_IOStream *handle, int segment) {
-    (void)segment;
-    picDecodeToSurface(handle, picScratchSurface());
+    /* Identical to decodePic in the original (both decode the PIC row-by-row
+     * into the segment, fully overwriting it); resolve the same real surface. */
+    SDL_Surface *dst = gfx_getSpriteSurface(segment);
+    picDecodeToSurface(handle, dst ? dst : picScratchSurface());
 }
 
 /* picBlit is start.exe's EGA hi-res title decoder (Title640.pic). The original

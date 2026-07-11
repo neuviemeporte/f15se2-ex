@@ -1890,8 +1890,8 @@ struct SpriteParams blitSpriteParams = {
 
 /* Digital-voice-cue thresholds, indexed by sample id (vs f15DgtlResult). Callers pass
    ids 0, 2, 4 (1 and 3 unused); the DOS build over-read [4] past a 3-element array.
-   Sized to 5 so id 4 (safe-landing cue) is in bounds; gates only the stubbed audio,
-   so [4]=0 (always-enable) until sound is implemented. */
+   Sized to 5 so id 4 (safe-landing cue) is in bounds; there's no recoverable DOS
+   value for it (an OOB read), so [4]=0 always enables that cue. */
 extern const int16 voiceCueThresholds[5] = {0x31F3, 0x4796, 0x5C92, 0, 0};
 int16 g_hudBottomY = 108;
 /* g_rearViewShape: vector-shape display list for drawVectorShape (two outlined boxes,

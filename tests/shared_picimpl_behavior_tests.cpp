@@ -29,7 +29,7 @@ enum SharedPicImplOriginalConstant : int {
     kPicHeaderMaxWidthByteMode = 0xF7,
     kShowPage = 2,
     kSpriteSegment = 0x2468,
-    kRawSegmentIgnored = 0x1357,
+    kRawSegment = 0x1357,
     kSurfaceWidth = 320,
     kTinySurfaceWidth = 4,
     kOneDecodedRow = 1,
@@ -311,11 +311,18 @@ int main() {
 
     resetPicImplState();
     SDL_IOStream *rawHandle = fakeHandle(4);
-    decodePicRaw(rawHandle, kRawSegmentIgnored);
-    require(g_fileReadCalls > kExpectedOneCall &&
+    setupOneRowSurface(&g_spriteSurface, g_spritePixels);
+    decodePicRaw(rawHandle, kRawSegment);
+    require(g_spriteSurfaceCalls == kExpectedOneCall &&
+                g_lastSpriteSegment == kRawSegment,
+            "decodePicRaw resolves the sprite-buffer segment target (identical to decodePic)");
+    require(g_fileReadCalls == kExpectedOneCall &&
                 g_lastReadHandle == rawHandle &&
                 g_lastReadCount == kPicReadBlockSize,
-            "decodePicRaw preserves the original raw PIC decode stream path through the scratch target");
+            "decodePicRaw initializes the original 512-byte PIC input buffer");
+    require(g_spritePixels[0] == 0 && g_spritePixels[kTinySurfaceWidth - 1] == 0 &&
+                g_spritePixels[kTinySurfaceWidth] == 0xEE,
+            "decodePicRaw writes decoded byte-mode PIC pixels into the sprite surface");
 
     resetPicImplState();
     picBlit(nullptr, kShowPage);
