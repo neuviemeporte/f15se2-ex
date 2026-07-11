@@ -59,12 +59,25 @@ struct SDL_Surface *gfx_getSpriteSurface(int handle);
 struct SDL_Palette;
 struct SDL_Palette *gfx_getPalette(void);
 void gfx_paletteRGB(int idx, uint8 *r, uint8 *g, uint8 *b);
+int gfx_nearestPaletteIndexRgb8(uint8 r, uint8 g, uint8 b);
 int gfx_paletteGeneration(void);
 
 /* Current explosion screen-shake (0-3 virtual px, set by gfx_dacCycle). The GL
  * backend reads it mid-frame to offset the immediate 2D overlay, matching the
  * software present's shake shift. */
 int gfx_getShakeOffset(void);
+
+#ifdef DEBUG
+/* Test-time asset validation seam: load any BDF/PNG replacement through the
+ * same font path used by gfx_setFont/gfx_drawString, then copy the effective
+ * glyph rows and advance widths for old-vs-modern comparison. */
+int gfx_testCopyEffectiveFont(uint16 fontIdx, uint8 *bitmapOut, size_t bitmapOutSize,
+                              uint8 *widthsOut, size_t widthsOutSize,
+                              int *heightOut, int *maxWidthOut);
+int gfx_testCopyBuiltinFont(uint16 fontIdx, uint8 *bitmapOut, size_t bitmapOutSize,
+                            uint8 *widthsOut, size_t widthsOutSize,
+                            int *heightOut, int *maxWidthOut);
+#endif
 
 /*
  * Reference structures documenting how the overlay accesses caller data.

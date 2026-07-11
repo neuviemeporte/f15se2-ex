@@ -28,6 +28,7 @@
 
 #include "r3d.h"
 #include "r3d_gl.h"
+#include "r3d_replacement.h"
 #include "r2d.h"
 #include "r3dmesh.h"
 #include "gfx_impl.h"
@@ -36,8 +37,18 @@
 #include "egdata.h"
 #include "egtypes.h"
 #include "log.h"
+#include "shared/asset_compare.h"
+#include <quickdigest5.hpp>
 
+#include <stdio.h>
 #include <stdlib.h> /* qsort */
+#include <string.h>
+#include <filesystem>
+#include <algorithm>
+#include <string>
+#include <vector>
+
+namespace fs = std::filesystem;
 
 /* ---- GL context / selection ------------------------------------------- */
 
@@ -195,6 +206,8 @@ static float s_vpW, s_vpH;   /* active 3D viewport size in window pixels (screen
  * original look, the later draw winning at equal depth. */
 typedef struct {
     char *model;
+    int shapeId;
+    const char *containerLegacyName;
     int16 combined[9];
     long camBase, camX, camY; /* camera-space origin axes (screen-X, screen-Y, depth) */
     int shade, colorBase, curLod;
@@ -208,6 +221,594 @@ typedef struct {
 static GlSub s_subs[GL_MAX_SUBS];
 static int s_nSub;
 static int s_subOverflow;
+
+typedef R3DReplacementPrim GlbPrim;
+typedef R3DReplacementMesh GlbMesh;
+
+static GlbMesh **s_glbCache;
+static int s_glbCacheN;
+static int s_glbCacheCap;
+
+static const char *glbShellQuote(const char *value) {
+    static char quoted[1024];
+    size_t out = 0;
+    quoted[out++] = '\'';
+    for (const char *p = value; *p && out + 5 < sizeof(quoted); p++) {
+        if (*p == '\'') {
+            memcpy(quoted + out, "'\\''", 4);
+            out += 4;
+        } else {
+            quoted[out++] = *p;
+        }
+    }
+    quoted[out++] = '\'';
+    quoted[out] = 0;
+    return quoted;
+}
+
+static uint32 rd32(const uint8 *p) {
+    return (uint32)p[0] | ((uint32)p[1] << 8) | ((uint32)p[2] << 16) | ((uint32)p[3] << 24);
+}
+
+static int32 rd32s(const uint8 *p) {
+    uint32 v = rd32(p);
+    return (int32)v;
+}
+
+static float rdf32(const uint8 *p) {
+    float v;
+    memcpy(&v, p, sizeof(v));
+    return v;
+}
+
+static void freeGlbRuntimeMesh(GlbMesh *mesh);
+static void compareGlbReplacementWithLegacy(const GlSub *r, GlbMesh *mesh);
+
+static int parseGlbRuntimeMesh(GlbMesh *mesh, const uint8 *data, size_t size) {
+    size_t pos;
+    size_t primHeaderSize;
+    int prim;
+    /* F15GLM3 is the auditable runtime-cache format:
+     *   0x00 magic "F15GLM3\0"
+     *   0x08 source GLB MD5 ASCII
+     *   0x28 primitive count
+     *   then 40-byte primitive headers:
+     *     mode, vertex_count, source_kind, source_index, source_color,
+     *     source_flags, rgba[4], followed by vertex_count vec3 float32s.
+     *
+     * The renderer only consumes mode/color/vertices. The source_* fields are
+     * intentionally parsed anyway so test/developer validation can detect stale
+     * caches that merged/reordered coplanar faces or line-only details. */
+    if (size >= 44 && memcmp(data, "F15GLM3", 7) == 0) {
+        memcpy(mesh->sourceMd5, data + 8, 32);
+        mesh->sourceMd5[32] = 0;
+        mesh->hasSourceMd5 = 1;
+        mesh->nPrims = (int)rd32(data + 40);
+        pos = 44;
+        primHeaderSize = 40;
+    } else if (size >= 44 && memcmp(data, "F15GLM2", 7) == 0) {
+        memcpy(mesh->sourceMd5, data + 8, 32);
+        mesh->sourceMd5[32] = 0;
+        mesh->hasSourceMd5 = 1;
+        mesh->nPrims = (int)rd32(data + 40);
+        pos = 44;
+        primHeaderSize = 24;
+    } else if (size >= 12 && memcmp(data, "F15GLM1", 7) == 0) {
+        mesh->sourceMd5[0] = 0;
+        mesh->hasSourceMd5 = 0;
+        mesh->nPrims = (int)rd32(data + 8);
+        pos = 12;
+        primHeaderSize = 24;
+    } else {
+        return 0;
+    }
+    if (mesh->nPrims < 0 || mesh->nPrims > 4096) goto fail;
+    mesh->prims = (GlbPrim *)SDL_calloc((size_t)mesh->nPrims, sizeof(GlbPrim));
+    if (!mesh->prims && mesh->nPrims) goto fail;
+    for (prim = 0; prim < mesh->nPrims; prim++) {
+        GlbPrim *p = &mesh->prims[prim];
+        int i;
+        if (pos + primHeaderSize > size) goto fail;
+        p->mode = (int)rd32(data + pos);
+        p->nVerts = (int)rd32(data + pos + 4);
+        if (primHeaderSize == 40) {
+            /* F15GLM3 stores source primitive identity so diagnostics can prove
+             * that cache generation preserved .3D3 draw order. Runtime drawing
+             * only needs mode/color/vertices, but these fields are cheap and keep
+             * the cache auditable after the GLB has been reduced. */
+            p->sourceKind = (int)rd32(data + pos + 8);
+            p->sourceIndex = (int)rd32s(data + pos + 12);
+            p->sourceColor = (int)rd32s(data + pos + 16);
+            p->sourceFlags = rd32(data + pos + 20);
+            p->rgba[0] = rdf32(data + pos + 24);
+            p->rgba[1] = rdf32(data + pos + 28);
+            p->rgba[2] = rdf32(data + pos + 32);
+            p->rgba[3] = rdf32(data + pos + 36);
+        } else {
+            p->sourceKind = 0;
+            p->sourceIndex = -1;
+            p->sourceColor = -1;
+            p->sourceFlags = 0;
+            p->rgba[0] = rdf32(data + pos + 8);
+            p->rgba[1] = rdf32(data + pos + 12);
+            p->rgba[2] = rdf32(data + pos + 16);
+            p->rgba[3] = rdf32(data + pos + 20);
+        }
+        pos += primHeaderSize;
+        if (p->nVerts < 0 || p->nVerts > 65536 || pos + (size_t)p->nVerts * 12 > size) goto fail;
+        /* GLMESH is a generated cache, not an extensible container. Reject
+         * malformed primitive streams instead of drawing partial geometry and
+         * hiding the cache/source mismatch from replacement diagnostics. */
+        if (p->mode != 4 && p->mode != 1 && p->mode != 0) goto fail;
+        if (p->mode == 4 && (p->nVerts % 3) != 0) goto fail;
+        if (p->mode == 1 && (p->nVerts % 2) != 0) goto fail;
+        p->xyz = (float *)SDL_malloc((size_t)p->nVerts * 3 * sizeof(float));
+        if (!p->xyz && p->nVerts) goto fail;
+        for (i = 0; i < p->nVerts * 3; i++) {
+            p->xyz[i] = rdf32(data + pos);
+            pos += 4;
+        }
+    }
+    if (pos != size) goto fail;
+    return 1;
+
+fail:
+    freeGlbRuntimeMesh(mesh);
+    return 0;
+}
+
+static void freeGlbRuntimeMesh(GlbMesh *mesh) {
+    int i;
+    if (mesh->prims) {
+        for (i = 0; i < mesh->nPrims; i++) {
+            SDL_free(mesh->prims[i].xyz);
+        }
+    }
+    SDL_free(mesh->prims);
+    mesh->prims = NULL;
+    mesh->nPrims = 0;
+    mesh->loaded = 0;
+}
+
+static int glbRuntimeMeshHasRenderablePrims(const GlbMesh *mesh) {
+    int i;
+    if (!mesh || mesh->nPrims <= 0) return 0;
+    for (i = 0; i < mesh->nPrims; i++) {
+        const GlbPrim *prim = &mesh->prims[i];
+        if (prim->nVerts > 0 && (prim->mode == 4 || prim->mode == 1 || prim->mode == 0)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static GlbMesh *allocGlbCacheSlot(void) {
+    GlbMesh **newCache;
+    GlbMesh *mesh;
+    int newCap;
+
+    if (s_glbCacheN < s_glbCacheCap) {
+        mesh = (GlbMesh *)SDL_calloc(1, sizeof(*mesh));
+        if (!mesh) return NULL;
+        s_glbCache[s_glbCacheN++] = mesh;
+        return mesh;
+    }
+
+    /* Replacement packs can contain hundreds of per-shape GLBs. The lookup table
+     * is growable, but each mesh is separately allocated so software-renderer
+     * sorted objects can safely queue R3DReplacementMesh* values for later draw:
+     * growing the pointer table must not move already returned mesh objects. */
+    newCap = s_glbCacheCap ? s_glbCacheCap * 2 : 128;
+    newCache = (GlbMesh **)SDL_realloc(s_glbCache, (size_t)newCap * sizeof(GlbMesh *));
+    if (!newCache) return NULL;
+    memset(newCache + s_glbCacheCap, 0, (size_t)(newCap - s_glbCacheCap) * sizeof(GlbMesh *));
+    s_glbCache = newCache;
+    s_glbCacheCap = newCap;
+    mesh = (GlbMesh *)SDL_calloc(1, sizeof(*mesh));
+    if (!mesh) return NULL;
+    s_glbCache[s_glbCacheN++] = mesh;
+    return mesh;
+}
+
+static uint8 *readFileBytes(const char *path, size_t *outSize) {
+    FILE *fp;
+    uint8 *data;
+    long size;
+    size_t got;
+    if (outSize) *outSize = 0;
+    fp = fopen(path, "rb");
+    if (!fp) return NULL;
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+    size = ftell(fp);
+    if (size <= 0 || size > 16 * 1024 * 1024) {
+        fclose(fp);
+        return NULL;
+    }
+    if (fseek(fp, 0, SEEK_SET) != 0) {
+        fclose(fp);
+        return NULL;
+    }
+    data = (uint8 *)SDL_malloc((size_t)size);
+    if (!data) {
+        fclose(fp);
+        return NULL;
+    }
+    got = fread(data, 1, (size_t)size, fp);
+    fclose(fp);
+    if (got != (size_t)size) {
+        SDL_free(data);
+        return NULL;
+    }
+    if (outSize) *outSize = (size_t)size;
+    return data;
+}
+
+static int writeFileBytes(const char *path, const uint8 *data, size_t size) {
+    FILE *fp = fopen(path, "wb");
+    if (!fp) return 0;
+    if (fwrite(data, 1, size, fp) != size) {
+        fclose(fp);
+        return 0;
+    }
+    return fclose(fp) == 0;
+}
+
+static void glmeshCachePathForGlb(const char *glbPath, char *outPath, size_t outPathSize) {
+    fs::path source{glbPath};
+    fs::path cache = source.parent_path() / "cache" / source.filename();
+    cache.replace_extension(".glmesh");
+    snprintf(outPath, outPathSize, "%s", cache.string().c_str());
+}
+
+static void addGlbToolCandidate(std::vector<fs::path> &candidates, const fs::path &path) {
+    if (std::find(candidates.begin(), candidates.end(), path) == candidates.end()) {
+        candidates.push_back(path);
+    }
+}
+
+static std::string glbAssetToolCommand(const fs::path &assetHint) {
+    const char *tool = getenv("F15_ASSET_TOOL");
+    const char *replacementRoot = getenv("F15_REPLACEMENT_ROOT");
+    if (tool && tool[0]) return std::string(tool);
+
+    /* Runtime replacement should work from common build/run directories, not
+     * only when `python3 -m tools.f15assets.cli` can import the repository. */
+    std::vector<fs::path> candidates;
+    fs::path cursor = assetHint;
+    if (!cursor.empty() && cursor.has_filename()) cursor = cursor.parent_path();
+    while (!cursor.empty()) {
+        if (cursor.filename() == "converted_assets_all") {
+            addGlbToolCandidate(candidates, cursor.parent_path() / "tools/f15assets/cli.py");
+            break;
+        }
+        fs::path parent = cursor.parent_path();
+        if (parent == cursor) break;
+        cursor = cursor.parent_path();
+    }
+    if (replacementRoot && replacementRoot[0]) {
+        fs::path replacementPath{replacementRoot};
+        /* GLB cache generation may be triggered from an external custom pack.
+         * Try likely repo-adjacent tool paths unless F15_ASSET_TOOL explicitly
+         * names the bridge command. */
+        addGlbToolCandidate(candidates, replacementPath.parent_path() / "tools/f15assets/cli.py");
+        addGlbToolCandidate(candidates, replacementPath / "../tools/f15assets/cli.py");
+        addGlbToolCandidate(candidates, replacementPath / "tools/f15assets/cli.py");
+        addGlbToolCandidate(candidates, replacementPath / "converted_assets_all/../tools/f15assets/cli.py");
+    }
+    addGlbToolCandidate(candidates, fs::path{"tools/f15assets/cli.py"});
+    addGlbToolCandidate(candidates, fs::path{"../tools/f15assets/cli.py"});
+    addGlbToolCandidate(candidates, fs::path{"../../tools/f15assets/cli.py"});
+    for (const fs::path &candidate : candidates) {
+        if (fs::exists(candidate)) return std::string("python3 ") + glbShellQuote(candidate.string().c_str());
+    }
+    return std::string("python3 -m tools.f15assets.cli");
+}
+
+static uint8 *buildGlmeshBytesFromGlb(const char *glbPath, size_t *outSize) {
+    char command[1400];
+    std::string toolCommand;
+    FILE *pipe;
+    uint8 *data = NULL;
+    size_t size = 0, cap = 0;
+    uint8 chunk[4096];
+    size_t got;
+
+    if (outSize) *outSize = 0;
+    toolCommand = glbAssetToolCommand(fs::path{glbPath ? glbPath : ""});
+    snprintf(command, sizeof(command), "%s build-glmesh %s",
+             toolCommand.c_str(),
+             glbShellQuote(glbPath));
+    pipe = popen(command, "r");
+    if (!pipe) return NULL;
+    while ((got = fread(chunk, 1, sizeof(chunk), pipe)) > 0) {
+        if (size + got > cap) {
+            size_t newCap = cap ? cap * 2 : 8192;
+            uint8 *newData;
+            while (newCap < size + got) newCap *= 2;
+            newData = (uint8 *)SDL_realloc(data, newCap);
+            if (!newData) {
+                SDL_free(data);
+                pclose(pipe);
+                return NULL;
+            }
+            data = newData;
+            cap = newCap;
+        }
+        memcpy(data + size, chunk, got);
+        size += got;
+    }
+    if (pclose(pipe) != 0 || size == 0) {
+        SDL_free(data);
+        return NULL;
+    }
+    if (outSize) *outSize = size;
+    return data;
+}
+
+R3DReplacementMesh *r3d_replacementMesh(const char *containerLegacyName, int shapeId) {
+    char cachePath[512];
+    char glbPath[512];
+    uint8 *data = NULL;
+    size_t size = 0;
+    int i;
+    GlbMesh *mesh;
+    int hasGlb;
+    std::string glbMd5;
+
+    if (!containerLegacyName || shapeId < 0) return NULL;
+    hasGlb = findReplacementShapeModelPath(containerLegacyName, shapeId, ".glb", glbPath, sizeof(glbPath));
+    if (hasGlb) {
+        glmeshCachePathForGlb(glbPath, cachePath, sizeof(cachePath));
+    } else if (!findReplacementShapeModelPath(containerLegacyName, shapeId, ".glmesh", cachePath, sizeof(cachePath))) {
+        return NULL;
+    }
+
+    for (i = 0; i < s_glbCacheN; i++) {
+        GlbMesh *cached = s_glbCache[i];
+        if (cached && strcmp(cached->path, hasGlb ? glbPath : cachePath) == 0) {
+            return cached->loaded ? cached : NULL;
+        }
+    }
+    mesh = allocGlbCacheSlot();
+    if (!mesh) return NULL;
+    SDL_strlcpy(mesh->path, hasGlb ? glbPath : cachePath, sizeof(mesh->path));
+
+    if (hasGlb) {
+        glbMd5 = QuickDigest5::fileToHash(glbPath);
+        data = readFileBytes(cachePath, &size);
+        if (data) {
+            int parsedCache = parseGlbRuntimeMesh(mesh, data, size);
+            int hasRenderableCache = parsedCache && glbRuntimeMeshHasRenderablePrims(mesh);
+            if (parsedCache
+                && hasRenderableCache
+                && mesh->hasSourceMd5
+                && glbMd5 == mesh->sourceMd5) {
+                SDL_free(data);
+                mesh->loaded = 1;
+                LogInfo(("asset replacement: loaded GLB runtime mesh cache %s (%d primitives)", cachePath, mesh->nPrims));
+                return mesh;
+            }
+            if (parsedCache && !hasRenderableCache) {
+                LogWarn(("asset replacement: ignoring empty GLB runtime mesh cache %s; rebuilding from %s", cachePath, glbPath));
+            } else if (parsedCache && (!mesh->hasSourceMd5 || glbMd5 != mesh->sourceMd5)) {
+                LogInfo(("asset replacement: ignoring stale GLB runtime mesh cache %s; rebuilding from %s", cachePath, glbPath));
+            } else if (!parsedCache) {
+                LogWarn(("asset replacement: ignoring malformed GLB runtime mesh cache %s; rebuilding from %s", cachePath, glbPath));
+            }
+            freeGlbRuntimeMesh(mesh);
+            SDL_free(data);
+        }
+
+        data = buildGlmeshBytesFromGlb(glbPath, &size);
+        if (!data || !parseGlbRuntimeMesh(mesh, data, size) ||
+            !glbRuntimeMeshHasRenderablePrims(mesh) ||
+            !mesh->hasSourceMd5 || glbMd5 != mesh->sourceMd5) {
+            freeGlbRuntimeMesh(mesh);
+            SDL_free(data);
+            mesh->failed = 1;
+            LogWarn(("asset replacement: failed to build verified runtime mesh from %s; using legacy .3D3", glbPath));
+            return NULL;
+        }
+        fs::create_directories(fs::path(cachePath).parent_path());
+        if (!writeFileBytes(cachePath, data, size)) {
+            LogWarn(("asset replacement: built runtime mesh from %s but could not write cache %s", glbPath, cachePath));
+        }
+        SDL_free(data);
+        mesh->loaded = 1;
+        LogInfo(("asset replacement: built GLB runtime mesh cache %s from %s (%d primitives)", cachePath, glbPath, mesh->nPrims));
+        return mesh;
+    }
+
+    data = readFileBytes(cachePath, &size);
+    if (!data || !parseGlbRuntimeMesh(mesh, data, size) || !glbRuntimeMeshHasRenderablePrims(mesh)) {
+        freeGlbRuntimeMesh(mesh);
+        SDL_free(data);
+        mesh->failed = 1;
+        LogWarn(("asset replacement: failed to load standalone runtime mesh %s; using legacy .3D3", cachePath));
+        return NULL;
+    }
+    SDL_free(data);
+    mesh->loaded = 1;
+    LogInfo(("asset replacement: loaded standalone GLB runtime mesh cache %s (%d primitives)", cachePath, mesh->nPrims));
+    return mesh;
+}
+
+#ifdef DEBUG
+int r3dgl_testLoadReplacementMesh(const char *containerLegacyName, int shapeId,
+                                  int *outPrimitiveCount) {
+    GlbMesh *mesh = r3d_replacementMesh(containerLegacyName, shapeId);
+    if (outPrimitiveCount) *outPrimitiveCount = mesh ? mesh->nPrims : 0;
+    return mesh != NULL;
+}
+
+int r3dgl_testLegacyShapeRenderable(const unsigned char *legacyModel,
+                                    size_t legacyModelSize) {
+    MeshVtxPools pools;
+    Mesh legacy;
+    MeshLod *lod;
+    int i;
+
+    if (!legacyModel || legacyModelSize == 0 || legacyModelSize > WORLD3D_DATA_SIZE) {
+        return 0;
+    }
+    memset(g_world3dData, 0, WORLD3D_DATA_SIZE);
+    memcpy(g_world3dData, legacyModel, legacyModelSize);
+    fillPools(&pools);
+    if (r3dmesh_decode((const uint8 *)g_world3dData,
+                       (const uint8 *)g_world3dData + legacyModelSize,
+                       &pools, colorLut, &legacy) < 0) {
+        return 0;
+    }
+    lod = &legacy.lods[0];
+    if (lod->form == MESH_FORM_POINT) return 1;
+    if (lod->form == MESH_FORM_EDGERUN) return lod->nRunRefs > 0;
+    if (lod->form != MESH_FORM_MODEL) return 0;
+    for (i = 0; i < lod->nFaces; i++) {
+        if (lod->faces[i].nEdges >= 3 && lod->faces[i].colorByte != 0xff) return 1;
+    }
+    return lod->nLines > 0;
+}
+
+int r3dgl_testCompareReplacementMesh(const char *containerLegacyName, int shapeId,
+                                     const unsigned char *legacyModel,
+                                     size_t legacyModelSize) {
+    GlbMesh *mesh;
+    GlSub sub;
+    MeshVtxPools pools;
+    Mesh legacy;
+    MeshLod *lod;
+    int previousSourceIndex[4] = {-1, -1, -1, -1};
+    int glbTriangles = 0, glbLines = 0, glbPoints = 0;
+    int legacyTriangles = 0;
+    int legacyLines = 0;
+    int legacyPoints = 0;
+    int legacyFaceColor[256] = {0};
+    int legacyLineColor[256] = {0};
+    int legacyPointColor[256] = {0};
+    int glbFaceColor[256] = {0};
+    int glbLineColor[256] = {0};
+    int glbPointColor[256] = {0};
+    int i;
+
+    if (!legacyModel || legacyModelSize == 0 || legacyModelSize > WORLD3D_DATA_SIZE) {
+        return 0;
+    }
+    memset(g_world3dData, 0, WORLD3D_DATA_SIZE);
+    memcpy(g_world3dData, legacyModel, legacyModelSize);
+    mesh = r3d_replacementMesh(containerLegacyName, shapeId);
+    if (!mesh) return 0;
+
+    memset(&sub, 0, sizeof(sub));
+    sub.model = g_world3dData;
+    sub.shapeId = shapeId;
+    sub.containerLegacyName = containerLegacyName;
+
+    fillPools(&pools);
+    if (r3dmesh_decode((const uint8 *)sub.model,
+                       (const uint8 *)g_world3dData + legacyModelSize,
+                       &pools, colorLut, &legacy) < 0) {
+        return 0;
+    }
+    lod = &legacy.lods[0];
+
+    for (i = 0; i < mesh->nPrims; i++) {
+        const GlbPrim *prim = &mesh->prims[i];
+        if ((prim->sourceFlags & 1u) == 0u || prim->sourceKind == 0 || prim->sourceColor < 0) {
+            LogWarn(("3D test compare: shape %d primitive %d lacks source metadata/color", shapeId, i));
+            return 0;
+        }
+        if (prim->sourceKind >= 1 && prim->sourceKind <= 3) {
+            if (prim->sourceIndex < 0 || prim->sourceIndex < previousSourceIndex[prim->sourceKind]) {
+                LogWarn(("3D test compare: shape %d primitive %d has non-monotonic source index %d", shapeId, i, prim->sourceIndex));
+                return 0;
+            }
+            previousSourceIndex[prim->sourceKind] = prim->sourceIndex;
+        }
+        if ((prim->sourceKind == 1 && prim->mode != 4)
+            || (prim->sourceKind == 2 && prim->mode != 1)
+            || (prim->sourceKind == 3 && prim->mode != 0)) {
+            LogWarn(("3D test compare: shape %d primitive %d source kind/mode mismatch kind=%d mode=%d", shapeId, i, prim->sourceKind, prim->mode));
+            return 0;
+        }
+        if (prim->mode == 4) glbTriangles += prim->nVerts / 3;
+        else if (prim->mode == 1) glbLines += prim->nVerts / 2;
+        else if (prim->mode == 0) glbPoints += prim->nVerts;
+        if (prim->sourceColor >= 0 && prim->sourceColor < 256) {
+            if (prim->sourceKind == 1) glbFaceColor[prim->sourceColor] += prim->nVerts / 3;
+            else if (prim->sourceKind == 2) glbLineColor[prim->sourceColor] += prim->nVerts / 2;
+            else if (prim->sourceKind == 3) glbPointColor[prim->sourceColor] += prim->nVerts;
+        }
+    }
+
+    if (lod->form == MESH_FORM_POINT) {
+        legacyPointColor[lod->pointColor] = 1;
+        if (!(glbTriangles == 0 && glbLines == 0 && glbPoints == 1 &&
+              memcmp(legacyPointColor, glbPointColor, sizeof(legacyPointColor)) == 0)) {
+            LogWarn(("3D test compare: shape %d point mismatch glb_tri=%d glb_line=%d glb_point=%d", shapeId, glbTriangles, glbLines, glbPoints));
+            return 0;
+        }
+        return 1;
+    }
+    if (lod->form == MESH_FORM_EDGERUN) {
+        legacyPointColor[lod->pointColor] = lod->nRunRefs;
+        if (!(glbTriangles == 0 && glbLines == 0 && glbPoints == lod->nRunRefs &&
+              memcmp(legacyPointColor, glbPointColor, sizeof(legacyPointColor)) == 0)) {
+            LogWarn(("3D test compare: shape %d edgerun mismatch legacy_points=%d glb_tri=%d glb_line=%d glb_point=%d", shapeId, lod->nRunRefs, glbTriangles, glbLines, glbPoints));
+            return 0;
+        }
+        return 1;
+    }
+
+    for (i = 0; i < lod->nFaces; i++) {
+        if (lod->faces[i].nEdges >= 3 && lod->faces[i].colorByte != 0xff) {
+            int triCount = (int)lod->faces[i].nEdges - 2;
+            int k;
+            legacyTriangles += triCount;
+            legacyFaceColor[lod->faces[i].colorByte] += triCount;
+            for (k = 0; k < lod->faces[i].nEdges; k++) {
+                MeshEdge *e = &lod->edges[lod->faces[i].edge[k]];
+                if (e->va == e->vb) {
+                    legacyPoints += 1;
+                    legacyPointColor[lod->faces[i].colorByte] += 1;
+                } else {
+                    legacyLines += 1;
+                    legacyLineColor[lod->faces[i].colorByte] += 1;
+                }
+            }
+        }
+    }
+    for (i = 0; i < lod->nLines; i++) {
+        MeshEdge *e = &lod->edges[lod->lines[i].edge];
+        if (e->va == e->vb) {
+            legacyPoints += 1;
+            legacyPointColor[lod->lines[i].colorByte] += 1;
+        } else {
+            legacyLines += 1;
+            legacyLineColor[lod->lines[i].colorByte] += 1;
+        }
+    }
+
+    if (!(glbTriangles == legacyTriangles &&
+          glbLines >= lod->nLines &&
+          glbLines <= legacyLines &&
+          glbPoints == legacyPoints &&
+          memcmp(legacyFaceColor, glbFaceColor, sizeof(legacyFaceColor)) == 0 &&
+          memcmp(legacyPointColor, glbPointColor, sizeof(legacyPointColor)) == 0)) {
+        LogWarn(("3D test compare: shape %d mismatch legacy_tri=%d legacy_line=%d legacy_point=%d glb_tri=%d glb_line=%d glb_point=%d", shapeId, legacyTriangles, legacyLines, legacyPoints, glbTriangles, glbLines, glbPoints));
+        return 0;
+    }
+    for (i = 0; i < 256; i++) {
+        if (glbLineColor[i] > legacyLineColor[i]) {
+            LogWarn(("3D test compare: shape %d line color 0x%02x exceeds legacy coverage glb=%d legacy=%d", shapeId, i, glbLineColor[i], legacyLineColor[i]));
+            return 0;
+        }
+    }
+    return 1;
+}
+#endif
 
 /* World-space 3D line segments (cannon tracers, explosion sparks) submitted this
  * frame; drawn as camera-facing ribbons (z-tested + fogged) at the end of the
@@ -387,7 +988,23 @@ static void fogVertex(float x, float y, float z) {
 static const char *gl_name(void) { return "opengl1"; }
 
 static int gl_init(void) { return s_active; } /* claims iff the context came up */
-static void gl_shutdown(void) {}
+static void gl_shutdown(void) {
+    int i, j;
+    for (i = 0; i < s_glbCacheN; i++) {
+        GlbMesh *mesh = s_glbCache[i];
+        if (!mesh) continue;
+        for (j = 0; j < mesh->nPrims; j++) {
+            SDL_free(mesh->prims[j].xyz);
+        }
+        SDL_free(mesh->prims);
+        SDL_free(mesh);
+        s_glbCache[i] = NULL;
+    }
+    SDL_free(s_glbCache);
+    s_glbCache = NULL;
+    s_glbCacheN = 0;
+    s_glbCacheCap = 0;
+}
 
 static R3DMesh gl_registerMesh(R3DMesh raw) { return raw; } /* decoded per submit */
 static void gl_releaseMesh(R3DMesh mesh) { (void)mesh; }
@@ -853,6 +1470,8 @@ static void gl_submit(const R3DSubmit *o) {
 
     r = &s_subs[s_nSub];
     r->model = (char *)o->mesh;
+    r->shapeId = o->shapeId;
+    r->containerLegacyName = o->containerLegacyName;
     for (i = 0; i < 9; i++) r->combined[i] = combined[i];
     r->camBase = camBase;
     r->camX = camTransX;
@@ -965,6 +1584,188 @@ static void drawDepthPoint(float x, float y, long depth32, int colorIdx) {
     glEnd();
 }
 
+static void drawGlbReplacementSub(const GlSub *r, const GlbMesh *mesh) {
+    int primIndex, i;
+    float cm[9], scaleDiv;
+    int shift = 8 - 2 * r->curLod;
+    if (shift < 0) shift = 0;
+    scaleDiv = (float)(1 << shift);
+    for (i = 0; i < 9; i++) cm[i] = (float)r->combined[i];
+
+    for (primIndex = 0; primIndex < mesh->nPrims; primIndex++) {
+        const GlbPrim *prim = &mesh->prims[primIndex];
+        GLenum glMode;
+        if (prim->mode == 4) glMode = GL_TRIANGLES;
+        else if (prim->mode == 1) glMode = GL_LINES;
+        else if (prim->mode == 0) glMode = GL_POINTS;
+        else continue;
+
+        paintBias();
+        glColor4f(prim->rgba[0], prim->rgba[1], prim->rgba[2], prim->rgba[3]);
+        if (glMode == GL_POINTS) {
+            glPointSize(s_pixelScale > 1.0f ? s_pixelScale : 1.0f);
+        }
+        glBegin(glMode);
+        for (i = 0; i < prim->nVerts; i++) {
+            float X = prim->xyz[i * 3];
+            float Y = prim->xyz[i * 3 + 1];
+            float Z = prim->xyz[i * 3 + 2];
+            float camX = (2.0f * (cm[0] * X + cm[3] * Z + cm[6] * Y) + (float)r->camBase) / scaleDiv;
+            float camY = (2.0f * (cm[1] * X + cm[4] * Z + cm[7] * Y) + (float)r->camX) / scaleDiv;
+            float depth = (2.0f * (cm[2] * X + cm[5] * Z + cm[8] * Y) + (float)r->camY) / scaleDiv;
+            fogVertex(camX, camY, depth / 65536.0f);
+        }
+        glEnd();
+    }
+}
+
+static void compareGlbReplacementWithLegacy(const GlSub *r, GlbMesh *mesh) {
+    AssetCompare3dShapeStats stats;
+    MeshVtxPools pools;
+    Mesh legacy;
+    MeshLod *lod;
+    int glbTriangles = 0;
+    int glbLines = 0;
+    int glbPoints = 0;
+    int legacyTriangles = 0;
+    int previousSourceIndex[4] = {-1, -1, -1, -1};
+    int missingSourceMeta = 0;
+    int missingSourceColor = 0;
+    int badSourceOrder = 0;
+    int badSourceMode = 0;
+    int glbFaceColor[256] = {0};
+    int glbLineColor[256] = {0};
+    int glbPointColor[256] = {0};
+    int legacyFaceColor[256] = {0};
+    int legacyLineColor[256] = {0};
+    int legacyPointColor[256] = {0};
+    int canCompareSourceColors = 1;
+    int i;
+
+    if (!assetCompareEnabled() || !r || !mesh || mesh->compared) return;
+    mesh->compared = 1;
+
+    fillPools(&pools);
+    if (r3dmesh_decode((const uint8 *)r->model,
+                       (const uint8 *)g_world3dData + WORLD3D_DATA_SIZE,
+                       &pools, colorLut, &legacy) < 0) {
+        LogWarn(("asset replacement compare: failed to decode legacy 3D shape %d for %s", r->shapeId, mesh->path));
+        return;
+    }
+    lod = &legacy.lods[0];
+
+    for (i = 0; i < mesh->nPrims; i++) {
+        const GlbPrim *prim = &mesh->prims[i];
+        if (prim->mode == 4) glbTriangles += prim->nVerts / 3;
+        else if (prim->mode == 1) glbLines += prim->nVerts / 2;
+        else if (prim->mode == 0) glbPoints += prim->nVerts;
+        if ((prim->sourceFlags & 1u) == 0u || prim->sourceKind == 0) {
+            missingSourceMeta = 1;
+            canCompareSourceColors = 0;
+        }
+        if (prim->sourceKind != 0 && prim->sourceColor < 0) {
+            missingSourceColor = 1;
+            canCompareSourceColors = 0;
+        }
+        if (prim->sourceKind >= 1 && prim->sourceKind <= 3) {
+            if (prim->sourceIndex < 0 || prim->sourceIndex <= previousSourceIndex[prim->sourceKind]) {
+                badSourceOrder = 1;
+            }
+            previousSourceIndex[prim->sourceKind] = prim->sourceIndex;
+        }
+        /* F15GLM3 source_kind is the bridge from reduced GLMESH back to the
+         * decoded .3D3 primitive stream. Compare it with GL mode so a malformed
+         * cache cannot claim a face color while drawing it as a line or point. */
+        if ((prim->sourceKind == 1 && prim->mode != 4)
+            || (prim->sourceKind == 2 && prim->mode != 1)
+            || (prim->sourceKind == 3 && prim->mode != 0)) {
+            badSourceMode = 1;
+        }
+        if (prim->sourceColor >= 0 && prim->sourceColor < 256) {
+            if (prim->sourceKind == 1) glbFaceColor[prim->sourceColor] += prim->nVerts / 3;
+            else if (prim->sourceKind == 2) glbLineColor[prim->sourceColor] += prim->nVerts / 2;
+            else if (prim->sourceKind == 3) glbPointColor[prim->sourceColor] += prim->nVerts;
+        }
+    }
+
+    if (lod->form == MESH_FORM_POINT) {
+        legacyPointColor[lod->pointColor] = 1;
+        memset(&stats, 0, sizeof(stats));
+        stats.shapeId = r->shapeId;
+        stats.legacyForm = 1;
+        stats.legacyPoints = 1;
+        stats.glbTriangles = glbTriangles;
+        stats.glbLines = glbLines;
+        stats.glbPoints = glbPoints;
+        stats.missingSourceMeta = missingSourceMeta;
+        stats.missingSourceColor = missingSourceColor;
+        stats.badSourceOrder = badSourceOrder;
+        stats.badSourceMode = badSourceMode;
+        stats.canCompareSourceColors = canCompareSourceColors;
+        stats.legacyPointColor = legacyPointColor;
+        stats.glbPointColor = glbPointColor;
+        stats.replacementPath = mesh->path;
+        assetCompare3dShapeStats(&stats);
+        return;
+    }
+    if (lod->form == MESH_FORM_EDGERUN) {
+        legacyPointColor[lod->pointColor] = lod->nRunRefs;
+        memset(&stats, 0, sizeof(stats));
+        stats.shapeId = r->shapeId;
+        stats.legacyForm = 2;
+        stats.legacyPoints = lod->nRunRefs;
+        stats.glbTriangles = glbTriangles;
+        stats.glbLines = glbLines;
+        stats.glbPoints = glbPoints;
+        stats.missingSourceMeta = missingSourceMeta;
+        stats.missingSourceColor = missingSourceColor;
+        stats.badSourceOrder = badSourceOrder;
+        stats.badSourceMode = badSourceMode;
+        stats.canCompareSourceColors = canCompareSourceColors;
+        stats.legacyPointColor = legacyPointColor;
+        stats.glbPointColor = glbPointColor;
+        stats.replacementPath = mesh->path;
+        assetCompare3dShapeStats(&stats);
+        return;
+    }
+
+    for (i = 0; i < lod->nFaces; i++) {
+        if (lod->faces[i].nEdges >= 3) {
+            int triCount = (int)lod->faces[i].nEdges - 2;
+            legacyTriangles += triCount;
+            legacyFaceColor[lod->faces[i].colorByte] += triCount;
+        }
+    }
+    for (i = 0; i < lod->nLines; i++) {
+        legacyLineColor[lod->lines[i].colorByte] += 1;
+    }
+
+    /* Counts alone are too weak for this game's meshes: two shapes can have
+     * identical topology while a nose antenna, deck line, or coplanar face uses
+     * the wrong raw palette byte. F15GLM3 keeps sourceColor so the runtime
+     * diagnostic can compare color coverage without depending on float vertex
+     * round-tripping. */
+    memset(&stats, 0, sizeof(stats));
+    stats.shapeId = r->shapeId;
+    stats.legacyFaces = lod->nFaces;
+    stats.legacyTriangles = legacyTriangles;
+    stats.legacyLines = lod->nLines;
+    stats.glbTriangles = glbTriangles;
+    stats.glbLines = glbLines;
+    stats.glbPoints = glbPoints;
+    stats.missingSourceMeta = missingSourceMeta;
+    stats.missingSourceColor = missingSourceColor;
+    stats.badSourceOrder = badSourceOrder;
+    stats.badSourceMode = badSourceMode;
+    stats.canCompareSourceColors = canCompareSourceColors;
+    stats.legacyFaceColor = legacyFaceColor;
+    stats.legacyLineColor = legacyLineColor;
+    stats.glbFaceColor = glbFaceColor;
+    stats.glbLineColor = glbLineColor;
+    stats.replacementPath = mesh->path;
+    assetCompare3dShapeStats(&stats);
+}
+
 /* Decode + transform + draw one object (painter's order; z-buffer on, GL_LEQUAL,
  * per-draw polygon offset set by the caller). Re-decodes the mesh (cheap; avoids
  * caching across region reloads). */
@@ -992,6 +1793,13 @@ static void drawSub(const GlSub *r) {
     float snx = 0, sny = 0, snz = 0, sox = 0, soy = 0, soz = 0;
     float srvx = 0, srvy = 0, srvz = 0;
     static float vx_[R3DMESH_MAX_VERTS], vy_[R3DMESH_MAX_VERTS], vd_[R3DMESH_MAX_VERTS];
+    GlbMesh *replacement = r3d_replacementMesh(r->containerLegacyName, r->shapeId);
+
+    if (replacement) {
+        compareGlbReplacementWithLegacy(r, replacement);
+        drawGlbReplacementSub(r, replacement);
+        return;
+    }
 
     fillPools(&pools);
     if (r3dmesh_decode((const uint8 *)r->model,

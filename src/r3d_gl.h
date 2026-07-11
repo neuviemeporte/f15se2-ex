@@ -1,6 +1,8 @@
 #ifndef R3D_GL_H
 #define R3D_GL_H
 
+#include <stddef.h>
+
 /*
  * OpenGL 1.x backend support hooks consumed by the graphics layer (gfx_impl.c).
  *
@@ -99,5 +101,24 @@ void r3dgl_drawImageWindow(R2DImage *img);
  * 320-space boxLeftX (mapped through the 4:3 overlay letterbox) — the briefing arm
  * cels, positioned in the menu box they point into. GL only. */
 void r3dgl_drawImageWindowBoxX(R2DImage *img, float boxLeftX);
+
+#ifdef DEBUG
+/* Test-only seam for the GL replacement path. It exercises the same GLB/GLMESH
+ * runtime mesh loader used by drawSub(), without requiring a live GL context. */
+int r3dgl_testLoadReplacementMesh(const char *containerLegacyName, int shapeId,
+                                  int *outPrimitiveCount);
+/* Returns non-zero when a legacy .3D3 shape slot decodes to something the
+ * renderer would draw. Validation uses this to require replacements for real
+ * shapes while still allowing known empty/truncated table slots to be skipped. */
+int r3dgl_testLegacyShapeRenderable(const unsigned char *legacyModel,
+                                    size_t legacyModelSize);
+/* Test-only seam for the replacement comparison path. Copies a caller-provided
+ * legacy display-list into the world model buffer, loads the matching modern
+ * replacement mesh, then runs the same old-vs-new topology/color comparison
+ * that drawSub() uses before drawing a GLB replacement. */
+int r3dgl_testCompareReplacementMesh(const char *containerLegacyName, int shapeId,
+                                     const unsigned char *legacyModel,
+                                     size_t legacyModelSize);
+#endif
 
 #endif /* R3D_GL_H */

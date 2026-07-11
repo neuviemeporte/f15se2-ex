@@ -6,12 +6,16 @@
  * precompute and raw-display-list rasterizer are software-backend internals
  * (integer Q15, no FPU) for the 386+ target. */
 #include "r3d.h"
+#include "r3d_replacement.h"
 #include "eg3dmap.h"
 #include "egcode.h"
 #include "egtypes.h"
 
 void far r3d_submitLineFar(long baseXA, long camXA, long camYA,
                            long baseXB, long camXB, long camYB, int color);
+void far projectReplacementSceneObject(char far *model, R3DReplacementMesh *replacement,
+                                       int yaw, int pitch, int roll,
+                                       int posX, int posY, int posZ);
 
 static const char *sw_name(void) { return "software"; }
 
@@ -35,6 +39,15 @@ static void sw_submit(const R3DSubmit *o) {
          * only by the GPU backend's flattened shadow). */
         projectSceneShadow((char far *)o->mesh, o->yaw, o->posX, o->posY, o->posZ);
         return;
+    }
+    {
+    R3DReplacementMesh *replacement = r3d_replacementMesh(o->containerLegacyName, o->shapeId);
+    if (replacement) {
+        projectReplacementSceneObject((char far *)o->mesh, replacement,
+                                      o->yaw, o->pitch, o->roll,
+                                      o->posX, o->posY, o->posZ);
+        return;
+    }
     }
     projectSceneObject((char far *)o->mesh, o->yaw, o->pitch, o->roll,
                        o->posX, o->posY, o->posZ);

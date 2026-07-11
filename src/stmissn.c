@@ -179,6 +179,9 @@ void showPic640(const char *filename) {
     intRegs[0] = MODE_640_350;
     intDispatch(IRQ_VIDEO, intRegs, intRegs);
     gfx_setDac(0);
+    if (loadReplacementPngToHiResTitle(filename)) {
+        return;
+    }
     fileHandle = openFileWrapper(filename, 0);
     picBlit(fileHandle, 0);
     closeFileWrapper(fileHandle);
@@ -366,7 +369,9 @@ int16 askRepeatMission() {
 }
 
 void checkDiskA() {
-    while ((fileHandle = openFile("F15.spr", 0)) == NULL) {
+    char replacementPath[512];
+    while ((fileHandle = openFile("F15.spr", 0)) == NULL &&
+           !findReplacementAssetPath("F15.spr", ".png", replacementPath, sizeof(replacementPath))) {
         clearBriefing();
         drawStringCentered(page1NumPtr, "Please reinsert F15 Disk A", 113, 61, 185);
         page1NumPtr[6] = FONT_SMALL; // page1Desc.font?
@@ -377,7 +382,7 @@ void checkDiskA() {
         animateArm(armPosition, armPosition);
         waitJoyKey();
     }
-    fileClose(fileHandle);
+    if (fileHandle) fileClose(fileHandle);
     clearBriefing();
 }
 

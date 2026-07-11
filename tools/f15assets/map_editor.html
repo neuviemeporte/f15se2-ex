@@ -536,10 +536,19 @@
         GULF: "PG",
       }[theaterKey()] || theaterKey() || base;
       const names = [...new Set([
+        `${base}/${modelBase}.3D3.glb`,
+        `${modelBase}/${modelBase}.3D3.glb`,
+        `${base}/${base}.3D3.glb`,
+        `${modelBase}.3D3/${modelBase}.3D3.glb`,
+        `${base}.3D3/${base}.3D3.glb`,
         `${modelBase}.3D3.glb`,
         `${base}.3D3.glb`,
+        `${modelBase}/${modelBase}.glb`,
+        `${base}/${base}.glb`,
         `${modelBase}.glb`,
         `${base}.glb`,
+        `${modelBase}.WLD/${modelBase}.WLD.glb`,
+        `${base}.WLD/${base}.WLD.glb`,
         `${modelBase}.WLD.glb`,
         `${base}.WLD.glb`,
       ])];

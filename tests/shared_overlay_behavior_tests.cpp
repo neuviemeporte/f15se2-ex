@@ -7,10 +7,13 @@
 #include "const.h"
 #include "input.h"
 #include "headless.h"
+#include "egcode.h"
 
 #include <SDL3/SDL.h>
 
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <thread>
 
@@ -34,6 +37,7 @@ enum SharedOverlayOriginalConstant : int {
     kCtrlXAscii = 0x18,
     kPrintableTextA = 'A',
     kBlockingPushDelayMs = 5,
+    kReplacementCueSpanBytes = 0x7d9e,
     kTestFailureExitCode = 1,
 };
 
@@ -44,9 +48,41 @@ void require(bool condition, const char *message) {
     }
 }
 
+void writePcm8Wav(const std::filesystem::path &path) {
+    std::filesystem::create_directories(path.parent_path());
+    const unsigned sampleRate = 7850;
+    const unsigned dataSize = 4;
+    const unsigned riffSize = 36 + dataSize;
+    std::ofstream out(path, std::ios::binary);
+    auto put = [&](unsigned value, int bytes) {
+        for (int i = 0; i < bytes; i++) out.put(static_cast<char>((value >> (8 * i)) & 0xff));
+    };
+    out.write("RIFF", 4);
+    put(riffSize, 4);
+    out.write("WAVEfmt ", 8);
+    put(16, 4);          // PCM fmt chunk size
+    put(1, 2);           // PCM
+    put(1, 2);           // mono
+    put(sampleRate, 4);
+    put(sampleRate, 4);  // byte rate: mono 8-bit
+    put(1, 2);           // block align
+    put(8, 2);           // bits per sample
+    out.write("data", 4);
+    put(dataSize, 4);
+    const char samples[4] = {static_cast<char>(0x80), static_cast<char>(0x90), static_cast<char>(0x70), static_cast<char>(0x80)};
+    out.write(samples, sizeof(samples));
+}
+
 } // namespace
 
 int main() {
+    const auto replacementRoot = std::filesystem::temp_directory_path() / "f15se2-ex-audio-replacements";
+    std::filesystem::remove_all(replacementRoot);
+    writePcm8Wav(replacementRoot / "converted_assets_all" / "sounds" / "voice_cue_000_sample0.wav");
+#if !defined(_WIN32)
+    setenv("F15_REPLACEMENT_ROOT", replacementRoot.string().c_str(), 1);
+#endif
+
     test_headless_init();
     require(SDL_Init(SDL_INIT_EVENTS),
             "SDL event subsystem initializes for overlay keyboard behavior tests");
@@ -66,6 +102,8 @@ int main() {
             "audio_setup returns the slot-ABI success code");
     require(audio_shutdown() == kNoAudioError,
             "audio_shutdown returns the slot-ABI success code");
+    require(loadF15DgtlBin() == kReplacementCueSpanBytes,
+            "loadF15DgtlBin accepts separate WAV cue replacements without F15DGTL.BIN");
 
     misc_clearKeyFlags();
     require(misc_checkKeyBuf() == kKeyBufferEmpty,
@@ -192,6 +230,11 @@ int main() {
     delayedKey.join();
 
     SDL_QuitSubSystem(SDL_INIT_EVENTS);
+
+#if !defined(_WIN32)
+    unsetenv("F15_REPLACEMENT_ROOT");
+#endif
+    std::filesystem::remove_all(replacementRoot);
 
     std::cout << "shared_overlay_behavior_tests passed\n";
     return 0;

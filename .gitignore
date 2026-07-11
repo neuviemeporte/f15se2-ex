@@ -24,3 +24,10 @@ coverage.txt
 *.gcda
 *.gcno
 *.actual.bmp
+
+# Python test/tool caches
+__pycache__/
+*.pyc
+
+# Generated replacement asset exports. Keep these out of source commits.
+/converted_assets_all/

@@ -3,6 +3,7 @@
  */
 
 #include "inttype.h"
+#include "asset_compare.h"
 #include "log.h"
 #include <SDL3/SDL.h>
 #include <quickdigest5.hpp>
@@ -14,10 +15,14 @@
 #include <filesystem>
 #include <algorithm>
 #include <vector>
+#include <cstdio>
+#include <memory>
+#include <system_error>
 
 using namespace std;
 namespace fs = std::filesystem;
 fs::path gamePath = ".";
+static vector<unique_ptr<vector<uint8>>> g_replacementIoBuffers;
 
 /* Sets the directory to read game assets from, default is current dir */
 bool setGamePath(const char* path) {
@@ -58,10 +63,582 @@ static string resolveCasePath(const char *filename, const bool require = false) 
     return require ? "" : filePath.string();
 }
 
+static string upperString(string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+        [](unsigned char c){ return std::toupper(c); });
+    return value;
+}
+
+static string replacementDirForLegacy(const fs::path &legacy) {
+    string stem = upperString(legacy.stem().string());
+    if (stem == "LB") return "LIBYA";
+    if (stem == "PG") return "GULF";
+    return stem;
+}
+
+static string lowerString(string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+        [](unsigned char c){ return std::tolower(c); });
+    return value;
+}
+
+static fs::path caseMappedPath(fs::path path, string (*mapper)(string)) {
+    fs::path out;
+    for (const fs::path &part : path) {
+        out /= mapper(part.string());
+    }
+    return out;
+}
+
+static string shellQuote(const string &value) {
+    string out = "'";
+    for (char c : value) {
+        if (c == '\'') out += "'\\''";
+        else out += c;
+    }
+    out += "'";
+    return out;
+}
+
+static void addReplacementCandidate(vector<fs::path> &candidates, const fs::path &path) {
+    if (std::find(candidates.begin(), candidates.end(), path) == candidates.end()) {
+        candidates.push_back(path);
+    }
+}
+
+static string defaultAssetToolCommand(const fs::path &assetHint) {
+    const char *tool = getenv("F15_ASSET_TOOL");
+    const char *replacementRoot = getenv("F15_REPLACEMENT_ROOT");
+    if (tool && tool[0]) return string(tool);
+
+    /* Prefer a script path when the repo/tools folder is near the current
+     * working directory. The module form below only works when the repository
+     * root is already on Python's import path. */
+    vector<fs::path> candidates;
+    fs::path cursor = assetHint;
+    if (!cursor.empty() && cursor.has_filename()) cursor = cursor.parent_path();
+    while (!cursor.empty()) {
+        if (cursor.filename() == "converted_assets_all") {
+            addReplacementCandidate(candidates, cursor.parent_path() / "tools/f15assets/cli.py");
+            break;
+        }
+        fs::path parent = cursor.parent_path();
+        if (parent == cursor) break;
+        cursor = cursor.parent_path();
+    }
+    if (replacementRoot && replacementRoot[0]) {
+        fs::path replacementPath{replacementRoot};
+        /* Explicit replacement roots often live outside the repo. Try likely
+         * repo-adjacent tool paths before falling back to module import; packaged
+         * builds can always set F15_ASSET_TOOL to bypass this heuristic. */
+        addReplacementCandidate(candidates, replacementPath.parent_path() / "tools/f15assets/cli.py");
+        addReplacementCandidate(candidates, replacementPath / "../tools/f15assets/cli.py");
+        addReplacementCandidate(candidates, replacementPath / "tools/f15assets/cli.py");
+        addReplacementCandidate(candidates, replacementPath / "converted_assets_all/../tools/f15assets/cli.py");
+    }
+    addReplacementCandidate(candidates, fs::path{"tools/f15assets/cli.py"});
+    addReplacementCandidate(candidates, fs::path{"../tools/f15assets/cli.py"});
+    addReplacementCandidate(candidates, fs::path{"../../tools/f15assets/cli.py"});
+    for (const fs::path &candidate : candidates) {
+        if (fs::exists(candidate)) return string("python3 ") + shellQuote(candidate.string());
+    }
+    return string("python3 -m tools.f15assets.cli");
+}
+
+static vector<fs::path> replacementSearchRoots(void) {
+    vector<fs::path> roots;
+    const char *replacementRootEnv = getenv("F15_REPLACEMENT_ROOT");
+    static int warnedInvalidReplacementRoot = 0;
+    /* Explicit custom-pack root. This keeps original DOS assets in gamePath
+     * while loading modern replacements from an external converted tree. The
+     * env var may point either at converted_assets_all itself or at a parent
+     * containing it; missing directories are ignored. The remaining roots
+     * preserve older workflows: converted_assets_all beside the game path,
+     * converted_assets_all in the current working directory, then direct
+     * gamePath/current-directory replacement files. */
+    if (replacementRootEnv && replacementRootEnv[0]) {
+        fs::path replacementRoot{replacementRootEnv};
+        std::error_code ec;
+        int addedExplicitRoot = 0;
+        if (fs::is_directory(replacementRoot, ec)) {
+            addReplacementCandidate(roots, replacementRoot);
+            addedExplicitRoot = 1;
+        }
+        ec.clear();
+        if (fs::is_directory(replacementRoot / "converted_assets_all", ec)) {
+            addReplacementCandidate(roots, replacementRoot / "converted_assets_all");
+            addedExplicitRoot = 1;
+        }
+        if (!addedExplicitRoot && !warnedInvalidReplacementRoot) {
+            warnedInvalidReplacementRoot = 1;
+            LogWarn(("asset replacement: F15_REPLACEMENT_ROOT does not name an existing replacement directory: %s", replacementRootEnv));
+        }
+    }
+    addReplacementCandidate(roots, gamePath / "converted_assets_all");
+    addReplacementCandidate(roots, fs::path{"converted_assets_all"});
+    addReplacementCandidate(roots, gamePath);
+    addReplacementCandidate(roots, fs::path{"."});
+    return roots;
+}
+
+static vector<fs::path> recursiveReplacementSearchRoots(void) {
+    vector<fs::path> roots;
+    const char *replacementRootEnv = getenv("F15_REPLACEMENT_ROOT");
+
+    /* Recursive fallback is useful for converted asset trees that preserve
+     * campaign/theater subdirectories, but it must not walk arbitrary gamePath
+     * or process-current directories. Those roots can be large repos/home dirs
+     * and may contain unrelated same-named files. */
+    if (replacementRootEnv && replacementRootEnv[0]) {
+        fs::path replacementRoot{replacementRootEnv};
+        std::error_code ec;
+        if (fs::is_directory(replacementRoot, ec)) {
+            addReplacementCandidate(roots, replacementRoot);
+        }
+        ec.clear();
+        if (fs::is_directory(replacementRoot / "converted_assets_all", ec)) {
+            addReplacementCandidate(roots, replacementRoot / "converted_assets_all");
+        }
+    }
+    addReplacementCandidate(roots, gamePath / "converted_assets_all");
+    addReplacementCandidate(roots, fs::path{"converted_assets_all"});
+    return roots;
+}
+
+static void addRecursiveReplacementCandidates(vector<fs::path> &candidates,
+                                              const fs::path &root,
+                                              const string &filename) {
+    std::error_code ec;
+    const string filenameLower = lowerString(filename);
+    if (!fs::is_directory(root, ec)) return;
+    /* convert-all preserves campaign/theater subdirectories below
+     * converted_assets_all. Keep direct candidates first, then use this bounded
+     * fallback so runtime loading can find recursive conversion output. */
+    for (const fs::directory_entry &entry : fs::recursive_directory_iterator(root, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file(ec)) continue;
+        if (lowerString(entry.path().filename().string()) == filenameLower) {
+            addReplacementCandidate(candidates, entry.path());
+        }
+    }
+}
+
+/* Resolve a modern replacement asset next to converted exports.
+ *
+ * `legacyFilename` is the original game filename ("LB.3D3", "Libya.wld",
+ * "TITLE.PIC"). `modernExt` is the preferred modern extension, including dot
+ * (".glb", ".json", ".png", ".wav"). The media file is authoritative when it
+ * overlaps JSON sidecar metadata.
+ */
+int findReplacementAssetPath(const char *legacyFilename, const char *modernExt,
+                             char *outPath, size_t outPathSize) {
+    if (!legacyFilename || !modernExt || !outPath || outPathSize == 0) return 0;
+
+    fs::path legacy{legacyFilename};
+    const string stem = upperString(legacy.stem().string());
+    const string ext = upperString(legacy.extension().string());
+    const string dir = replacementDirForLegacy(legacy);
+    const string modern = modernExt;
+    const fs::path legacyParent = legacy.parent_path();
+
+    vector<fs::path> candidates;
+    vector<fs::path> replacementRoots = replacementSearchRoots();
+    vector<fs::path> recursiveRoots = recursiveReplacementSearchRoots();
+
+    const string nameWithLegacyExt = stem + ext + modern;
+    const string nameWithoutLegacyExt = stem + modern;
+    const string lowerNameWithLegacyExt = lowerString(nameWithLegacyExt);
+    const string lowerNameWithoutLegacyExt = lowerString(nameWithoutLegacyExt);
+
+    if (!legacyParent.empty()) {
+        vector<fs::path> scopedParents;
+        addReplacementCandidate(scopedParents, legacyParent);
+        addReplacementCandidate(scopedParents, caseMappedPath(legacyParent, upperString));
+        addReplacementCandidate(scopedParents, caseMappedPath(legacyParent, lowerString));
+        for (const fs::path &root : replacementRoots) {
+            for (const fs::path &scopedParent : scopedParents) {
+                const fs::path scopedRoot = root / scopedParent;
+                if (stem.rfind("VOICE_CUE_", 0) == 0 && modern == ".wav") {
+                    addReplacementCandidate(candidates, scopedRoot / "sounds" / (lowerString(stem) + ".wav"));
+                }
+                if (stem.rfind("FONT_", 0) == 0 && (modern == ".bdf" || modern == ".png")) {
+                    addReplacementCandidate(candidates, scopedRoot / "fonts" / (lowerString(stem) + modern));
+                }
+                addReplacementCandidate(candidates, scopedRoot / dir / nameWithLegacyExt);
+                addReplacementCandidate(candidates, scopedRoot / dir / lowerNameWithLegacyExt);
+                addReplacementCandidate(candidates, scopedRoot / dir / nameWithoutLegacyExt);
+                addReplacementCandidate(candidates, scopedRoot / dir / lowerNameWithoutLegacyExt);
+                addReplacementCandidate(candidates, scopedRoot / nameWithLegacyExt);
+                addReplacementCandidate(candidates, scopedRoot / lowerNameWithLegacyExt);
+                addReplacementCandidate(candidates, scopedRoot / nameWithoutLegacyExt);
+                addReplacementCandidate(candidates, scopedRoot / lowerNameWithoutLegacyExt);
+            }
+        }
+    }
+    for (const fs::path &root : replacementRoots) {
+        if (stem.rfind("VOICE_CUE_", 0) == 0 && modern == ".wav") {
+            addReplacementCandidate(candidates, root / "sounds" / (lowerString(stem) + ".wav"));
+        }
+        if (stem.rfind("FONT_", 0) == 0 && (modern == ".bdf" || modern == ".png")) {
+            addReplacementCandidate(candidates, root / "fonts" / (lowerString(stem) + modern));
+        }
+        addReplacementCandidate(candidates, root / dir / nameWithLegacyExt);
+        addReplacementCandidate(candidates, root / dir / lowerNameWithLegacyExt);
+        addReplacementCandidate(candidates, root / dir / nameWithoutLegacyExt);
+        addReplacementCandidate(candidates, root / dir / lowerNameWithoutLegacyExt);
+        addReplacementCandidate(candidates, root / nameWithLegacyExt);
+        addReplacementCandidate(candidates, root / lowerNameWithLegacyExt);
+        addReplacementCandidate(candidates, root / nameWithoutLegacyExt);
+        addReplacementCandidate(candidates, root / lowerNameWithoutLegacyExt);
+    }
+    for (const fs::path &root : recursiveRoots) {
+        addRecursiveReplacementCandidates(candidates, root, nameWithLegacyExt);
+        addRecursiveReplacementCandidates(candidates, root, nameWithoutLegacyExt);
+    }
+
+    for (const fs::path &candidate : candidates) {
+        if (!fs::exists(candidate)) continue;
+        const string resolved = candidate.string();
+        std::snprintf(outPath, outPathSize, "%s", resolved.c_str());
+        return 1;
+    }
+
+    outPath[0] = 0;
+    return 0;
+}
+
+/* Resolve an editable per-shape 3D replacement exported beside a .3D3/.WLD group.
+ *
+ * The converter writes shape files as `shape_###.glb` or
+ * `shape_###_<derived label>.glb` directly in the extensionless asset directory
+ * (for example `converted_assets_all/VN/shape_049_SAM_Radar.glb`).  The label is
+ * only for humans; the stable lookup key is the original shape slot number.
+ */
+int findReplacementShapeModelPath(const char *containerLegacyFilename, int shapeId,
+                                  const char *modernExt, char *outPath,
+                                  size_t outPathSize) {
+    if (!containerLegacyFilename || !modernExt || !outPath || outPathSize == 0) return 0;
+    if (shapeId < 0 || shapeId > 999) return 0;
+
+    fs::path legacy{containerLegacyFilename};
+    const string dir = replacementDirForLegacy(legacy);
+    const string lowerDir = lowerString(dir);
+    const string modern = modernExt;
+    const fs::path legacyParent = legacy.parent_path();
+    char exactName[32];
+    string lowerExactName;
+    char prefix[32];
+    std::snprintf(exactName, sizeof(exactName), "shape_%03d%s", shapeId, modern.c_str());
+    lowerExactName = lowerString(exactName);
+    std::snprintf(prefix, sizeof(prefix), "shape_%03d_", shapeId);
+    vector<fs::path> replacementRoots = replacementSearchRoots();
+    vector<fs::path> recursiveRoots = recursiveReplacementSearchRoots();
+
+    vector<fs::path> roots;
+    if (!legacyParent.empty()) {
+        vector<fs::path> scopedParents;
+        addReplacementCandidate(scopedParents, legacyParent);
+        addReplacementCandidate(scopedParents, caseMappedPath(legacyParent, upperString));
+        addReplacementCandidate(scopedParents, caseMappedPath(legacyParent, lowerString));
+        for (const fs::path &root : replacementRoots) {
+            for (const fs::path &scopedParent : scopedParents) {
+                addReplacementCandidate(roots, root / scopedParent / dir);
+                addReplacementCandidate(roots, root / scopedParent / lowerDir);
+                addReplacementCandidate(roots, root / scopedParent);
+            }
+        }
+    }
+    for (const fs::path &root : replacementRoots) {
+        addReplacementCandidate(roots, root / dir);
+        addReplacementCandidate(roots, root / lowerDir);
+        addReplacementCandidate(roots, root);
+    }
+    for (const fs::path &convertedRoot : recursiveRoots) {
+        std::error_code ec;
+        if (!fs::is_directory(convertedRoot, ec)) continue;
+        for (const fs::directory_entry &entry : fs::recursive_directory_iterator(convertedRoot, ec)) {
+            if (ec) break;
+            if (!entry.is_directory(ec)) continue;
+            if (lowerString(entry.path().filename().string()) == lowerDir) {
+                addReplacementCandidate(roots, entry.path());
+            }
+        }
+    }
+
+    for (const fs::path &root : roots) {
+        if (modern == ".glmesh") {
+            const fs::path cached = root / "cache" / exactName;
+            if (fs::exists(cached)) {
+                const string resolved = cached.string();
+                std::snprintf(outPath, outPathSize, "%s", resolved.c_str());
+                return 1;
+            }
+        }
+        const fs::path exact = root / exactName;
+        if (fs::exists(exact)) {
+            const string resolved = exact.string();
+            std::snprintf(outPath, outPathSize, "%s", resolved.c_str());
+            return 1;
+        }
+        const fs::path lowerExact = root / lowerExactName;
+        if (fs::exists(lowerExact)) {
+            const string resolved = lowerExact.string();
+            std::snprintf(outPath, outPathSize, "%s", resolved.c_str());
+            return 1;
+        }
+    }
+
+    for (const fs::path &root : roots) {
+        std::error_code ec;
+        vector<fs::path> scanRoots;
+        addReplacementCandidate(scanRoots, root);
+        if (modern == ".glmesh") addReplacementCandidate(scanRoots, root / "cache");
+        for (const fs::path &scanRoot : scanRoots) {
+            if (!fs::is_directory(scanRoot, ec)) continue;
+            for (const fs::directory_entry &entry : fs::directory_iterator(scanRoot, ec)) {
+                if (ec) break;
+                if (!entry.is_regular_file(ec)) continue;
+                const fs::path path = entry.path();
+                const string filename = path.filename().string();
+                const string lowerFilename = lowerString(filename);
+                if (lowerFilename != lowerExactName && lowerFilename.rfind(lowerString(prefix), 0) != 0) continue;
+                if (lowerString(path.extension().string()) != lowerString(modern)) continue;
+                const string resolved = path.string();
+                std::snprintf(outPath, outPathSize, "%s", resolved.c_str());
+                return 1;
+            }
+        }
+    }
+
+    outPath[0] = 0;
+    return 0;
+}
+
+static const char *preferredModernExtForLegacy(const char *filename) {
+    if (!filename) return NULL;
+    fs::path legacy{filename};
+    const string ext = upperString(legacy.extension().string());
+    if (ext == ".3D3") return ".glb";
+    if (ext == ".PIC" || ext == ".SPR") return ".png";
+    if (ext == ".WLD" || ext == ".3DT" || ext == ".3DG") return ".json";
+    return NULL;
+}
+
+static const char *structuredFormatForLegacy(const char *filename) {
+    if (!filename) return NULL;
+    fs::path legacy{filename};
+    const string ext = upperString(legacy.extension().string());
+    if (ext == ".WLD") return "WLD";
+    if (ext == ".3D3") return "3D3";
+    if (ext == ".3DT") return "3DT";
+    if (ext == ".3DG") return "3DG";
+    return NULL;
+}
+
+static unique_ptr<vector<uint8>> readHostFileBytes(const string &path, size_t maxBytes) {
+    FILE *fp = fopen(path.c_str(), "rb");
+    unique_ptr<vector<uint8>> data;
+    unsigned char chunk[4096];
+    size_t got;
+
+    if (!fp) return nullptr;
+    data = make_unique<vector<uint8>>();
+    while ((got = fread(chunk, 1, sizeof(chunk), fp)) > 0) {
+        data->insert(data->end(), chunk, chunk + got);
+        if (data->size() > maxBytes) {
+            fclose(fp);
+            return nullptr;
+        }
+    }
+    if (ferror(fp)) {
+        fclose(fp);
+        return nullptr;
+    }
+    fclose(fp);
+    return data;
+}
+
+static int structuredJsonHasProperty(const char *path, const char *key) {
+    unique_ptr<vector<uint8>> data;
+    string text;
+    size_t pos = 0;
+
+    if (!path || !key) return 0;
+    data = readHostFileBytes(path, 1024 * 1024);
+    if (!data) return 0;
+    text.assign((const char *)data->data(), data->size());
+    /* This is only a cheap bridge gate, not JSON parsing. For .3D3, default
+     * minimized sidecars are metadata-only and must not invoke build-binary;
+     * full bridge dumps include the quoted "model_data" property. The Python
+     * tool remains the authority for parsing and rebuilding actual JSON. */
+    while ((pos = text.find(key, pos)) != string::npos) {
+        size_t scan = pos + strlen(key);
+        while (scan < text.size() && isspace((unsigned char)text[scan])) scan++;
+        if (scan < text.size() && text[scan] == ':') return 1;
+        pos++;
+    }
+    return 0;
+}
+
+static void compareStructuredReplacementWithLegacy(const char *filename,
+                                                   const vector<uint8> &replacementData,
+                                                   const char *replacementPath) {
+    unique_ptr<vector<uint8>> legacyData;
+    string legacyPath;
+
+    if (!assetCompareEnabled()) return;
+
+    legacyPath = resolveCasePath(filename, true);
+    if (legacyPath.empty()) {
+        LogWarn(("asset replacement compare: legacy file missing for %s; replacement=%s", filename, replacementPath));
+        return;
+    }
+    legacyData = readHostFileBytes(legacyPath, 1024 * 1024);
+    if (!legacyData) {
+        LogWarn(("asset replacement compare: failed to read legacy file %s for %s", legacyPath.c_str(), filename));
+        return;
+    }
+    assetCompareStructuredBytes(
+        filename,
+        legacyData->data(),
+        legacyData->size(),
+        replacementData.data(),
+        replacementData.size(),
+        replacementPath
+    );
+}
+
+static SDL_IOStream *openStructuredJsonReplacement(const char *filename) {
+    char replacementPath[512];
+    const char *fmt = structuredFormatForLegacy(filename);
+    string command;
+    FILE *pipe;
+    unique_ptr<vector<uint8>> data;
+    unsigned char chunk[4096];
+    size_t got;
+    int status;
+
+    if (!fmt) return NULL;
+    if (!findReplacementAssetPath(filename, ".json", replacementPath, sizeof(replacementPath))) {
+        return NULL;
+    }
+    if (strcmp(fmt, "3D3") == 0 && !structuredJsonHasProperty(replacementPath, "\"model_data\"")) {
+        LogInfo((
+            "asset replacement: found minimized .3D3 JSON index for %s at %s; "
+            "geometry uses GLB and the .3D3 byte stream remains the table/fallback source",
+            filename,
+            replacementPath
+        ));
+        return NULL;
+    }
+
+    /* WLD/3DT/3DG and full .3D3 dumps are structured legacy byte streams, not
+     * media files, so JSON is the editable modern source. Until the game has
+     * native JSON importers, rebuild the exact legacy byte stream here and feed
+     * it to the proven old loader. */
+    command = defaultAssetToolCommand(fs::path{replacementPath});
+    command += " build-binary ";
+    command += shellQuote(replacementPath);
+    command += " --format ";
+    command += fmt;
+
+    pipe = popen(command.c_str(), "r");
+    if (!pipe) {
+        LogWarn(("asset replacement: failed to run JSON importer for %s; using legacy binary", filename));
+        return NULL;
+    }
+
+    data = make_unique<vector<uint8>>();
+    while ((got = fread(chunk, 1, sizeof(chunk), pipe)) > 0) {
+        data->insert(data->end(), chunk, chunk + got);
+        if (data->size() > 1024 * 1024) {
+            LogWarn(("asset replacement: JSON importer output too large for %s; using legacy binary", filename));
+            pclose(pipe);
+            return NULL;
+        }
+    }
+    status = pclose(pipe);
+    if (status != 0 || data->empty()) {
+        LogWarn(("asset replacement: JSON importer failed for %s from %s; using legacy binary", filename, replacementPath));
+        return NULL;
+    }
+
+    compareStructuredReplacementWithLegacy(filename, *data, replacementPath);
+
+    SDL_IOStream *io = SDL_IOFromConstMem(data->data(), data->size());
+    if (!io) {
+        LogWarn(("asset replacement: failed to open rebuilt JSON bytes for %s; using legacy binary", filename));
+        return NULL;
+    }
+    g_replacementIoBuffers.push_back(std::move(data));
+    LogInfo(("asset replacement: loaded %s from JSON %s (%zu bytes)", filename, replacementPath, g_replacementIoBuffers.back()->size()));
+    return io;
+}
+
+static void logPreferredReplacementIfPresent(const char *filename) {
+    char replacementPath[512];
+    const char *modernExt = preferredModernExtForLegacy(filename);
+    fs::path legacy{filename ? filename : ""};
+    const string ext = filename ? upperString(legacy.extension().string()) : "";
+    if (!modernExt) return;
+    if (ext == ".PIC" || ext == ".SPR" || ext == ".WLD" || ext == ".3DT" || ext == ".3DG") {
+        return;
+    }
+    if (!findReplacementAssetPath(filename, modernExt, replacementPath, sizeof(replacementPath))) return;
+    if (ext == ".3D3") {
+        LogInfo((
+            "asset replacement: found overview GLB for %s at %s; "
+            "per-shape GLB replacement is handled by the OpenGL renderer and "
+            "the active .3D3 stream remains available for shape slots/comparison",
+            filename,
+            replacementPath
+        ));
+    }
+}
+
+static int hasRequiredModernReplacement(const char *filename) {
+    char replacementPath[512];
+    fs::path legacy{filename ? filename : ""};
+    const string ext = filename ? upperString(legacy.extension().string()) : "";
+
+    if (!filename) return 0;
+    if (ext == ".PIC" || ext == ".SPR") {
+        return findReplacementAssetPath(filename, ".png", replacementPath, sizeof(replacementPath));
+    }
+    if (ext == ".WLD" || ext == ".3DT" || ext == ".3DG") {
+        return findReplacementAssetPath(filename, ".json", replacementPath, sizeof(replacementPath));
+    }
+    if (ext == ".3D3") {
+        if (!findReplacementAssetPath(filename, ".json", replacementPath, sizeof(replacementPath))) {
+            return 0;
+        }
+        if (structuredJsonHasProperty(replacementPath, "\"model_data\"")) {
+            return 1;
+        }
+        LogWarn((
+            "asset replacement: %s has only minimized .3D3 JSON; original .3D3 is still required for shape tables",
+            filename
+        ));
+        return 0;
+    }
+    if (upperString(legacy.filename().string()) == "F15DGTL.BIN") {
+        return findReplacementAssetPath("voice_cue_000_sample0", ".wav", replacementPath, sizeof(replacementPath)) &&
+               findReplacementAssetPath("voice_cue_001_sample4", ".wav", replacementPath, sizeof(replacementPath)) &&
+               findReplacementAssetPath("voice_cue_002_sample2_variant0", ".wav", replacementPath, sizeof(replacementPath)) &&
+               findReplacementAssetPath("voice_cue_003_sample2_variant1", ".wav", replacementPath, sizeof(replacementPath)) &&
+               findReplacementAssetPath("voice_cue_004_sample2_variant2", ".wav", replacementPath, sizeof(replacementPath));
+    }
+    return 0;
+}
+
 /* Open an asset for reading. Returns the stream, or NULL on failure. */
 SDL_IOStream *openFile(const char *filename, int mode) {
     (void)mode; /* the resident open service only distinguished read vs. write;
                  * every openFile caller in the game opens an asset for reading */
+    if (SDL_IOStream *replacement = openStructuredJsonReplacement(filename)) {
+        return replacement;
+    }
+    logPreferredReplacementIfPresent(filename);
     return SDL_IOFromFile(resolveCasePath(filename).c_str(), "rb");
 }
 
@@ -190,6 +767,10 @@ bool verifyGameAssets() {
     for (const Asset &a : assets) {
         const string pathStr = resolveCasePath(a.filename.c_str(), true);
         if (pathStr.empty()) {
+            if (hasRequiredModernReplacement(a.filename.c_str())) {
+                LogInfo(("asset verification: using modern replacement for missing legacy asset %s", a.filename.c_str()));
+                continue;
+            }
             const string msg = "Could not find asset file " + a.filename
                 + " in game directory: " + gamePath.string();
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Initialization failed",
@@ -197,6 +778,10 @@ bool verifyGameAssets() {
             return false;
         }
         if (QuickDigest5::fileToHash(pathStr) != a.md5) {
+            if (hasRequiredModernReplacement(a.filename.c_str())) {
+                LogInfo(("asset verification: using modern replacement instead of checksum-mismatched legacy asset %s", pathStr.c_str()));
+                continue;
+            }
             const string msg = "Checksum mismatch for asset file " + pathStr
                 + ": expected " + a.md5;
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Initialization failed",

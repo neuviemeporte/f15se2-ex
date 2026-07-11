@@ -27,6 +27,13 @@ option(COVERAGE "Build with gcov code-coverage instrumentation" OFF)
 # through the front end each run.
 option(AUTOSTART "Skip menus and start a mission directly (DEBUG_AUTOSTART)" OFF)
 
+# Full asset replacement proof is intentionally a test-time integration check,
+# not runtime game instrumentation. The paths default to the local developer
+# layout when available, but can be overridden by packagers/CI.
+set(F15SE2_ORIGINAL_ASSETS "/home/xor/games/f15" CACHE PATH "Original F-15 asset directory used by full replacement validation")
+set(F15SE2_CONVERTED_ASSETS "${CMAKE_CURRENT_SOURCE_DIR}/converted_assets_all" CACHE PATH "Converted asset directory used by full replacement validation")
+option(F15SE2_ENABLE_ASSET_VALIDATION_TEST "Register full old-vs-modern asset validation as a CTest when asset dirs exist" ON)
+
 #==============================================================================
 # Global settings
 #==============================================================================
@@ -101,6 +108,12 @@ set(F15SE2_SOURCES
 
     # Shared file + string helpers
     ${SRC_DIR}/shared/file_io.c
+    ${SRC_DIR}/shared/asset_compare.c
+    ${SRC_DIR}/shared/asset_compare_bytes.c
+    ${SRC_DIR}/shared/asset_compare_image.c
+    ${SRC_DIR}/shared/asset_compare_font.c
+    ${SRC_DIR}/shared/asset_compare_sound.c
+    ${SRC_DIR}/shared/asset_compare_3d.c
     ${SRC_DIR}/shared/cleanup.c
     ${SRC_DIR}/shared/drawstr.c
     ${SRC_DIR}/shared/textfmt.c
@@ -460,6 +473,7 @@ add_behavior_test(original_behavior_tests LINK_CORE)
 add_behavior_test(utility_behavior_tests LINK_CORE)
 add_behavior_test(end_runtime_behavior_tests LINK_CORE)
 add_behavior_test(geometry_behavior_tests LINK_CORE)
+add_behavior_test(asset_compare_behavior_tests LINK_CORE)
 add_behavior_test(file_io_behavior_tests LINK_CORE)
 add_behavior_test(gameplay_behavior_tests LINK_CORE)
 add_behavior_test(input_behavior_tests LINK_CORE)
@@ -476,6 +490,48 @@ add_behavior_test(eg3drast_internal_behavior_tests SOURCES ${SRC_DIR}/egdata.c)
 add_behavior_test(start_behavior_tests LINK_CORE)
 add_behavior_test(log_behavior_tests LINK_CORE)
 add_behavior_test(vgapal_behavior_tests SOURCES ${SRC_DIR}/vgapal.c DEFS main=vgapal_program_main)
+
+if(IS_DIRECTORY "${F15SE2_ORIGINAL_ASSETS}" AND IS_DIRECTORY "${F15SE2_CONVERTED_ASSETS}")
+    add_behavior_test(asset_runtime_loader_validation_tests LINK_CORE
+        DEFS
+            F15_ORIGINAL_ASSETS="${F15SE2_ORIGINAL_ASSETS}"
+            F15_CONVERTED_ASSETS="${F15SE2_CONVERTED_ASSETS}"
+            F15_ASSET_TOOL_COMMAND="python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/f15assets/cli.py"
+    )
+    set_tests_properties(asset_runtime_loader_validation_tests PROPERTIES
+        LABELS "assets;integration"
+        TIMEOUT 120
+    )
+else()
+    message(STATUS "Skipping asset_runtime_loader_validation_tests: set F15SE2_ORIGINAL_ASSETS and F15SE2_CONVERTED_ASSETS to existing directories")
+endif()
+
+if(F15SE2_ENABLE_ASSET_VALIDATION_TEST)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND AND IS_DIRECTORY "${F15SE2_ORIGINAL_ASSETS}" AND IS_DIRECTORY "${F15SE2_CONVERTED_ASSETS}")
+        add_test(
+            NAME asset_replacement_full_validation
+            COMMAND
+                ${CMAKE_COMMAND} -E env
+                "PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}/tools/f15assets"
+                ${Python3_EXECUTABLE}
+                -m tools.f15assets.cli
+                validate-replacements
+                "${F15SE2_ORIGINAL_ASSETS}"
+                "${F15SE2_CONVERTED_ASSETS}"
+                --repo-root "${CMAKE_CURRENT_SOURCE_DIR}"
+                --require-all
+                --require-source-proof
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        )
+        set_tests_properties(asset_replacement_full_validation PROPERTIES
+            LABELS "assets;integration"
+            TIMEOUT 120
+        )
+    else()
+        message(STATUS "Skipping asset_replacement_full_validation: set F15SE2_ORIGINAL_ASSETS and F15SE2_CONVERTED_ASSETS to existing directories")
+    endif()
+endif()
 
 
 #------------------------------------------------------------------------------

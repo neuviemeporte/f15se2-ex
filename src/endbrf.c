@@ -14,6 +14,19 @@
 extern int16 menuItemUnused;
 extern uint8 animExitFlag;
 
+static int canLoadPicOrReplacement(const char *filename) {
+    char replacementPath[512];
+    SDL_IOStream *handle = openFile(filename, 0);
+    if (handle) {
+        fileClose(handle);
+        return 1;
+    }
+    /* Sprite-sheet PNG replacements are authoritative for the later loadPic()
+     * call, so disk-presence checks must accept them even when the original
+     * .SPR is absent. */
+    return findReplacementAssetPath(filename, ".png", replacementPath, sizeof(replacementPath));
+}
+
 void debriefMainLoop(void) {
     char p[2];
     int16 a, b, c;
@@ -45,12 +58,10 @@ insert_scenario:
     misc_getKey();
 
 open_theater:
-    worldBufHandle = openFile(theaterSprFiles[gameData->theater], 0);
-    if (!worldBufHandle)
+    if (!canLoadPicOrReplacement(theaterSprFiles[gameData->theater]))
         goto insert_scenario;
 
     gfx_waitRetrace();
-    fileClose(worldBufHandle);
     gfx_setFadeSteps(9);
     spriteBufSeg = gfx_allocSpriteBuf();
     loadPic(theaterSprFiles[gameData->theater], spriteBufSeg);
@@ -68,12 +79,10 @@ insert_diska:
     misc_getKey();
 
 open_dbicons:
-    worldBufHandle = openFile("dbicons.spr", 0);
-    if (!worldBufHandle)
+    if (!canLoadPicOrReplacement("dbicons.spr"))
         goto insert_diska;
 
     gfx_waitRetrace();
-    fileClose(worldBufHandle);
     gfx_setFadeSteps(8);
     /* Decode the popup icon sheet into a sprite buffer image. */
     g_dbiconsBuf = gfx_allocSpriteBuf();

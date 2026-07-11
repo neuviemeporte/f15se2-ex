@@ -16,12 +16,15 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 
 // clearRect is declared per-program (endcode.h/stcode.h) with differing arg
 // names; declare it locally to avoid pulling in a program-specific header. Word
 // 0 of the pageDesc is the page index, word 3 the fill colour.
 void clearRect(int16 *pageDesc, int16 x1, int16 y1, int16 x2, int16 y2);
+int loadReplacementPngToPage(const char *filename, int page);
 
 namespace {
 
@@ -40,6 +43,7 @@ enum GfxRenderConstant : int {
     kFont0Advance = 4,
     // gfx_setFont fallback advance for a NULL/absent table or a control char.
     kFontFallbackAdvance = 8,
+    kReplacementFontAdvance = 11,
     // A char >= 0x80 is an inline colour escape: no glyph, zero advance.
     kColorEscapeChar = 0x90,
     kFirstPrintable = 0x20,
@@ -68,6 +72,61 @@ void fillPageRaw(int page, uint8 color) {
     uint8 *px = gfx_pagePixels(page, &pitch);
     for (int y = 0; y < kLogicalHeight; y++)
         std::memset(px + (size_t)y * pitch, color, kLogicalWidth);
+}
+
+void writeReplacementBdf(const std::filesystem::path &root, int fontId) {
+    const auto fontPath = root / "converted_assets_all" / "fonts" / ("font_" + std::to_string(fontId) + ".bdf");
+    std::filesystem::create_directories(fontPath.parent_path());
+    std::ofstream out(fontPath);
+    out << "STARTFONT 2.1\n"
+           "FONT replacement\n"
+           "SIZE 5 75 75\n"
+           "FONTBOUNDINGBOX 4 5 0 0\n"
+           "STARTPROPERTIES 2\n"
+           "FONT_ASCENT 5\n"
+           "FONT_DESCENT 0\n"
+           "ENDPROPERTIES\n"
+           "CHARS 96\n";
+    for (int ch = 0x20; ch < 0x80; ch++) {
+        out << "STARTCHAR U+" << std::hex << ch << std::dec << "\n"
+            << "ENCODING " << ch << "\n"
+            << "SWIDTH 500 0\n"
+            << "DWIDTH " << kReplacementFontAdvance << " 0\n"
+            << "BBX 4 5 0 0\n"
+            << "BITMAP\n"
+            << "F0\n90\nF0\n90\nF0\n"
+            << "ENDCHAR\n";
+    }
+    out << "ENDFONT\n";
+}
+
+void writeReplacementPng(const std::filesystem::path &root) {
+    static const unsigned char kRedPng[] = {
+        137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,2,0,0,0,2,8,6,0,0,0,114,182,13,36,0,0,0,17,73,68,65,84,120,156,99,248,207,192,240,31,132,25,96,12,0,71,202,7,249,103,89,110,183,0,0,0,0,73,69,78,68,174,66,96,130
+    };
+    const auto pngPath = root / "converted_assets_all" / "TITLE.png";
+    std::filesystem::create_directories(pngPath.parent_path());
+    std::ofstream out(pngPath, std::ios::binary);
+    out.write(reinterpret_cast<const char *>(kRedPng), sizeof(kRedPng));
+}
+
+void writeReplacementFontPng(const std::filesystem::path &root, int fontId) {
+    static const unsigned char kFontAtlasPng[] = {
+        137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,111,
+        0,0,0,41,8,6,0,0,0,59,196,119,17,0,0,0,134,73,68,65,
+        84,120,218,237,215,49,14,0,16,20,68,65,247,191,52,10,18,17,250,191,
+        201,108,233,117,10,49,173,207,181,207,180,226,173,175,105,129,109,31,190,162,
+        86,188,157,7,119,212,138,55,23,17,220,60,67,217,205,82,231,11,142,10,
+        26,42,104,168,128,10,26,42,104,168,96,190,217,168,160,161,130,134,10,168,
+        224,34,80,65,67,5,67,5,84,208,80,65,67,5,13,21,80,65,67,5,
+        67,5,84,208,80,65,67,5,13,21,80,65,67,5,67,5,205,23,28,21,
+        52,84,208,80,1,21,60,81,17,109,0,253,218,112,113,4,124,59,36,0,
+        0,0,0,73,69,78,68,174,66,96,130
+    };
+    const auto pngPath = root / "converted_assets_all" / "fonts" / ("font_" + std::to_string(fontId) + ".png");
+    std::filesystem::create_directories(pngPath.parent_path());
+    std::ofstream out(pngPath, std::ios::binary);
+    out.write(reinterpret_cast<const char *>(kFontAtlasPng), sizeof(kFontAtlasPng));
 }
 
 // ---- gfx_pagePixels + page-1 aliasing -------------------------------------
@@ -255,9 +314,23 @@ void test_setFont() {
             "a >=0x80 inline colour escape has zero advance");
     require(gfx_setFont(0x10, 0) == kFontFallbackAdvance,
             "a control char below the first printable falls back to advance 8");
-    // A real proportional font returns a positive, bounded advance for a glyph.
-    int w = gfx_setFont('W', 4);
-    require(w > 0 && w <= 32, "a proportional font returns a positive bounded advance");
+    int16 textParams[7] = {};
+    textParams[0] = 0;  // page
+    textParams[2] = 7;  // color
+    textParams[4] = 10; // x
+    textParams[5] = 10; // y
+    textParams[6] = 4;  // font id
+    gfx_drawString(textParams, "A");
+    require(gfx_setFont('A', 4) == kReplacementFontAdvance,
+            "gfx_drawString lazily installs a BDF replacement font width table");
+
+    fillPageRaw(0, 0);
+    textParams[4] = 40;
+    textParams[5] = 40;
+    textParams[6] = 5;
+    gfx_drawString(textParams, " ");
+    require(pagePixel(0, 40, 40) == 7,
+            "gfx_drawString lazily installs a PNG atlas replacement font when BDF is absent");
 }
 
 // ---- gfx_calcRowAddr / gfx_getRowOffset / blitOffset round-trip -----------
@@ -289,6 +362,16 @@ void test_dacPalette() {
     require(r == 255, "gfx_setDacRange expands 6-bit 0x3F to 8-bit 255");
     require(g == 170, "gfx_setDacRange expands 6-bit 0x2A to 8-bit 170");
     require(b == 0, "gfx_setDacRange expands 6-bit 0x00 to 8-bit 0");
+}
+
+void test_replacementPngLoader() {
+    uint8 redDac[3] = {0x3f, 0x00, 0x00};
+    gfx_setDacRange(12, 1, redDac);
+    fillPageRaw(0, 0);
+    require(loadReplacementPngToPage("TITLE.PIC", 0) != 0,
+            "loadReplacementPngToPage loads a modern PNG replacement");
+    require(pagePixel(0, 0, 0) != 0 && pagePixel(0, 1, 1) != 0,
+            "loadReplacementPngToPage writes decoded PNG pixels into the page surface");
 }
 
 // Deterministically compose a small scene into `page` using the primitives
@@ -354,6 +437,15 @@ void test_goldenInitialStateInjection() {
 } // namespace
 
 int main() {
+    const auto replacementRoot = std::filesystem::temp_directory_path() / "f15se2-ex-gfx-replacements";
+    std::filesystem::remove_all(replacementRoot);
+    writeReplacementBdf(replacementRoot, 4);
+    writeReplacementFontPng(replacementRoot, 5);
+    writeReplacementPng(replacementRoot);
+#if !defined(_WIN32)
+    setenv("F15_REPLACEMENT_ROOT", replacementRoot.string().c_str(), 1);
+#endif
+
     test_headless_init();
     gfx_videoInit();
     // The game enters the 320x200 mode before any flight drawing; this also
@@ -371,8 +463,14 @@ int main() {
     test_setFont();
     test_rowAddrAndBlitOffset();
     test_dacPalette();
+    test_replacementPngLoader();
     test_goldenComposedScene();
     test_goldenInitialStateInjection();
+
+#if !defined(_WIN32)
+    unsetenv("F15_REPLACEMENT_ROOT");
+#endif
+    std::filesystem::remove_all(replacementRoot);
 
     std::cout << "gfx_render_behavior_tests passed\n";
     return 0;

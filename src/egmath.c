@@ -21,6 +21,60 @@
 
 // ==== seg000:0xc8de ====
 
+static uint8 s_loggedWorldShapeReplacement[128];
+static uint8 s_loggedAircraftShapeReplacement[128];
+static uint8 s_loggedPhotoShapeReplacement[128];
+
+static int isPhotoShapeSlot(int shapeId) {
+    int slot = shapeId & 0x7f;
+    return (shapeId & 0x100) && slot >= (int)size3d3;
+}
+
+static int replacementShapeSlot(int shapeId) {
+    int slot = shapeId & 0x7f;
+    if (isPhotoShapeSlot(shapeId)) {
+        return slot - (int)size3d3;
+    }
+    return slot;
+}
+
+static const char *replacementShapeContainer(int shapeId) {
+    if (isPhotoShapeSlot(shapeId)) {
+        /* PHOTO.3D3 target-view models are appended to the world shape buffer,
+         * but their editable replacements live in the PHOTO/ shape directory. */
+        return "photo.3d3";
+    }
+    return (shapeId & 0x100) ? regnStr : a15flt_xxx;
+}
+
+static uint8 *replacementShapeLogTable(int shapeId) {
+    if (isPhotoShapeSlot(shapeId)) {
+        return s_loggedPhotoShapeReplacement;
+    }
+    return (shapeId & 0x100) ? s_loggedWorldShapeReplacement : s_loggedAircraftShapeReplacement;
+}
+
+static void logShapeReplacementIfPresent(int shapeId) {
+    int slot = replacementShapeSlot(shapeId);
+    const char *container = replacementShapeContainer(shapeId);
+    uint8 *logged = replacementShapeLogTable(shapeId);
+    char replacementPath[512];
+
+    if (slot < 0 || slot >= 128) return;
+    if (logged[slot]) return;
+    logged[slot] = 1;
+    if (!findReplacementShapeModelPath(container, slot, ".glb", replacementPath, sizeof(replacementPath))) {
+        return;
+    }
+    LogInfo((
+        "asset replacement: found per-shape model for %s shape %d at %s; "
+        "OpenGL backend will prefer it; software backend keeps legacy .3D3",
+        container,
+        slot,
+        replacementPath
+    ));
+}
+
 void load15Flt3d3() {
     int16 bytesLeft, chunkSize;
     struct SREGS segs;
@@ -60,6 +114,7 @@ static void drawWorldObjectCore(int16 shapeId, int isShadow,
     int vfx, vfy, vfz;
 
     dataOff = shapeDataOffset(shapeId);
+    logShapeReplacementIfPresent(shapeId);
     drawPg = g_pageFront;
     relX = worldX - g_ViewX;
     relY = worldY + g_ViewY - 0x01000000L;
@@ -109,8 +164,12 @@ static void drawWorldObjectCore(int16 shapeId, int isShadow,
             setViewPositionFrac(vfx, vfy, vfz);
             g_curLod = 1;
             {
-                R3DSubmit obj = {g_world3dData + dataOff, -objYaw, objPitch, objRoll,
-                                 (int16)relX, -(int16)relY, altitude != 0, isShadow};
+                R3DSubmit obj = {g_world3dData + dataOff, shapeId & 0x7f,
+                                 replacementShapeContainer(shapeId),
+                                 -objYaw, objPitch, objRoll,
+                                 (int16)relX, -(int16)relY, altitude != 0,
+                                 isShadow};
+                obj.shapeId = replacementShapeSlot(shapeId);
                 r3d_submit(&obj);
             }
         }
@@ -232,6 +291,7 @@ void drawTargetView(int shapeId, int32 worldX, int32 worldY, int altitude, int o
     g_targetInHudFlag = 1;
 
     dataOff = shapeDataOffset(shapeId);
+    logShapeReplacementIfPresent(shapeId);
     *g_targetViewParams = 1;
 
     dxFine = worldX - g_ViewX;
@@ -344,7 +404,10 @@ void drawTargetView(int shapeId, int32 worldX, int32 worldY, int altitude, int o
     g_offscreenRender = 1;
     {
         R3DScene scene = {g_targetViewParams, -g_trkBearing, g_trkPitch, g_trkRoll, 0, 0, 0, 0};
-        R3DSubmit obj = {g_world3dData + dataOff, -objYaw, objPitch, objRoll, relX, -relY, relZ};
+        R3DSubmit obj = {g_world3dData + dataOff, shapeId & 0x7f,
+                         replacementShapeContainer(shapeId),
+                         -objYaw, objPitch, objRoll, relX, -relY, relZ};
+        obj.shapeId = replacementShapeSlot(shapeId);
         r3d_beginScene(&scene);
         /* after beginScene: setup3DTransform's setViewPosition cleared the frac */
         setViewPositionFrac(fracX, fracY, fracZ);

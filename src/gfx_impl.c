@@ -11,8 +11,12 @@
 #include "struct.h"
 #include "log.h"
 #include "version.h"
+#include "shared/asset_compare.h"
+#include "shared/common.h"
 #include <dos.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "fontdata.h"
 
@@ -81,7 +85,10 @@ void gfx_videoInit(void) {
                 msaa = 0;
                 continue;
             }
-            LogCritical(("GL init failed; falling back to software renderer"));
+            /* This must not be LogCritical: log_critical exits immediately.
+             * A failed GL context is recoverable because the software renderer
+             * can create a normal SDL window below. */
+            LogError(("GL init failed; falling back to software renderer"));
             s_useGL = false;
             break;
         }
@@ -285,6 +292,26 @@ void gfx_paletteRGB(int idx, uint8 *r, uint8 *g, uint8 *b) {
     *r = pal->colors[idx].r;
     *g = pal->colors[idx].g;
     *b = pal->colors[idx].b;
+}
+
+int gfx_nearestPaletteIndexRgb8(uint8 r, uint8 g, uint8 b) {
+    SDL_Palette *pal = gfx_getPalette();
+    int best = 15;
+    int bestDist = 0x7fffffff;
+    int i;
+    if (!pal || pal->ncolors <= 0) return best;
+    for (i = 0; i < pal->ncolors && i < 256; i++) {
+        int dr = (int)r - pal->colors[i].r;
+        int dg = (int)g - pal->colors[i].g;
+        int db = (int)b - pal->colors[i].b;
+        int dist = dr * dr + dg * dg + db * db;
+        if (dist < bestDist) {
+            bestDist = dist;
+            best = i;
+            if (dist == 0) break;
+        }
+    }
+    return best;
 }
 
 /* Lazily create the 320x200 8-bit surface backing a page index. */
@@ -585,17 +612,354 @@ static const uint8 g_font0_widths[96] = {
     4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
     4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
     4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4};
-static const uint8 *const g_fontWidthTables[8] = {
+static const uint8 *g_fontWidthTables[8] = {
     g_font0_widths, g_font1_widths, NULL, g_font3_widths,
     g_font4_widths, g_font5_widths, NULL, NULL};
-static const uint8 g_fontHeightsArr[8] = {5, 8, 7, 6, 7, 6, 4, 0};
-static const uint8 g_fontMaxWidths[8] = {4, 8, 6, 6, 8, 6, 0, 0};
+static uint8 g_fontHeightsArr[8] = {5, 8, 7, 6, 7, 6, 4, 0};
+static uint8 g_fontMaxWidths[8] = {4, 8, 6, 6, 8, 6, 0, 0};
 
 /* Bitmap pointers per font index — NULL means no bitmap available */
 static uint8 *g_fontBitmapPtrs[8] = {
     (uint8 *)g_font0_bitmaps, (uint8 *)g_font1_bitmaps, NULL, (uint8 *)g_font3_bitmaps,
     (uint8 *)g_font4_bitmaps, (uint8 *)g_font5_bitmaps, NULL, NULL};
-static const uint8 g_fontBitmapRowSize[8] = {5, 8, 0, 6, 7, 6, 0, 0};
+static uint8 g_fontBitmapRowSize[8] = {5, 8, 0, 6, 7, 6, 0, 0};
+/* Modern font replacements are deliberately media-first. BDF carries both
+ * glyph bitmaps and advance widths; PNG atlas fallback carries bitmap pixels
+ * only and reuses the existing width table so no JSON sidecar is required. */
+static uint8 *g_fontReplacementBitmaps[8] = {NULL};
+static uint8 *g_fontReplacementWidths[8] = {NULL};
+static uint8 g_fontReplacementTried[8] = {0};
+
+static int parseBdfHexByte(const char *text) {
+    char *end = NULL;
+    long value = strtol(text, &end, 16);
+    if (end == text || value < 0 || value > 0xff) return -1;
+    return (int)value;
+}
+
+static void compareReplacementFontWithBuiltin(uint16 fontIdx,
+                                              const uint8 *newBitmap,
+                                              const uint8 *newWidths,
+                                              int newHeight,
+                                              int newWidth,
+                                              const char *replacementPath) {
+    const uint8 *oldBitmap;
+    const uint8 *oldWidths;
+    int oldHeight;
+    int oldWidth;
+    char label[32];
+
+    if (!assetCompareEnabled() || fontIdx >= 8 || !newBitmap || !newWidths) return;
+    oldBitmap = g_fontBitmapPtrs[fontIdx];
+    oldWidths = g_fontWidthTables[fontIdx];
+    oldHeight = g_fontBitmapRowSize[fontIdx];
+    oldWidth = g_fontMaxWidths[fontIdx];
+    if (!oldBitmap || !oldWidths || oldHeight <= 0 || oldWidth <= 0) {
+        LogWarn(("asset replacement compare: no built-in font data available for font %u", (unsigned)fontIdx));
+        return;
+    }
+
+    SDL_snprintf(label, sizeof(label), "font %u", (unsigned)fontIdx);
+    assetCompareFont96(
+        label,
+        oldBitmap,
+        oldWidths,
+        oldHeight,
+        oldWidth,
+        newBitmap,
+        newWidths,
+        newHeight,
+        newWidth,
+        replacementPath
+    );
+}
+
+static int loadReplacementFontPng(uint16 fontIdx, const char *replacementPath) {
+    SDL_Surface *src;
+    SDL_Surface *rgba = NULL;
+    int fontWidth;
+    int fontHeight;
+    int cellStrideX;
+    int cellStrideY;
+    uint8 *newBitmap;
+    uint8 *newWidths;
+    const uint8 *oldWidths;
+    int i, row, col;
+
+    if (fontIdx >= 8 || !replacementPath) return 0;
+    fontWidth = g_fontMaxWidths[fontIdx];
+    fontHeight = g_fontHeightsArr[fontIdx];
+    oldWidths = g_fontWidthTables[fontIdx];
+    if (fontWidth <= 0 || fontWidth > 8 || fontHeight <= 0 || fontHeight > 32 || !oldWidths) {
+        return 0;
+    }
+
+    src = SDL_LoadPNG(replacementPath);
+    if (!src) {
+        LogWarn(("asset replacement: failed to load PNG font atlas %s (%s)", replacementPath, SDL_GetError()));
+        return 0;
+    }
+
+    cellStrideX = fontWidth + 1;
+    cellStrideY = fontHeight + 1;
+    if (src->w < 16 * cellStrideX - 1 || src->h < 6 * cellStrideY - 1) {
+        LogWarn(("asset replacement: rejected PNG font atlas %u at %s; size %dx%d too small", (unsigned)fontIdx, replacementPath, src->w, src->h));
+        SDL_DestroySurface(src);
+        return 0;
+    }
+
+    if (src->format != SDL_PIXELFORMAT_INDEX8) {
+        rgba = SDL_ConvertSurface(src, SDL_PIXELFORMAT_RGBA32);
+        if (!rgba) {
+            SDL_DestroySurface(src);
+            return 0;
+        }
+    }
+
+    newBitmap = (uint8 *)SDL_calloc((size_t)96, (size_t)fontHeight);
+    newWidths = (uint8 *)SDL_malloc(96);
+    if (!newBitmap || !newWidths) {
+        SDL_free(newBitmap);
+        SDL_free(newWidths);
+        if (rgba) SDL_DestroySurface(rgba);
+        SDL_DestroySurface(src);
+        return 0;
+    }
+    memcpy(newWidths, oldWidths, 96);
+
+    if (rgba) {
+        if (SDL_MUSTLOCK(rgba)) SDL_LockSurface(rgba);
+    } else if (SDL_MUSTLOCK(src)) {
+        SDL_LockSurface(src);
+    }
+
+    for (i = 0; i < 96; i++) {
+        int x0 = (i % 16) * cellStrideX;
+        int y0 = (i / 16) * cellStrideY;
+        for (row = 0; row < fontHeight; row++) {
+            uint8 bits = 0;
+            for (col = 0; col < fontWidth; col++) {
+                int lit = 0;
+                if (rgba) {
+                    const uint8 *px = (const uint8 *)rgba->pixels + (size_t)(y0 + row) * rgba->pitch + (x0 + col) * 4;
+                    lit = px[3] != 0 && (px[0] || px[1] || px[2]);
+                } else {
+                    const uint8 *px = (const uint8 *)src->pixels + (size_t)(y0 + row) * src->pitch + (x0 + col);
+                    lit = *px != 0;
+                }
+                if (lit) bits |= (uint8)(0x80u >> col);
+            }
+            newBitmap[(i * fontHeight) + row] = bits;
+        }
+    }
+
+    if (rgba) {
+        if (SDL_MUSTLOCK(rgba)) SDL_UnlockSurface(rgba);
+        SDL_DestroySurface(rgba);
+    } else if (SDL_MUSTLOCK(src)) {
+        SDL_UnlockSurface(src);
+    }
+    SDL_DestroySurface(src);
+
+    compareReplacementFontWithBuiltin(fontIdx, newBitmap, newWidths, fontHeight, fontWidth, replacementPath);
+    SDL_free(g_fontReplacementBitmaps[fontIdx]);
+    SDL_free(g_fontReplacementWidths[fontIdx]);
+    g_fontReplacementBitmaps[fontIdx] = newBitmap;
+    g_fontReplacementWidths[fontIdx] = newWidths;
+    g_fontBitmapPtrs[fontIdx] = newBitmap;
+    g_fontWidthTables[fontIdx] = newWidths;
+    g_fontHeightsArr[fontIdx] = (uint8)fontHeight;
+    g_fontMaxWidths[fontIdx] = (uint8)fontWidth;
+    g_fontBitmapRowSize[fontIdx] = (uint8)fontHeight;
+
+    LogInfo(("asset replacement: loaded font %u from PNG atlas %s", (unsigned)fontIdx, replacementPath));
+    return 1;
+}
+
+static void tryLoadReplacementFont(uint16 fontIdx) {
+    char legacyFontName[32];
+    char replacementPath[512];
+    char pngReplacementPath[512];
+    int hasPngReplacement;
+    FILE *fp;
+    char line[256];
+    uint8 rows[96][32];
+    uint8 widths[96];
+    uint8 seen[96];
+    int current = -1;
+    int inBitmap = 0;
+    int bitmapRow = 0;
+    int fontHeight = -1;
+    int fontWidth = -1;
+    int seenCount = 0;
+    uint8 *newBitmap;
+    uint8 *newWidths;
+    int i, row;
+
+    if (fontIdx >= 8 || g_fontReplacementTried[fontIdx]) return;
+    g_fontReplacementTried[fontIdx] = 1;
+
+    snprintf(legacyFontName, sizeof(legacyFontName), "font_%u", (unsigned)fontIdx);
+    hasPngReplacement = findReplacementAssetPath(legacyFontName, ".png", pngReplacementPath, sizeof(pngReplacementPath));
+    if (!findReplacementAssetPath(legacyFontName, ".bdf", replacementPath, sizeof(replacementPath))) {
+        if (hasPngReplacement) {
+            (void)loadReplacementFontPng(fontIdx, pngReplacementPath);
+        }
+        return;
+    }
+
+    fp = fopen(replacementPath, "rb");
+    if (!fp) {
+        if (hasPngReplacement) {
+            LogWarn(("asset replacement: failed to open BDF font %u at %s; trying PNG atlas %s", (unsigned)fontIdx, replacementPath, pngReplacementPath));
+            (void)loadReplacementFontPng(fontIdx, pngReplacementPath);
+        }
+        return;
+    }
+    memset(rows, 0, sizeof(rows));
+    memset(widths, 0, sizeof(widths));
+    memset(seen, 0, sizeof(seen));
+
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        int valueA, valueB;
+        if (sscanf(line, "ENCODING %d", &valueA) == 1) {
+            current = (valueA >= 0x20 && valueA < 0x80) ? valueA - 0x20 : -1;
+            bitmapRow = 0;
+            inBitmap = 0;
+            continue;
+        }
+        if (current >= 0 && sscanf(line, "DWIDTH %d", &valueA) == 1) {
+            widths[current] = (uint8)((valueA < 0) ? 0 : (valueA > 255 ? 255 : valueA));
+            continue;
+        }
+        if (current >= 0 && sscanf(line, "BBX %d %d", &valueA, &valueB) == 2) {
+            if (valueA <= 0 || valueA > 8 || valueB <= 0 || valueB > 32) {
+                current = -1;
+                continue;
+            }
+            if (fontWidth < 0) fontWidth = valueA;
+            if (fontHeight < 0) fontHeight = valueB;
+            if (fontWidth != valueA || fontHeight != valueB) {
+                current = -1;
+            }
+            continue;
+        }
+        if (current >= 0 && strncmp(line, "BITMAP", 6) == 0) {
+            inBitmap = 1;
+            bitmapRow = 0;
+            continue;
+        }
+        if (current >= 0 && inBitmap && strncmp(line, "ENDCHAR", 7) == 0) {
+            if (fontHeight > 0 && bitmapRow == fontHeight && !seen[current]) {
+                seen[current] = 1;
+                seenCount++;
+            }
+            inBitmap = 0;
+            current = -1;
+            continue;
+        }
+        if (current >= 0 && inBitmap && fontHeight > 0 && bitmapRow < fontHeight) {
+            int byteValue = parseBdfHexByte(line);
+            if (byteValue >= 0) {
+                rows[current][bitmapRow++] = (uint8)byteValue;
+            }
+        }
+    }
+    fclose(fp);
+
+    if (fontHeight <= 0 || fontWidth <= 0 || seenCount != 96) {
+        LogWarn(("asset replacement: rejected BDF font %u at %s; expected 96 complete glyphs", (unsigned)fontIdx, replacementPath));
+        if (hasPngReplacement) {
+            (void)loadReplacementFontPng(fontIdx, pngReplacementPath);
+        }
+        return;
+    }
+    for (i = 0; i < 96; i++) {
+        if (widths[i] == 0) {
+            LogWarn(("asset replacement: rejected BDF font %u at %s; glyph 0x%02x has invalid advance width 0", (unsigned)fontIdx, replacementPath, i + 0x20));
+            if (hasPngReplacement) {
+                (void)loadReplacementFontPng(fontIdx, pngReplacementPath);
+            }
+            return;
+        }
+    }
+
+    newBitmap = (uint8 *)SDL_malloc((size_t)96 * (size_t)fontHeight);
+    newWidths = (uint8 *)SDL_malloc(96);
+    if (!newBitmap || !newWidths) {
+        SDL_free(newBitmap);
+        SDL_free(newWidths);
+        if (hasPngReplacement) {
+            LogWarn(("asset replacement: failed to allocate BDF font %u from %s; trying PNG atlas %s", (unsigned)fontIdx, replacementPath, pngReplacementPath));
+            (void)loadReplacementFontPng(fontIdx, pngReplacementPath);
+        }
+        return;
+    }
+
+    for (i = 0; i < 96; i++) {
+        newWidths[i] = widths[i];
+        for (row = 0; row < fontHeight; row++) {
+            newBitmap[(i * fontHeight) + row] = rows[i][row];
+        }
+    }
+
+    compareReplacementFontWithBuiltin(fontIdx, newBitmap, newWidths, fontHeight, fontWidth, replacementPath);
+    SDL_free(g_fontReplacementBitmaps[fontIdx]);
+    SDL_free(g_fontReplacementWidths[fontIdx]);
+    g_fontReplacementBitmaps[fontIdx] = newBitmap;
+    g_fontReplacementWidths[fontIdx] = newWidths;
+    g_fontBitmapPtrs[fontIdx] = newBitmap;
+    g_fontWidthTables[fontIdx] = newWidths;
+    g_fontHeightsArr[fontIdx] = (uint8)fontHeight;
+    g_fontMaxWidths[fontIdx] = (uint8)fontWidth;
+    g_fontBitmapRowSize[fontIdx] = (uint8)fontHeight;
+
+    LogInfo((
+        "asset replacement: loaded font %u from BDF %s",
+        (unsigned)fontIdx,
+        replacementPath
+    ));
+}
+
+#ifdef DEBUG
+static int copyFontTables(uint16 fontIdx, const uint8 *bitmap, const uint8 *widths,
+                          int height, int maxWidth, uint8 *bitmapOut, size_t bitmapOutSize,
+                          uint8 *widthsOut, size_t widthsOutSize,
+                          int *heightOut, int *maxWidthOut) {
+    size_t bitmapSize;
+    if (!bitmap || !widths || height <= 0 || maxWidth <= 0) return 0;
+    bitmapSize = (size_t)96 * (size_t)height;
+    (void)fontIdx;
+    if (bitmapOut && bitmapOutSize < bitmapSize) return 0;
+    if (widthsOut && widthsOutSize < 96u) return 0;
+    if (bitmapOut) memcpy(bitmapOut, bitmap, bitmapSize);
+    if (widthsOut) memcpy(widthsOut, widths, 96);
+    if (heightOut) *heightOut = height;
+    if (maxWidthOut) *maxWidthOut = maxWidth;
+    return 1;
+}
+
+int gfx_testCopyEffectiveFont(uint16 fontIdx, uint8 *bitmapOut, size_t bitmapOutSize,
+                              uint8 *widthsOut, size_t widthsOutSize,
+                              int *heightOut, int *maxWidthOut) {
+    if (fontIdx >= 8) return 0;
+    tryLoadReplacementFont(fontIdx);
+    return copyFontTables(fontIdx, g_fontBitmapPtrs[fontIdx], g_fontWidthTables[fontIdx],
+                          g_fontBitmapRowSize[fontIdx], g_fontMaxWidths[fontIdx],
+                          bitmapOut, bitmapOutSize, widthsOut, widthsOutSize,
+                          heightOut, maxWidthOut);
+}
+
+int gfx_testCopyBuiltinFont(uint16 fontIdx, uint8 *bitmapOut, size_t bitmapOutSize,
+                            uint8 *widthsOut, size_t widthsOutSize,
+                            int *heightOut, int *maxWidthOut) {
+    if (fontIdx >= 8) return 0;
+    return copyFontTables(fontIdx, g_fontBitmapPtrs[fontIdx], g_fontWidthTables[fontIdx],
+                          g_fontBitmapRowSize[fontIdx], g_fontMaxWidths[fontIdx],
+                          bitmapOut, bitmapOutSize, widthsOut, widthsOutSize,
+                          heightOut, maxWidthOut);
+}
+#endif
 
 /* ---- Shared glyph engine (slots 0x01-0x06) ----
  * MGRAPHIC has one core blitter (0x04 @0x4ab) that the string slots fall into
@@ -634,6 +998,7 @@ static void drawStringCore(int16 *params, const char *string,
     y = (int)params[5];
     color = (int)params[2];
     fontIdx = (uint16)params[6] & 7;
+    tryLoadReplacementFont(fontIdx);
     height = g_fontHeightsArr[fontIdx];
     rowSize = g_fontBitmapRowSize[fontIdx];
     bitmaps = g_fontBitmapPtrs[fontIdx];
@@ -1211,6 +1576,10 @@ int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx) {
     if (fontIdx >= 8) return 8;
     /* Chars >= 0x80 are inline color escapes - no glyph, no width */
     if (ch >= 0x80) return 0;
+    /* Font replacements are authoritative for both drawing and layout. Load
+     * BDF/PNG before width lookup so centred/right-aligned text uses the same
+     * metrics the glyph renderer will use later. */
+    tryLoadReplacementFont(fontIdx);
     wt = g_fontWidthTables[fontIdx];
     if (!wt || ch < 0x20) return 8;
     return wt[ch - 0x20];

@@ -12,6 +12,16 @@
 
 #include "../src/eg3drast.c"
 
+/* eg3drast.c now contains software replacement-GLB helpers that map material RGB
+ * through gfx_impl.c in normal builds. This internal harness intentionally does
+ * not link gfx_impl.c, so provide a deterministic palette stub; the tests here
+ * exercise rasterizer math, not active DAC nearest-colour search. */
+int gfx_nearestPaletteIndexRgb8(uint8 r, uint8 g, uint8 b) {
+    (void)g;
+    (void)b;
+    return r & 0x0f;
+}
+
 /* Backs egdata.c's regnStr global (defined in stdata.c, not linked here). MSVC
  * links whole objects so this reference needs a definition; unused by the test. */
 char aRegn_xxx[] = "regn.xxx";

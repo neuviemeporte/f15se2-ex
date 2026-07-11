@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import base64
 import json
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-
-from .io import to_base64
 
 FONT_CODEPOINT_START = 0x20
 FONT_CODEPOINT_COUNT = 96
@@ -112,12 +109,12 @@ def load_font_assets(repo_root: Path) -> Dict[int, Dict[str, Any]]:
             "cell_width": cell_width,
             "height": height,
             "source_files": [
-                str(fontdata_path),
-                str(gfx_impl_path),
+                "src/fontdata.h",
+                "src/gfx_impl.c",
             ],
             "source_sha256": {
-                str(fontdata_path): _font_source_hash(fontdata_path),
-                str(gfx_impl_path): _font_source_hash(gfx_impl_path),
+                "src/fontdata.h": _font_source_hash(fontdata_path),
+                "src/gfx_impl.c": _font_source_hash(gfx_impl_path),
             },
         }
     return fonts
@@ -163,7 +160,6 @@ def _build_atlas(font: Dict[str, Any]) -> Tuple["Image.Image", Dict[str, Any]]:
                 "bitmap_width": cell_width,
                 "bitmap_height": height,
                 "advance_width": int(font["advance_widths"][idx]),
-                "bitmap_rows_base64": to_base64(bytes(glyph_rows)),
             }
         )
     metadata = {
@@ -182,9 +178,9 @@ def _build_atlas(font: Dict[str, Any]) -> Tuple["Image.Image", Dict[str, Any]]:
         "atlas_mode": "indexed_1bit_black_white",
         "authoring_formats": ["bdf", "png_atlas_json"],
         "notes": (
-            "Glyphs are exported with Unicode codepoints. Original game bytes "
-            "are preserved as source_byte/source_encoding so additional language "
-            "glyphs can be added without losing legacy mapping."
+            "Glyph shapes are stored in the BDF and PNG atlas. JSON is only "
+            "supplemental atlas/index metadata and must not override BDF/PNG "
+            "glyph data."
         ),
         "source_files": font["source_files"],
         "source_sha256": font["source_sha256"],
@@ -232,7 +228,7 @@ def build_bdf(font: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def export_fonts(repo_root: Path, output_root: Path, *, write_bdf: bool = True) -> Dict[str, Any]:
+def export_fonts(repo_root: Path, output_root: Path, *, write_bdf: bool = True, include_metadata: bool = False) -> Dict[str, Any]:
     output_root.mkdir(parents=True, exist_ok=True)
     fonts = load_font_assets(repo_root)
     exported = []
@@ -242,22 +238,35 @@ def export_fonts(repo_root: Path, output_root: Path, *, write_bdf: bool = True) 
         png_path = output_root / f"{stem}.png"
         json_path = output_root / f"{stem}.json"
         image.save(png_path)
-        json_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        if include_metadata:
+            json_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        elif json_path.exists():
+            json_path.unlink()
         bdf_path = None
         if write_bdf:
             bdf_path = output_root / f"{stem}.bdf"
             bdf_path.write_text(build_bdf(font), encoding="ascii")
-        exported.append(
-            {
-                "font_id": font_id,
-                "png": str(png_path),
-                "json": str(json_path),
-                "bdf": str(bdf_path) if bdf_path is not None else None,
-            }
-        )
+        record = {
+            "font_id": font_id,
+            # The index is meant to travel with the exported font folder, so
+            # keep paths relative instead of baking in a developer machine's
+            # checkout/output directory.
+            "png": png_path.name,
+            "bdf": bdf_path.name if bdf_path is not None else None,
+        }
+        if include_metadata:
+            record["json"] = json_path.name
+        exported.append(record)
     return {
         "format": "F15_FONT_EXPORT_INDEX",
         "version": 1,
-        "source": str(repo_root),
+        "source": "repository_font_tables",
+        "authoring_source": "font_<id>.bdf",
+        "runtime_authoritative": "font_<id>.bdf, then font_<id>.png fallback if BDF is missing or rejected",
+        "notes": (
+            "Edit BDF for glyph pixels and advance widths. PNG atlas is a "
+            "bitmap fallback and current runtime reuses existing widths for PNG. "
+            "Per-font JSON is optional metadata and is not used by the runtime loader."
+        ),
         "exported": exported,
     }

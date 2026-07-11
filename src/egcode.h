@@ -87,7 +87,12 @@ void timerPump(void);
 void timerYield(void);
 uint64 timerNowNs(void);
 int getTimeOfDay();
-SDL_IOStream *openFile(const char *path, int mode);
+SDL_IOStream *__cdecl openFile(const char *path, int mode);
+int findReplacementAssetPath(const char *legacyFilename, const char *modernExt,
+                             char *outPath, size_t outPathSize);
+int findReplacementShapeModelPath(const char *containerLegacyFilename, int shapeId,
+                                  const char *modernExt, char *outPath,
+                                  size_t outPathSize);
 void fileClose(SDL_IOStream *handle);
 size_t fileRead(void *ptr, size_t size, size_t count, SDL_IOStream *handle);
 size_t fileWrite(const void *ptr, size_t size, size_t count, SDL_IOStream *handle);
