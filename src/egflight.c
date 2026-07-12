@@ -955,10 +955,11 @@ void renderFrame() {
         g_camEyeZ = g_crashCamZ;
         break;
     }
-    if (abs(g_viewPitch) > 0x4000 || g_viewPitch == 0x8000) {
-        g_viewPitch = 0x8000 - g_viewPitch;
-        g_viewHeading += 0x8000;
-        g_viewRoll = 0x8000 - g_viewRoll;
+    /* barrel roll */
+    if (abs(g_viewPitch) > 0x4000 || g_viewPitch == INT16_MIN) {
+        g_viewPitch = INT16_MIN - g_viewPitch;
+        g_viewHeading += INT16_MIN;
+        g_viewRoll = INT16_MIN - g_viewRoll;
     }
     /* Build the reticle/box rotation from the (interpolated) view angles every
      * render frame — the very g_viewHeading/Pitch/Roll render3DView projects the
