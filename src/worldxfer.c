@@ -72,7 +72,7 @@ extern uint8 worldSamTable[];
 extern char unitTypeTable[];
 extern uint8 worldUnitFlags[];
 extern char worldStringBuf[];
-extern char gridFlags[];
+extern uint8 gridFlags[];
 extern int16 worldGridSize;
 extern uint8 worldMiscHeader[];
 extern struct WeaponDataBlock weaponDataBlock;

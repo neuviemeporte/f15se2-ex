@@ -244,18 +244,18 @@ int main() {
     g_frameRateScaling = 20;
     frameTick = 100;
     scheduleTimedEvent((ViewMode)0x77, 4);
-    require(g_viewMode == 0 && g_directorEventDeadline == -1,
+    require(g_viewMode == VIEW_COCKPIT && g_directorEventDeadline == -1,
             "scheduleTimedEvent ignores requests when director mode is off");
     g_directorMode = 2;
     scheduleTimedEvent((ViewMode)0x77, 4);
-    require(g_viewMode == 0x77 && g_directorEventDeadline == 180,
+    require(g_viewMode == (ViewMode)0x77 && g_directorEventDeadline == 180,
             "scheduleTimedEvent stores key and frame-rate-scaled deadline");
     g_directorEventDeadline = -1;
     scheduleEventCheck((ViewMode)0x55, 3);
     require(g_viewTargetObj == 0 && g_directorEventDeadline == -1,
             "scheduleEventCheck rejects priorities above director mode");
     scheduleEventCheck((ViewMode)0x55, 2);
-    require(g_viewTargetObj == 0x55 && g_viewMode == 0x89 &&
+    require(g_viewTargetObj == 0x55 && g_viewMode == (ViewMode)0x89 &&
                 g_directorEventDeadline == frameTick + 4 * g_frameRateScaling,
             "scheduleEventCheck schedules a mode-2 director event");
     g_directorMode = 1;

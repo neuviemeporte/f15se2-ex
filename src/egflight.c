@@ -923,7 +923,7 @@ void renderFrame() {
         g_viewRoll = 0;
         camOffset = cosMul(g_viewPitch, 0x18 << camDist);
         if (g_viewTargetObj & 0x60 || g_directorMode != 0) {
-            if (g_viewMode == 0x88) {
+            if (g_viewMode == VIEW_EXT_TARGET) {
                 g_camEyeX = eyeFromQ8(sinMulQ8(g_viewHeading + 0x8000, camOffset) + ((long)g_ViewX << 8), &g_camEyeFracX);
                 g_camEyeY = eyeFromQ8(cosMulQ8(g_viewHeading + 0x8000, camOffset) + ((long)g_ViewY << 8), &g_camEyeFracY);
                 g_camEyeZ = (int16)eyeFromQ8(sinMulQ8(g_viewPitch, 0x18 << camDist) + ((long)((4 << camDist) + g_viewZ) << 8), &g_camEyeFracZ);
@@ -1025,7 +1025,8 @@ void renderFrame() {
     render3DView(-g_viewHeading, g_viewPitch, g_viewRoll, g_camEyeX, g_camEyeY, (int32)g_camEyeZ, 0, 0, 320, g_pageFront[8] + 1);
     g_extraScaleShift = 0;
     g_savedPosVisible = g_posVisibleFlag;
-    if (g_viewMode == 0x41) {
+    if (g_viewMode == VIEW_REAR) {
+        // draw vertical stabilizers in rear view
         drawVectorShape(g_rearViewShape);
         gfx_setColor(0xf);
         g_lineX1 = 241;
@@ -1039,6 +1040,7 @@ void renderFrame() {
         g_lineY2 = 94;
         drawClipLineGlobal();
         gfx_nop23();
+        // top of the helmet
         blitSprite(107, 48, 209, 0, 111, 47, 0);
         blitSprite(65, 95, 125, 54, 195, 2, 0);
     }

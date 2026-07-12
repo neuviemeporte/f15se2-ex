@@ -61,7 +61,7 @@ void renderHudFrame(int unused) {
             }
         }
         g_hudDrawnFlag = 1;
-        if (g_viewMode == 0 && g_halfScaleRender == 0) {
+        if (g_viewMode == VIEW_COCKPIT && g_halfScaleRender == 0) {
             // draw stick position indicator
             setDrawColor(COLOR_BLACK);
             drawViewportLine(277, 83, 293, 83);
@@ -146,7 +146,7 @@ void renderHudFrame(int unused) {
     somewhere:
         drawTacticalMap(0);
     }
-    if (g_hudMsgTimer != 0 && ((g_viewMode == 0 && g_halfScaleRender == 0) || (g_directorMode != 0))) {
+    if (g_hudMsgTimer != 0 && ((g_viewMode == VIEW_COCKPIT && g_halfScaleRender == 0) || (g_directorMode != 0))) {
         drawStringActivePage(tempString, -(((int16)strlen(tempString) >> 1) - 40) * 4, 24, 0xf);
         g_hudMsgTimer--;
         if (g_hudMsgTimer == 0) { // cancel pending eject on message disappear
@@ -156,7 +156,7 @@ void renderHudFrame(int unused) {
             drawStringActivePage("Press any key to play", 120, 1, g_nightMode != 0 ? 0xe : 0);
         }
     }
-    if (g_dirMsgTimer != 0 && g_viewMode == 0 && g_halfScaleRender == 0) {
+    if (g_dirMsgTimer != 0 && g_viewMode == VIEW_COCKPIT && g_halfScaleRender == 0) {
         drawStringActivePage(string_3C04A, -(((int16)strlen(string_3C04A) >> 1) - 40) * 4, 90, 0xf);
         g_dirMsgTimer--;
     }

@@ -90,10 +90,9 @@ These are things that were never part of, or were broken in the original that ar
 
 Problems with the game that were introduces by the port, and to the best of our knowledge are not present in the original.
 
-1. It's impossible to do a barrel roll, pulling the stick when pointing plane straight upwards has no effect.
-1. When viewing the target with `F10` sometimes the view is upside down (seems like it depends on the position relative to the player aircraft).
+1. In external views sometimes the view is upside down (seems like it depends on the position relative to the horizon?).
 1. The bearing (`BRG`) value in the target screen is broken, mostly stuck on one value even though target is visibly turning.
-1. There's sometimes flickering beneath the left (map) screen in the cockpit.
+1. There's sometimes flickering beneath the left display (map) in the cockpit.
 1. Shaking in the cockpit after getting hit is too long.
 1. Need better visibility of missiles on the radar screen, these are too small after making the radar high resolution.
 1. When on the airfield/carrier, can see through to the ground on the sides of the view (exposed by widescreen support). Also, aircraft geometry sometimes flickers beneath the player.

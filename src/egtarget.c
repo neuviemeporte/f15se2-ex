@@ -55,7 +55,7 @@ void updateTargetLock(void) {
     deadInit = 0;
 
     /* Fire at g_viewMode == 0x8b (sidewinder lock) */
-    if (g_viewMode == 0x8b) {
+    if (g_viewMode == VIEW_TARGET) {
         drawWorldObject(6, (int32)g_ViewX, 0x01000000L - g_ViewY,
                         g_viewZ + 0x10, g_ourHead, g_ourPitch, g_ourRoll, 2);
     }
@@ -299,7 +299,7 @@ skip_aam:
 
     /* Player's own aircraft fire */
     if (!(g_viewMode & 0x80)) goto done;
-    if (g_viewMode == 0x8b) goto done;
+    if (g_viewMode == VIEW_TARGET) goto done;
     if (g_viewZ == 0 && g_ejectState != 0) goto done;
 
     drawWorldObject(((g_playerPlaneFlags & 1) == 0) + 6, (int32)g_ViewX,
@@ -614,7 +614,7 @@ void drawHudWorldOverlay(void) {
     g_lockToneFlag = 0;
 
     if (g_currentWeaponType == 2) {
-        if (g_viewMode == 0) {
+        if (g_viewMode == VIEW_COCKPIT) {
             if (g_groundTargetLock >= 0) {
 
                 projectWorldToHudFine((int32)g_planeTable.planes[g_groundTargetLock].mapX << 5,
@@ -726,7 +726,7 @@ void drawHudWorldOverlay(void) {
     g_axisInput1 = readAxisInput(1);
 
     if (g_currentWeaponType == 1) {
-        if (g_viewMode == 0) {
+        if (g_viewMode == VIEW_COCKPIT) {
             if (!(g_airTargetLock & 0x80)) {
 
                 projectWorldToHudFine(g_simObjects[g_airTargetLock].worldX,
@@ -804,7 +804,7 @@ void drawHudWorldOverlay(void) {
                         g_scopeArcColor, g_frameRateScaling - g_scopeSweepTimer);
     }
 
-    if (g_currentWeaponType == 2 && g_viewMode == 0) {
+    if (g_currentWeaponType == 2 && g_viewMode == VIEW_COCKPIT) {
         missileSpecD = missiles[missleSpec[missileSpecIndex].weaponIdx].specIndex;
 
         if (missileSpecD == 30 && abs((int16)g_ourRoll) < 0x2000) {
