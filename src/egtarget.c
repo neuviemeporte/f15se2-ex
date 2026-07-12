@@ -336,15 +336,50 @@ static const int EXPLOSION_WORLD_RADIUS = 0x20;
  * makes the tight, model-sized box actually connect. GUN_AIRCRAFT_HIT_SCALE_Q8
  * is a Q8 slack on the radius (256 = exactly the model bound). */
 static const int GUN_AIRCRAFT_HIT_SCALE_Q8 = 256;
-static int16 s_aircraftModelRadius[19];
+/* Gun-vs-ground box, Q8 slack on the ground target's world-shape footprint.
+ * GROUND_HIT_MIN_MAP keeps tiny/point-model targets (footprint ~0) hittable
+ * against the coarse ground-impact sampling, while staying far tighter than the
+ * original flat 12-map radius. */
+static const int GUN_GROUND_HIT_SCALE_Q8 = 256;
+static const int GROUND_HIT_MIN_MAP = 6;
 
-void computeAircraftHitRadii(void) {
+/* Model-space bounding half-extents (model units). Aircraft models come from the
+ * constant 15FLT.3D3, world (ground/tile) shapes from the per-theater region, so
+ * both are refilled each mission by computeHitRadii(). */
+static int16 s_aircraftModelRadius[19];
+static int16 s_worldShapeRadius[100]; /* indexed by (nameIndex & 0x7f), cf. buf3d3[] */
+
+void computeHitRadii(void) {
     const uint8 *base = (const uint8 *)g_world3dData;
     const uint8 *limit = base + WORLD3D_DATA_SIZE;
-    for (int spec = 0; spec < 19; spec++) {
-        int shapeId = aircraftTypes[spec].viewModelId;
-        s_aircraftModelRadius[spec] = (int16)r3dmesh_boundRadius(base + shapeDataOffset(shapeId), limit);
-    }
+    int i;
+    for (i = 0; i < 19; i++)
+        s_aircraftModelRadius[i] =
+            (int16)r3dmesh_boundRadius(base + shapeDataOffset(aircraftTypes[i].viewModelId), limit);
+    /* Cover the appended photo/target models too: they sit at buf3d3[size3d3]
+     * and [size3d3+1] (eg3dload.c), past the main region shapes, and ground
+     * targets reference them by nameIndex. */
+    for (i = 0; i <= (int)size3d3 + 1 && i < 100; i++)
+        s_worldShapeRadius[i] = (int16)r3dmesh_boundRadius(base + buf3d3[i], limit);
+}
+
+/* Model bounding half-extent (model units) of an aircraft type / a ground
+ * (tile-object) target's world shape, for hit-box sizing across weapons. */
+int aircraftModelRadius(int spec) {
+    if (spec < 0 || spec >= 19) spec = 0;
+    return s_aircraftModelRadius[spec];
+}
+int groundModelRadius(int nameIndex) {
+    int s = nameIndex & 0x7f;
+    return (s >= 0 && s < 100) ? s_worldShapeRadius[s] : 0;
+}
+
+/* Ground target gun/impact radius in map units, Q8-scaled and difficulty-tightened. */
+static int groundHitRadiusMap(int nameIndex) {
+    int r = (groundModelRadius(nameIndex) * GUN_GROUND_HIT_SCALE_Q8) >> (8 + 4);
+    if (r < GROUND_HIT_MIN_MAP) r = GROUND_HIT_MIN_MAP;
+    r /= (g_missionStatus + 1);
+    return r < 1 ? 1 : r;
 }
 
 /* Model-derived gun hit radius (fine world units) for a target, with the
@@ -501,7 +536,8 @@ void drawWorldEffects(void) {
                 pointX = (int16)(g_nearestTileObj->x >> 5);
                 pointY = 0x8000 - (int16)(g_nearestTileObj->y >> 5);
 
-                if (rangeApprox(g_hitMapX - pointX, g_hitMapY - pointY) < 24 / (g_missionStatus + 2) &&
+                if (rangeApprox(g_hitMapX - pointX, g_hitMapY - pointY) <
+                        groundHitRadiusMap(g_planeTable.planes[wpEntry].nameIndex) &&
                     (g_planeTable.planes[wpEntry].nameIndex & 0x7f) != *(uint8 *)g_landTargetId) {
                     destroyGroundTarget(wpEntry);
                     strcat(strBuf, " destroyed by gunfire");

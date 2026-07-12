@@ -25,6 +25,13 @@
 int samCanAcquireTarget(int slot, int targetX, int targetY, int targetAlt, int mode);
 int16 markTargetReached(int16 targetIdx);
 
+/* Player-missile proximity fuze, Q8 scale on the original speed-derived
+ * detonation radius (256 = original). Shrinks how close-but-not-touching counts
+ * as a hit so shots have to be pressed a bit harder; the target's model size is
+ * a floor so a round never "misses" while inside the airframe. Incoming enemy
+ * missiles (slot < 8) keep the original radius. */
+static const int MISSILE_PROX_SCALE_Q8 = 176;
+
 void fireAirThreat(int16 objIdx) {
     int16 p, a, b, c, bearing, e, f;
     uint16 acqRange;
@@ -409,8 +416,19 @@ void updateThreatTargeting(void) {
                 }
             }
 
-            if ((uint16)((abs(alt0 - g_projectiles[slot].alt) >> 5) + best) <
-                    (uint16)((g_projectiles[slot].speed << 4) / g_frameRateScaling) &&
+            long baseDetR = (long)(g_projectiles[slot].speed << 4) / g_frameRateScaling;
+            long detR = baseDetR;
+            if (locked != 0 && slot >= 8) {
+                int tr = 0;
+                detR = (baseDetR * MISSILE_PROX_SCALE_Q8) >> 8;
+                if (mode == 7)
+                    tr = aircraftModelRadius(g_simObjects[bestIdx].spec) >> 4;
+                else if (mode == 4 || mode == 5 || mode == 6 || mode == 28)
+                    tr = groundModelRadius(g_planeTable.planes[bestIdx].nameIndex) >> 4;
+                if (detR < tr) detR = tr;
+            }
+
+            if ((uint16)((abs(alt0 - g_projectiles[slot].alt) >> 5) + best) < (uint16)detR &&
                 locked != 0) {
                 g_hitMapX = g_projectiles[slot].mapX;
                 slot = slot;

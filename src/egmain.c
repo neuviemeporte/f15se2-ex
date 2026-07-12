@@ -75,8 +75,9 @@ void drawCockpit() {
         if (!meshSelfTestDone) {
             meshSelfTestDone = 1;
             r3dmesh_selfTest();
-            computeAircraftHitRadii();
         }
+        /* World (ground/tile) shapes reload per theater, so refill every mission. */
+        computeHitRadii();
     }
     f15DgtlResult = loadF15DgtlBin();
     g_horizonGroundColor = g_world3dData[47];
