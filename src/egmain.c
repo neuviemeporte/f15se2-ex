@@ -4,6 +4,7 @@
 #include "egdata.h"
 #include "egframe.h"
 #include "egmath.h"
+#include "egtarget.h"
 #include "worldxfer.h"
 #include "egpic.h"
 #include "egtypes.h"
@@ -74,6 +75,7 @@ void drawCockpit() {
         if (!meshSelfTestDone) {
             meshSelfTestDone = 1;
             r3dmesh_selfTest();
+            computeAircraftHitRadii();
         }
     }
     f15DgtlResult = loadF15DgtlBin();

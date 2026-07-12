@@ -3,6 +3,7 @@
 /* public interface of egtarget.c */
 
 void updateTargetLock();
+void computeAircraftHitRadii(void);
 void drawWorldEffects(void);
 void drawHudWorldOverlay(void);
 int16 findWaypointEntry(int16 mapX, int16 mapY);

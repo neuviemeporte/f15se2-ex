@@ -124,6 +124,17 @@ int r3dmesh_decode(const uint8 *model, const uint8 *limit,
                    const MeshVtxPools *pools, const uint8 *colorLut,
                    Mesh *out);
 
+/* Bind `pools` to the currently loaded game vertex tables (the world-shape
+ * shared pool: buf3d3_1/2/3 -> vertexX / modelVertY / modelVertZ). Aircraft view
+ * models carry inline coords and ignore the pool. */
+void r3dmesh_gamePools(MeshVtxPools *pools);
+
+/* Model-space bounding "radius" of a model's finest LOD: the max abs vertex
+ * coordinate over x/y/z (a bounding-cube half-extent, rotation-robust). `model`
+ * points at the render-mode byte (base + shapeDataOffset). Returns 0 for a
+ * point/edgerun/empty model or a decode error. Uses the game vertex pools. */
+int r3dmesh_boundRadius(const uint8 *model, const uint8 *limit);
+
 /* Run a self-test over every loaded world shape (buf3d3) using the game pools,
  * cross-checking each non-terminal LOD's consumed length against the header's
  * declared skip offset (byte-exact). Logs a summary; returns the number of

@@ -15,6 +15,7 @@
 #include "offsets.h"
 #include "log.h"
 #include "r2d.h"
+#include "r3dmesh.h"
 #include "const.h"
 
 #include "comm.h"
@@ -317,6 +318,76 @@ done:;
  * shares the same 1/32-coarse scale). Tunable by eye. */
 static const int EXPLOSION_WORLD_RADIUS = 0x20;
 
+/* Gun hit box for aircraft, sized to the actual model. The original hit test
+ * used a flat radius (0x200/isqrt(frameRateScaling*4+8), ~64 map units at full
+ * rate / difficulty 0) for every target, so a bomber and a fighter shared the
+ * same oversized box and shots well off-target still scored. Instead we derive
+ * the box from each type's 3D model bounding size, computed once at load.
+ *
+ * s_aircraftModelRadius[spec] is the model-space bounding-cube half-extent of
+ * the type's near view model, in model units; 1 model unit == 2 fine world units
+ * (drawWorldObject scale at true size), so *2 converts to the fine units the
+ * swept hit test works in. Fighters come out ~30 (=>~60 fine), bombers ~64.
+ *
+ * The hit test is a point-to-segment distance: because rounds are only sampled
+ * once per 15 Hz sim step they leap many units between samples, so a box that
+ * exactly hugs a ~60-fine plane is nearly unhittable by point sampling. Testing
+ * the round's swept path this step (pos-vel .. pos) against the target sphere
+ * makes the tight, model-sized box actually connect. GUN_AIRCRAFT_HIT_SCALE_Q8
+ * is a Q8 slack on the radius (256 = exactly the model bound). */
+static const int GUN_AIRCRAFT_HIT_SCALE_Q8 = 256;
+static int16 s_aircraftModelRadius[19];
+
+void computeAircraftHitRadii(void) {
+    const uint8 *base = (const uint8 *)g_world3dData;
+    const uint8 *limit = base + WORLD3D_DATA_SIZE;
+    for (int spec = 0; spec < 19; spec++) {
+        int shapeId = aircraftTypes[spec].viewModelId;
+        s_aircraftModelRadius[spec] = (int16)r3dmesh_boundRadius(base + shapeDataOffset(shapeId), limit);
+    }
+}
+
+/* Model-derived gun hit radius (fine world units) for a target, with the
+ * original difficulty tightening kept (higher g_missionStatus -> smaller). */
+static int aircraftGunRadiusFine(int spec) {
+    int r;
+    if (spec < 0 || spec >= 19) spec = 0;
+    r = ((int)s_aircraftModelRadius[spec] * 2 * GUN_AIRCRAFT_HIT_SCALE_Q8) >> 8;
+    r /= (g_missionStatus + 1);
+    return r < 1 ? 1 : r;
+}
+
+/* Shortest wrapped delta on the 21-bit fine world torus (BULLET_FINE_MASK). */
+static long fineWrapDelta(long d) {
+    d &= BULLET_FINE_MASK;
+    if (d & ((BULLET_FINE_MASK + 1) >> 1)) d -= (BULLET_FINE_MASK + 1);
+    return d;
+}
+
+/* Squared closest-approach distance (fine units) between the round idx's swept
+ * path this step (previous pos = pos-vel, to current pos) and target objIdx's
+ * center. X/Y wrap on the world torus; alt does not. */
+static long roundToTargetDist2(int idx, int objIdx) {
+    long ax = fineWrapDelta((long)bulletTracks[idx].posX - ((long)g_simObjects[objIdx].posX << 5));
+    long ay = fineWrapDelta((long)bulletTracks[idx].posY - ((long)g_simObjects[objIdx].posY << 5));
+    long az = (long)bulletTracks[idx].alt - (long)g_simObjects[objIdx].alt;
+    /* segment vector = the round's per-step travel (= velocity) */
+    long vx = bulletTracks[idx].velX, vy = bulletTracks[idx].velY, vz = bulletTracks[idx].velZ;
+    long seg2 = vx * vx + vy * vy + vz * vz;
+    long cx, cy, cz;
+    if (seg2 == 0) {
+        cx = ax; cy = ay; cz = az;
+    } else {
+        /* project the previous endpoint (a - v) onto the segment, clamped */
+        long dot = -((ax - vx) * vx + (ay - vy) * vy + (az - vz) * vz);
+        long t256 = dot <= 0 ? 0 : (dot >= seg2 ? 256 : (dot * 256 / seg2));
+        cx = (ax - vx) + vx * t256 / 256;
+        cy = (ay - vy) + vy * t256 / 256;
+        cz = (az - vz) + vz * t256 / 256;
+    }
+    return cx * cx + cy * cy + cz * cz;
+}
+
 /* Cannon tracers + explosion sparks as real world-space 3D line geometry
  * (drawWorldLine): submitted into the scene BEFORE r3d_endScene so the software
  * depth sort occludes them and the GL backend z-tests + fogs them. Kept separate
@@ -372,18 +443,27 @@ void drawWorldEffects(void) {
                            abs((int16)(by - g_simObjects[objIdx].posY));
                     dist = abs(dist);
 
+                    /* Broad phase (cheap, and bounds the squared math below): only
+                     * targets within the old generous radius are worth the precise
+                     * swept-path test against the model-sized box. */
                     if (dist < gunRadius / (g_missionStatus + 1)) {
+                        int rFine = aircraftGunRadiusFine(g_simObjects[objIdx].spec);
+                        long d2 = roundToTargetDist2(idx, objIdx);
+                        long r2 = (long)rFine * rFine;
 
-                        hitFlag = 1;
-                        g_simObjects[objIdx].flags.b[0] |= 0x10;
-                        g_hitEffectTimer = 1;
+                        if (d2 < r2) {
 
-                        if (dist * 2 < gunRadius / (g_missionStatus + 1)) {
-                            destroyAircraft(objIdx);
-                            strcat(strBuf, " destroyed by gunfire");
-                            tempStrcpy(strBuf);
-                            g_hitEffectTimer = 8;
-                            bulletTracks[idx].posX = 0;
+                            hitFlag = 1;
+                            g_simObjects[objIdx].flags.b[0] |= 0x10;
+                            g_hitEffectTimer = 1;
+
+                            if (d2 * 4 < r2) {
+                                destroyAircraft(objIdx);
+                                strcat(strBuf, " destroyed by gunfire");
+                                tempStrcpy(strBuf);
+                                g_hitEffectTimer = 8;
+                                bulletTracks[idx].posX = 0;
+                            }
                         }
                     }
                 }

@@ -38,6 +38,7 @@
 #include "egtypes.h"
 #include "log.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 /* Decode one primitive command (filled face or line), advancing *pp. Extracts
@@ -260,22 +261,42 @@ int r3dmesh_decode(const uint8 *model, const uint8 *limit,
     return consumed;
 }
 
-/* ---- self-test ---------------------------------------------------------- */
+/* ---- game-pool binding + bounding size ---------------------------------- */
 
 static Mesh s_meshScratch; /* large; keep off the stack */
 
+void r3dmesh_gamePools(MeshVtxPools *pools) {
+    pools->idxX = buf3d3_1;
+    pools->idxY = buf3d3_2;
+    pools->idxZ = buf3d3_3;
+    pools->coordX = g_replayLog.vertexX;
+    pools->coordY = (const int16 *)g_modelVertY;
+    pools->coordZ = (const int16 *)g_modelVertZ;
+    pools->nRefs = (int)size3d3_3;
+    pools->nX = (int)size3d3_4;
+    pools->nY = (int)size3d3_5;
+    pools->nZ = (int)size3d3_6;
+}
+
+int r3dmesh_boundRadius(const uint8 *model, const uint8 *limit) {
+    MeshVtxPools pools;
+    r3dmesh_gamePools(&pools);
+    if (r3dmesh_decode(model, limit, &pools, NULL, &s_meshScratch) < 0) return 0;
+    MeshLod *l = &s_meshScratch.lods[0];
+    if (l->form != MESH_FORM_MODEL) return 0; /* point/edgerun: no polygon body */
+    int r = 0;
+    for (int v = 0; v < l->nVerts; v++) {
+        int ax = abs(l->verts[v].x), ay = abs(l->verts[v].y), az = abs(l->verts[v].z);
+        if (ax > r) r = ax;
+        if (ay > r) r = ay;
+        if (az > r) r = az;
+    }
+    return r; /* model-space half-extent (bounding-cube), max over x/y/z */
+}
+
 int r3dmesh_selfTest(void) {
     MeshVtxPools pools;
-    pools.idxX = buf3d3_1;
-    pools.idxY = buf3d3_2;
-    pools.idxZ = buf3d3_3;
-    pools.coordX = g_replayLog.vertexX;
-    pools.coordY = (const int16 *)g_modelVertY;
-    pools.coordZ = (const int16 *)g_modelVertZ;
-    pools.nRefs = (int)size3d3_3;
-    pools.nX = (int)size3d3_4;
-    pools.nY = (int)size3d3_5;
-    pools.nZ = (int)size3d3_6;
+    r3dmesh_gamePools(&pools);
 
     const uint8 *base = (const uint8 *)g_world3dData;
     const uint8 *limit = base + AIRCRAFT_MODELS_OFFSET; /* main + appended photo models */
