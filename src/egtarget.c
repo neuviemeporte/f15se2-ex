@@ -234,8 +234,11 @@ skip_aam:
                     marker = 0x80;
                 }
                 if (g_viewZ != 0x80 || marker == 0x80) {
-                    drawWorldObject(5, g_simObjects[idx].worldX, g_simObjects[idx].worldY,
-                                    marker, g_simObjects[idx].heading.w, 0, 0,
+                    drawAircraftShadow(
+                                    (&aircraftTypes[g_simObjects[idx].spec].viewModelId)[(g_projDepth > planeFineDepth) ? 0 : 1],
+                                    g_simObjects[idx].worldX, g_simObjects[idx].worldY,
+                                    marker, g_simObjects[idx].heading.w,
+                                    g_simObjects[idx].pitch, g_simObjects[idx].bank.w,
                                     -(signOf(depthShift) - 2));
                 }
             }
@@ -307,8 +310,9 @@ skip_aam:
                     2 - depthShift);
 
     if ((uint16)g_viewZ < 1000 && g_nightMode == 0) {
-        drawWorldObject(21, (int32)g_ViewX, 0x01000000L - g_ViewY,
-                        g_groundAltitude, g_ourHead, 0, 0, 2);
+        drawAircraftShadow(((g_playerPlaneFlags & 1) == 0) + 6,
+                        (int32)g_ViewX, 0x01000000L - g_ViewY,
+                        g_groundAltitude, g_ourHead, g_ourPitch, g_ourRoll, 2);
     }
 
 done:;

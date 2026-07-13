@@ -33,6 +33,14 @@
 #include "r2d.h"
 #include "inttype.h"
 
+/* Set while rendering an aircraft ground shadow (projectSceneShadow): the object's
+ * faces/edges fill flat black instead of their model colour. Captured per object
+ * into the depth-sorted record so deferred draws recover it. This is the software
+ * backend's shadow baseline — correct silhouette, level, no ground projection (the
+ * GPU backend does the flattened translucent version). */
+#define SHADOW_COLOR_INDEX 0 /* COLOR_BLACK */
+static int g_shadowDraw = 0;
+
 /* ---- scratch globals defined in egdata.c but not declared in a header ---- */
 extern int16 g_dirtyRectMinY, g_dirtyRectMaxY;
 extern int16 g_rasterDeltaX, g_rasterDeltaY;
@@ -1171,7 +1179,7 @@ static void renderPrimitiveCommand(unsigned char far **pp) {
                 *pp = p;
                 return;
             }
-            gfx_setColor((unsigned char)(colorLut[colorByte] + g_objShade));
+            gfx_setColor((unsigned char)(g_shadowDraw ? SHADOW_COLOR_INDEX : (colorLut[colorByte] + g_objShade)));
             /* On a GL vector frame the only faces reaching here are the left-MFD
              * terrain-map tiles (the main/target 3D views render through the r3d
              * backend, not this span rasterizer). Submit the face as a native-res
@@ -1281,7 +1289,7 @@ static void renderPrimitiveCommand(unsigned char far **pp) {
             return;
         } /* rejected: skip colour */
         colorByte = *p++;
-        gfx_setColor((unsigned char)(colorLut[colorByte] + g_objShade));
+        gfx_setColor((unsigned char)(g_shadowDraw ? SHADOW_COLOR_INDEX : (colorLut[colorByte] + g_objShade)));
         /* egseg1's loc_1808 draws this edge with a raw gfx_drawLine, relying on
          * the projection keeping the coords inside the viewport. MGRAPHIC's
          * gfx_drawLine clips only to the full page (0..199), NOT to g_clipMaxY,
@@ -1807,6 +1815,7 @@ struct SortRec {
     long baseX;
     int16 camXLo, camXHi;
     int16 camYLo, camYHi;
+    int16 shadow; /* draw flat black (ground shadow) */
 };
 static struct SortRec g_sortRecs[35];
 static int g_sortList[35];
@@ -2273,6 +2282,7 @@ static void insertSortedObject(unsigned char far *p) {
     r->camXHi = g_camTransXHi;
     r->camYLo = g_camTransYLo;
     r->camYHi = g_camTransYHi;
+    r->shadow = (int16)g_shadowDraw;
 
     pos = g_sortedObjCount;
     while (pos > 0) {
@@ -2330,6 +2340,16 @@ void far projectSceneObject(char far *model, int yaw, int pitch, int roll,
     } else {
         insertSortedObject(p);
     }
+}
+
+/* Project an aircraft ground shadow: the plane's own model drawn level (the
+ * software backend does not project onto the ground) and filled flat black. The
+ * shadow flag is captured per object (immediate draw here, or into the sort record
+ * for the deferred path) so the colour choke points fill black. */
+void far projectSceneShadow(char far *model, int yaw, int posX, int posY, int posZ) {
+    g_shadowDraw = 1;
+    projectSceneObject(model, yaw, 0, 0, posX, posY, posZ);
+    g_shadowDraw = 0;
 }
 
 /* GL-backend transform bridge. A GPU backend transforms the *decoded* mesh
@@ -2450,7 +2470,9 @@ static void drawSortedObject(struct SortRec *r) {
     g_camTransXHi = r->camXHi;
     g_camTransYLo = r->camYLo;
     g_camTransYHi = r->camYHi;
+    g_shadowDraw = r->shadow;
     processSceneObject();
+    g_shadowDraw = 0;
 }
 
 /* Draw one depth-sorted 3D line segment: project both camera-space endpoints

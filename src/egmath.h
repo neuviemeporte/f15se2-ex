@@ -6,6 +6,7 @@
 
 void load15Flt3d3();
 void drawWorldObject(int16 shapeId, int32 worldX, int32 worldY, int16 altitude, int16 objYaw, int16 objPitch, int16 objRoll, int16 scaleShift);
+void drawAircraftShadow(int16 shapeId, int32 worldX, int32 worldY, int16 groundAltitude, int16 objYaw, int16 objPitch, int16 objRoll, int16 scaleShift);
 void drawWorldLine(long worldX1, long worldY1, int alt1, long worldX2, long worldY2, int alt2, int color);
 void drawTargetView(int shapeId, int32 worldX, int32 worldY, int altitude, int objYaw, int objPitch, int objRoll, int mode, int shift);
 int shapeDataOffset(int shapeId);

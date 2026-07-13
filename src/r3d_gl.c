@@ -78,6 +78,9 @@ int r3dgl_msaaSamples(void) { return GL_MSAA_SAMPLES; }
 
 void r3dgl_setGLAttributes(int msaaSamples) {
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    /* 8-bit stencil (D24S8, universal on GL 1.1) — the shadow pass masks each covered
+     * pixel so a self-overlapping silhouette blends exactly once. */
+    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, msaaSamples > 0 ? 1 : 0);
     SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, msaaSamples > 0 ? msaaSamples : 0);
@@ -97,12 +100,13 @@ int r3dgl_initContext(SDL_Window *win) {
     s_glFogCoordf = (void (*)(GLfloat))SDL_GL_GetProcAddress("glFogCoordf");
     if (GL_MSAA_SAMPLES > 0) glEnable(GL_MULTISAMPLE); /* no-op if the format has 0 samples */
     {
-        GLint depthBits = 0, samples = 0;
+        GLint depthBits = 0, stencilBits = 0, samples = 0;
         glGetIntegerv(GL_DEPTH_BITS, &depthBits);
+        glGetIntegerv(GL_STENCIL_BITS, &stencilBits);
         glGetIntegerv(GL_SAMPLES, &samples);
-        LogInfo(("GL: %s / %s, depth bits=%d, MSAA samples=%d",
+        LogInfo(("GL: %s / %s, depth bits=%d, stencil bits=%d, MSAA samples=%d",
                  (const char *)glGetString(GL_RENDERER),
-                 (const char *)glGetString(GL_VERSION), (int)depthBits, (int)samples));
+                 (const char *)glGetString(GL_VERSION), (int)depthBits, (int)stencilBits, (int)samples));
     }
     s_active = 1;
     r2d_registerImageDestroy(gl_imageDestroyed);
@@ -197,6 +201,7 @@ typedef struct {
     int posZ;             /* object world altitude (0 = ground/sea), for wire ground test */
     int sortHi, sortLo;   /* normalized origin depth (sort key, farthest = largest) */
     int immediate;        /* flat ground/sea (posZ==0, no sort flag): drawn first/behind */
+    int shadow;           /* aircraft ground shadow: flattened onto the ground, drawn translucent */
     int seq;              /* submission index; preserves walk order among immediate objects */
 } GlSub;
 #define GL_MAX_SUBS 4096
@@ -687,7 +692,7 @@ static void gl_beginScene(const R3DScene *s) {
     glDisable(GL_SCISSOR_TEST);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glDepthMask(GL_TRUE);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
     /* GL viewport origin is bottom-left; the 320-space rect is top-down. The
      * uniform letterbox scale keeps the same proportions as 640x400 at any size.
@@ -765,7 +770,7 @@ static void gl_beginScene(const R3DScene *s) {
         glClearColor(r / 255.0f, g / 255.0f, b / 255.0f, 1.0f);
     }
     glDepthMask(GL_TRUE);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
     /* Sky/ground background sphere (detail >= 3) drawn first (farthest) with the
      * depth test off so it stays behind everything; the 3D projection is then
@@ -856,6 +861,7 @@ static void gl_submit(const R3DSubmit *o) {
     r->colorBase = g_objColorBase;
     r->curLod = g_curLod;
     r->posZ = o->posZ;
+    r->shadow = o->shadow;
 
     /* Immediate = the no-z-buffer ground class (drawn first, painter's): a flat,
      * Z=0, unsorted shape. Unlike projectSceneObject (which keys only on Z=0 + sort
@@ -864,7 +870,7 @@ static void gl_submit(const R3DSubmit *o) {
      * with the sea and instead gets z-buffered (pass 2), fixing its self-occlusion.
      * The lowest-LOD ground tile (colorBase 0x400) is always flat (its non-ground
      * faces are junk that would otherwise read as relief). */
-    r->immediate = (o->posZ == 0 &&
+    r->immediate = (!o->shadow && o->posZ == 0 &&
                     !peekSortFlag((const uint8 *)o->mesh,
                                   (const uint8 *)g_world3dData + WORLD3D_DATA_SIZE) &&
                     (g_objColorBase == 0x400 || modelIsFlat((const char *)o->mesh)));
@@ -962,11 +968,29 @@ static void drawDepthPoint(float x, float y, long depth32, int colorIdx) {
 /* Decode + transform + draw one object (painter's order; z-buffer on, GL_LEQUAL,
  * per-draw polygon offset set by the caller). Re-decodes the mesh (cheap; avoids
  * caching across region reloads). */
+/* Aircraft ground-shadow opacity (translucent black, GL_SRC_ALPHA blend). Lower =
+ * fainter. A silhouette flattened from a real 3D model self-overlaps slightly (tail
+ * over fuselage), so keep it below 0.5 or the overlaps read as a darker core. */
+static const float GL_SHADOW_ALPHA = 0.4f;
+
+/* Lift the flattened shadow toward the camera by this fraction of the model's own
+ * camera-space height, so it clears the ground surface it lies on instead of
+ * z-fighting it. Self-scaling (a far, small shadow lifts less) and small enough that
+ * the float above the ground is imperceptible from a cockpit view. */
+static const float GL_SHADOW_RAISE_FRAC = 0.25f;
+
 static void drawSub(const GlSub *r) {
     MeshVtxPools pools;
     MeshLod *l;
     int i, shift;
     float cm[9], scaleDiv;
+    /* Ground-plane projection basis for a shadow (camera space): unit world-up
+     * normal `sn` and the object origin `so` (a point on the plane). Each vertex is
+     * projected straight down onto that plane, collapsing the model's vertical
+     * relief into a flat outline on the ground, then lifted by `srv` (a uniform
+     * translation toward the camera, so the faces stay coplanar for the GL_LESS pass). */
+    float snx = 0, sny = 0, snz = 0, sox = 0, soy = 0, soz = 0;
+    float srvx = 0, srvy = 0, srvz = 0;
     static float vx_[R3DMESH_MAX_VERTS], vy_[R3DMESH_MAX_VERTS], vd_[R3DMESH_MAX_VERTS];
 
     fillPools(&pools);
@@ -1030,6 +1054,40 @@ static void drawSub(const GlSub *r) {
 
     for (i = 0; i < 9; i++) cm[i] = (float)r->combined[i];
 
+    /* Shadow: build the ground-plane projection basis. World-up in this camera
+     * basis is g_viewRotMatrix's Z column (same as the wire ground test); the plane
+     * passes through the object origin, which sits at ground level (the shadow is
+     * submitted at the terrain altitude, level). Vertices are projected onto it
+     * below, flattening the model's vertical relief into a flat outline. */
+    if (r->shadow) {
+        float ul;
+        snx = (float)g_viewRotMatrix[3];
+        sny = (float)g_viewRotMatrix[4];
+        snz = (float)g_viewRotMatrix[5];
+        ul = SDL_sqrtf(snx * snx + sny * sny + snz * snz);
+        if (ul > 1e-3f) { snx /= ul; sny /= ul; snz /= ul; }
+        sox = (float)r->camBase / scaleDiv;
+        soy = (float)r->camX / scaleDiv;
+        soz = (float)r->camY / scaleDiv;
+        {
+            /* Model's camera-space height above the ground plane, and the lift vector
+             * along the plane normal in whichever direction reduces depth (toward the
+             * camera) so the raised shadow wins the depth test over the ground. */
+            float maxDd = 0.0f, rs;
+            for (i = 0; i < l->nVerts; i++) {
+                int X = l->verts[i].x, Y = l->verts[i].y, Z = l->verts[i].z;
+                float cX = (2.0f * (cm[0] * X + cm[3] * Z + cm[6] * Y) + (float)r->camBase) / scaleDiv;
+                float cY = (2.0f * (cm[1] * X + cm[4] * Z + cm[7] * Y) + (float)r->camX) / scaleDiv;
+                float dp = (2.0f * (cm[2] * X + cm[5] * Z + cm[8] * Y) + (float)r->camY) / scaleDiv;
+                float dd = (cX - sox) * snx + (cY - soy) * sny + (dp - soz) * snz;
+                if (dd < 0.0f) dd = -dd;
+                if (dd > maxDd) maxDd = dd;
+            }
+            rs = (snz > 0.0f ? -GL_SHADOW_RAISE_FRAC : GL_SHADOW_RAISE_FRAC) * maxDd;
+            srvx = rs * snx; srvy = rs * sny; srvz = rs * snz;
+        }
+    }
+
     /* Screen-space bounding box (window pixels) of the projected vertices. The GL
      * path always renders the finest LOD; at long range that geometry shrinks below
      * a pixel and rasterizes to nothing, whereas the original switched to a coarse
@@ -1045,6 +1103,13 @@ static void drawSub(const GlSub *r) {
             float camX = (2.0f * (cm[0] * X + cm[3] * Z + cm[6] * Y) + (float)r->camBase) / scaleDiv;
             float camY = (2.0f * (cm[1] * X + cm[4] * Z + cm[7] * Y) + (float)r->camX) / scaleDiv;
             float depth = (2.0f * (cm[2] * X + cm[5] * Z + cm[8] * Y) + (float)r->camY) / scaleDiv;
+            if (r->shadow) {
+                /* Drop the vertex onto the ground plane along world-up, then lift the
+                 * whole plane toward the camera so it clears the ground (no z-fight). */
+                float dd = (camX - sox) * snx + (camY - soy) * sny + (depth - soz) * snz;
+                camX -= dd * snx; camY -= dd * sny; depth -= dd * snz;
+                camX += srvx; camY += srvy; depth += srvz;
+            }
             vx_[i] = camX;
             vy_[i] = camY;
             vd_[i] = depth / 65536.0f;
@@ -1067,7 +1132,7 @@ static void drawSub(const GlSub *r) {
          * banked): the surviving in-front verts give a bogus sub-pixel span, which
          * would drop the tile to a single dot. Draw the real near-plane-clipped
          * polygon instead, matching the software rasterizer's screen-space clip. */
-        if (nProj == l->nVerts && nProj > 0 &&
+        if (!r->shadow && nProj == l->nVerts && nProj > 0 &&
             (maxX - minX) < 2.0f && (maxY - minY) < 2.0f) {
             int colorByte = -1;
             for (i = 0; i < l->nFaces; i++) {
@@ -1131,8 +1196,15 @@ static void drawSub(const GlSub *r) {
         }
         if (n < 3) continue;
 
-        paintBias();
-        glColorIndex(colorLut[f->colorByte] + GL_NEAR_SHADE);
+        if (r->shadow) {
+            /* No paintBias — the shadow pass (gl_endScene) uses the stencil to blend
+             * each covered pixel once, so overlapping flattened faces need no depth
+             * ordering; a per-face offset would only reintroduce depth jitter. */
+            glColor4f(0.0f, 0.0f, 0.0f, GL_SHADOW_ALPHA);
+        } else {
+            paintBias();
+            glColorIndex(colorLut[f->colorByte] + GL_NEAR_SHADE);
+        }
         glBegin(GL_POLYGON);
         for (k = 0; k < n; k++) fogVertex(vx_[ring[k]], vy_[ring[k]], vd_[ring[k]]);
         glEnd();
@@ -1151,7 +1223,7 @@ static void drawSub(const GlSub *r) {
      * facing (perpendicular to the line and the view ray) so it always reads as a
      * line. World-up in camera space is the matrix column the model Z axis maps
      * through, i.e. (g_viewRotMatrix[3..5]) in this (camX,camY,depth) basis. */
-    if (l->nLines) {
+    if (l->nLines && !r->shadow) {
         float ux = (float)g_viewRotMatrix[3];
         float uy = (float)g_viewRotMatrix[4];
         float uz = (float)g_viewRotMatrix[5];
@@ -1332,6 +1404,7 @@ static void gl_endScene(void) {
     glDepthMask(GL_FALSE);
     for (i = 0; i < s_nSub; i++)
         if (s_subs[i].immediate) drawSub(&s_subs[i]);
+
     /* Pass 2 — elevated objects (planes, missiles, buildings, terrain with relief):
      * z-buffered (GL_LEQUAL, set in gl_beginScene) so genuine occlusion is correct —
      * a plane behind a building does not show through. The per-primitive paint bias
@@ -1342,7 +1415,29 @@ static void gl_endScene(void) {
     s_paintSeq = 0;
 
     for (i = 0; i < s_nSub; i++)
-        if (!s_subs[i].immediate) drawSub(&s_subs[i]);
+        if (!s_subs[i].immediate && !s_subs[i].shadow) drawSub(&s_subs[i]);
+
+    /* Shadow pass — aircraft ground shadows, composited over the opaque world: they
+     * lie on the ground (depth-tested, so geometry in front occludes them) but never
+     * occlude anything (no depth writes). Translucent black, un-fogged so a distant
+     * shadow stays dark. The stencil marks each covered pixel after its first fragment
+     * (GL_EQUAL 0 to draw, GL_INCR on pass), so a silhouette whose flattened faces
+     * overlap — tail over wing — blends exactly once instead of stacking to a darker
+     * core. The small camera-ward lift (drawSub) keeps it off the coplanar ground. */
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_FOG);
+    glEnable(GL_STENCIL_TEST);
+    glStencilFunc(GL_EQUAL, 0, 0xff);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);
+    for (i = 0; i < s_nSub; i++)
+        if (s_subs[i].shadow) drawSub(&s_subs[i]);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);
+    if (s_mainScene) glEnable(GL_FOG);
 
     /* 3D effect lines (tracers / explosion sparks): z-tested against the scene
      * just drawn and fogged like it, so they occlude and haze. Drawn after the

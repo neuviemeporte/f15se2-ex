@@ -47,7 +47,9 @@ void load15Flt3d3() {
     fileClose(fileHandle);
 }
 
-void drawWorldObject(int16 shapeId, int32 worldX, int32 worldY, int16 altitude, int16 objYaw, int16 objPitch, int16 objRoll, int16 scaleShift) {
+static void drawWorldObjectCore(int16 shapeId, int isShadow,
+                                int32 worldX, int32 worldY, int16 altitude, int16 objYaw,
+                                int16 objPitch, int16 objRoll, int16 scaleShift) {
     int16 *drawPg;
     int dataOff;
     long relX;
@@ -108,11 +110,24 @@ void drawWorldObject(int16 shapeId, int32 worldX, int32 worldY, int16 altitude, 
             g_curLod = 1;
             {
                 R3DSubmit obj = {g_world3dData + dataOff, -objYaw, objPitch, objRoll,
-                                 (int16)relX, -(int16)relY, altitude != 0};
+                                 (int16)relX, -(int16)relY, altitude != 0, isShadow};
                 r3d_submit(&obj);
             }
         }
     }
+}
+
+void drawWorldObject(int16 shapeId, int32 worldX, int32 worldY, int16 altitude, int16 objYaw, int16 objPitch, int16 objRoll, int16 scaleShift) {
+    drawWorldObjectCore(shapeId, 0, worldX, worldY, altitude, objYaw, objPitch, objRoll, scaleShift);
+}
+
+/* An aircraft's ground shadow: its own model (`shapeId`) at the terrain altitude,
+ * carrying the plane's true attitude. The GPU backend flattens the oriented model
+ * onto the ground plane and draws it translucent (a banking plane's shadow
+ * foreshortens); the software backend draws it level in flat black. */
+void drawAircraftShadow(int16 shapeId, int32 worldX, int32 worldY, int16 groundAltitude,
+                        int16 objYaw, int16 objPitch, int16 objRoll, int16 scaleShift) {
+    drawWorldObjectCore(shapeId, 1, worldX, worldY, groundAltitude, objYaw, objPitch, objRoll, scaleShift);
 }
 
 /* Transform one world point (worldX/worldY in drawWorldObject's long convention,

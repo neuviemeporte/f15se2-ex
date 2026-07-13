@@ -36,11 +36,20 @@ typedef struct {
 /* One object submitted to the current scene: a mesh plus its orientation and
  * position. Shade / render-mode / LOD stay where the existing code computes them
  * (object globals + the display-list stream); they move into this struct when the
- * backend stops sharing those globals. */
+ * backend stops sharing those globals.
+ *
+ * Aircraft shadow: an aircraft near the ground submits its own model with
+ * `shadow` set and its true attitude (yaw/pitch/roll). The GPU backend flattens
+ * that oriented model onto the ground plane and draws it translucent, so a banking
+ * plane casts a foreshortened outline of its own shape. The software backend draws
+ * the same model level (it ignores the shadow attitude) in flat black — its low-end
+ * baseline: correct silhouette, no ground projection. `shadow` is 0 for every
+ * normal object. */
 typedef struct {
     R3DMesh mesh;
     int yaw, pitch, roll;
     int posX, posY, posZ;
+    int shadow;
 } R3DSubmit;
 
 /* One world-space line segment submitted to the current scene (cannon tracers,

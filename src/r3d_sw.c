@@ -29,6 +29,13 @@ static void sw_beginScene(const R3DScene *s) {
 }
 
 static void sw_submit(const R3DSubmit *o) {
+    if (o->shadow) {
+        /* Draw the aircraft's own model level and flat black — the low-end shadow
+         * baseline (no ground projection; the attitude carried in the submit is used
+         * only by the GPU backend's flattened shadow). */
+        projectSceneShadow((char far *)o->mesh, o->yaw, o->posX, o->posY, o->posZ);
+        return;
+    }
     projectSceneObject((char far *)o->mesh, o->yaw, o->pitch, o->roll,
                        o->posX, o->posY, o->posZ);
 }

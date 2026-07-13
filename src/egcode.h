@@ -93,5 +93,6 @@ size_t fileRead(void *ptr, size_t size, size_t count, SDL_IOStream *handle);
 size_t fileWrite(const void *ptr, size_t size, size_t count, SDL_IOStream *handle);
 
 void far projectSceneObject(char far *model, int yaw, int pitch, int roll, int posX, int posY, int posZ);
+void far projectSceneShadow(char far *model, int yaw, int posX, int posY, int posZ);
 
 #endif /* F15_SE2_EGCODE */
