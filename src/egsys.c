@@ -36,6 +36,7 @@ void updateFrame(void);
 #define SIM_OBJ_MAX 20
 #define PROJ_MAX 12
 #define OBJ_TELEPORT_GUARD 0x2000 /* world units/axis; a real step moves << this */
+#define SEEKER_TELEPORT_GUARD 0x400 /* seeker units/axis; a lock switch jumps >> a tracking step */
 
 /* The authoritative sim state the camera is derived from each renderFrame(). We
  * snapshot prev/next and write an interpolated copy into the live globals just
@@ -52,6 +53,10 @@ typedef struct {
     int32 mapX, mapY; /* g_viewX_ / g_viewY_ */
     int32 crashX, crashY, crashZ;
     int32 wreckX, wreckY, wreckAlt; /* downed-aircraft wreck/parachute */
+    /* HUD reticle inputs derived from the player state each sim step (gun-reticle
+     * vertical trim, air-to-air seeker head offset). They ride the same snapshot so
+     * the reticles glide every render frame instead of snapping at the sim rate. */
+    int32 rollPitchTrim, aamSeekerX, aamSeekerY;
 } CamSnapshot;
 
 static int32 iabs32(int32 v) {
@@ -73,6 +78,9 @@ static void camCapture(CamSnapshot *s) {
     s->wreckX = g_wreckX;
     s->wreckY = g_wreckY;
     s->wreckAlt = g_wreckAlt;
+    s->rollPitchTrim = g_rollPitchTrim;
+    s->aamSeekerX = g_aamSeekerX;
+    s->aamSeekerY = g_aamSeekerY;
 }
 
 static void camRestore(const CamSnapshot *s) {
@@ -90,6 +98,9 @@ static void camRestore(const CamSnapshot *s) {
     g_wreckX = (int16)s->wreckX;
     g_wreckY = (int16)s->wreckY;
     g_wreckAlt = (int16)s->wreckAlt;
+    g_rollPitchTrim = (int16)s->rollPitchTrim;
+    g_aamSeekerX = (int16)s->aamSeekerX;
+    g_aamSeekerY = (int16)s->aamSeekerY;
 }
 
 static int32 lerpLinear(int32 a, int32 b, int64 num, int64 den) {
@@ -157,6 +168,20 @@ static void camApplyInterp(const CamSnapshot *p, const CamSnapshot *n, int64 num
         g_wreckX = (int16)lerpLinear(p->wreckX, n->wreckX, num, den);
         g_wreckY = (int16)lerpLinear(p->wreckY, n->wreckY, num, den);
         g_wreckAlt = (int16)lerpLinear(p->wreckAlt, n->wreckAlt, num, den);
+    }
+    /* Gun-reticle vertical trim tracks the roll pose; snap it across the gimbal
+     * flip with the pose (else it would swing through centre for one frame). */
+    g_rollPitchTrim = (int16)(angleSnaps(p->roll, n->roll)
+                                  ? n->rollPitchTrim
+                                  : lerpLinear(p->rollPitchTrim, n->rollPitchTrim, num, den));
+    /* Seeker head: snap on a lock switch (a large one-step jump), tween otherwise. */
+    if (iabs32(n->aamSeekerX - p->aamSeekerX) >= SEEKER_TELEPORT_GUARD ||
+        iabs32(n->aamSeekerY - p->aamSeekerY) >= SEEKER_TELEPORT_GUARD) {
+        g_aamSeekerX = (int16)n->aamSeekerX;
+        g_aamSeekerY = (int16)n->aamSeekerY;
+    } else {
+        g_aamSeekerX = (int16)lerpLinear(p->aamSeekerX, n->aamSeekerX, num, den);
+        g_aamSeekerY = (int16)lerpLinear(p->aamSeekerY, n->aamSeekerY, num, den);
     }
 }
 

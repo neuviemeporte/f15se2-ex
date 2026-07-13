@@ -14,6 +14,7 @@
 #include "log.h"
 #include "gfx.h"
 #include "r2d.h"
+#include "hdsprite.h"
 #include "const.h"
 #include "comm.h"
 
@@ -97,7 +98,11 @@ void renderHudFrame(int unused) {
                 setDrawColor(COLOR_LIGHTGRAY);
                 g_flightPathMarkerY = (g_rollPitchTrim >> 6) + 56;
                 if (g_flightPathMarkerY > 10 && g_flightPathMarkerY < 111) {
-                    blitSprite(154, g_flightPathMarkerY - 4, 0x94, 21, 11, 7, 0xf);
+                    /* Fractional Y (the >>6 dropped) so the marker glides sub-pixel. */
+                    float ry = g_rollPitchTrim / 64.0f + 56.0f;
+                    if (!hdsprite_drawHudGunReticle(154.0f, ry - 4.0f)) {
+                        blitSprite(154, g_flightPathMarkerY - 4, 0x94, 21, 11, 7, 0xf);
+                    }
                 }
             }
             if (g_currentWeaponType == 1) {
@@ -105,7 +110,13 @@ void renderHudFrame(int unused) {
                 markerX = (g_aamSeekerX >> seekerShift) + 159;
                 markerY = (g_aamSeekerY >> seekerShift) + 56;
                 if (markerX > 10 && markerX < 309 && markerY > 8 && markerY < 91) {
-                    blitSprite(markerX - 6, markerY - 5, 0x91, 0x4, 0xd, 0xb, 0xe);
+                    /* Fractional position (the >>seekerShift dropped) for sub-pixel glide. */
+                    float scale = 1.0f / (float)(1 << seekerShift);
+                    float sx = g_aamSeekerX * scale + 159.0f;
+                    float sy = g_aamSeekerY * scale + 56.0f;
+                    if (!hdsprite_drawHudAamSeeker(sx - 6.0f, sy - 5.0f)) {
+                        blitSprite(markerX - 6, markerY - 5, 0x91, 0x4, 0xd, 0xb, 0xe);
+                    }
                 }
                 // 7 = air to air? Only Sidewinder and Amraam have it
                 if (sams[missiles[missleSpec[missileSpecIndex].weaponIdx].specIndex].weaponClass == 7) {

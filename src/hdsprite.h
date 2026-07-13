@@ -21,6 +21,21 @@ typedef struct R2DImage R2DImage;
  * a native-overlay vector frame. */
 int hdsprite_drawRadarOwnship(float destX, float destY);
 
+/* HUD reticles (main viewport, 320-space). Each draws the HD PNG into the footprint
+ * of the legacy blitSprite it replaces — (destX,destY) is the footprint's fractional
+ * top-left, so the marker glides sub-pixel with the interpolated player state (no
+ * 320x200-grid snapping), sharp at native resolution. Returns 1 if it submitted the
+ * HD art (caller skips the legacy blit), 0 to fall back. GPU-only; always 0 on the
+ * software backend.
+ *
+ * gun-reticle: guns / air-to-ground aiming marker, shown only when a gun/A2G
+ *              weapon is selected (legacy F15.SPR 148,21, 11x7).
+ * aam-seeker:  air-to-air missile seeker reticle, shown only in missile mode
+ *              (legacy F15.SPR 145,4, 13x11).
+ * The two are mutually exclusive — exactly one is on the HUD at a time. */
+int hdsprite_drawHudGunReticle(float destX, float destY);
+int hdsprite_drawHudAamSeeker(float destX, float destY);
+
 /* Debrief theatre map: draw the HD PNG (if available) in the legacy map footprint
  * (position 8,10; size 224×168 in 320-space). Returns 1 if drawn, 0 to fall back
  * to the legacy SPR. Lazily loaded once per theatre. */

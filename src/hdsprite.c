@@ -135,3 +135,41 @@ int hdsprite_drawRadarOwnship(float destX, float destY) {
     return r2d_submitImageF(hd, 0, 0, s->w, s->h,
                             destX - f / 2.0f, destY - f / 2.0f, f, f, 0);
 }
+
+/* HUD reticles: lazily-loaded HD PNGs drawn into the legacy sprite footprint. The
+ * footprint (320-space) equals the original blitSprite width/height so placement is
+ * identical; the 1.2 present aspect then stretches it back toward square on screen. */
+#define HUD_GUNRETICLE_W 11 /* legacy blitSprite(154, y, 0x94, 21, 11, 7, ...) */
+#define HUD_GUNRETICLE_H 7
+#define HUD_AAMSEEKER_W 13 /* legacy blitSprite(x, y, 0x91, 4, 13, 11, ...) */
+#define HUD_AAMSEEKER_H 11
+
+static R2DImage *loadHudReticle(const char *path) {
+    if (!r2d_hasNativeOverlay()) return NULL; /* software: HD is GPU-only */
+    return loadHdPng(path);
+}
+
+/* Fractional 320-space destination (destX,destY is the footprint's top-left) so the
+ * reticle glides sub-pixel with the interpolated player state instead of snapping to
+ * the 320x200 grid — the same native-res path the radar ownship and target boxes use. */
+static int drawHudReticle(R2DImage *hd, float destX, float destY, int w, int h) {
+    SDL_Surface *s;
+    if (!hd || !r2d_vectorActive()) return 0;
+    s = r2d_imageSurface(hd);
+    if (!s) return 0;
+    return r2d_submitImageF(hd, 0, 0, s->w, s->h, destX, destY, (float)w, (float)h, 0);
+}
+
+int hdsprite_drawHudGunReticle(float destX, float destY) {
+    static R2DImage *img;
+    static int tried;
+    if (!tried) { tried = 1; img = loadHudReticle("assets/flight/hud/gun-reticle.png"); }
+    return drawHudReticle(img, destX, destY, HUD_GUNRETICLE_W, HUD_GUNRETICLE_H);
+}
+
+int hdsprite_drawHudAamSeeker(float destX, float destY) {
+    static R2DImage *img;
+    static int tried;
+    if (!tried) { tried = 1; img = loadHudReticle("assets/flight/hud/aam-seeker.png"); }
+    return drawHudReticle(img, destX, destY, HUD_AAMSEEKER_W, HUD_AAMSEEKER_H);
+}
