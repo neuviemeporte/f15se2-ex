@@ -87,6 +87,13 @@ struct TileObject *findNearestTileObject(uint32 worldX, uint32 worldY) {
                             lookupTileEntry(c, f, i, k) != 0) {
                             g = g_dynTileEntries[g_tileEntryIdx].shape;
                         }
+                        /* bit 7 = "needs tile lookup" flag, not part of the index
+                         * (cf. eg3dproj.c, struct.h TileObject). When 0x80 is set
+                         * but no dynamic entry resolves (e.g. it was stored at a
+                         * different lod), the original left the flag in g and read
+                         * buf3d3[]/nearestTile.id out of bounds. Mask to the base
+                         * shape so both the model lookup and the id stay in range. */
+                        g &= 0x7f;
                         if (q < nearestTile.dist) {
                             g_modelStreamPtr = (char far *)(g_world3dData + buf3d3[g]);
                             if (rdI16(g_modelStreamPtr) != 0 ||
@@ -169,7 +176,8 @@ void drawNearestTileObject(uint32 coord1, uint32 coord2, uint32 coord3) {
     }
     if (nearestTile.dist != 0x7fff) {
         g_curTileEntry = nearestTile.entry;
-        g_modelStreamPtr = (char FAR *)(g_world3dData + buf3d3[nearestTile.entry->shape]);
+        /* mask the 0x80 "needs tile lookup" flag off the buf3d3 index (see findNearestTileObject). */
+        g_modelStreamPtr = (char FAR *)(g_world3dData + buf3d3[nearestTile.entry->shape & 0x7f]);
         g_objRelX = g_curTileEntry->x - g_viewPosX;
         g_objRelY = g_curTileEntry->y - g_viewPosY;
         g_objTransform[0] = g_curTileEntry->z - g_viewPosZ;
