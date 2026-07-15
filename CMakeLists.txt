@@ -12,7 +12,7 @@ project(F15SE2-EX
 # downloaded and built from source, so the project builds out of the box. Pass
 # -DDOWNLOAD_DEPENDENCIES=OFF to require system-provided dependencies instead
 # (configuration fails if one is missing).
-option(DOWNLOAD_DEPENDENCIES "Download and build missing third-party dependencies from source" ON)
+option(DOWNLOAD_DEPENDENCIES "Download and build missing third-party dependencies from source" OFF)
 
 # Sanitizers (GCC/Clang only). Off by default; enable for debugging.
 option(ASAN "Build with AddressSanitizer" OFF)
