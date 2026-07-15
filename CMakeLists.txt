@@ -75,14 +75,6 @@ FetchContent_Declare(
     UPDATE_DISCONNECTED TRUE
 )
 FetchContent_MakeAvailable(nuked_opl3)
-FetchContent_Declare(
-    quick_digest5
-    GIT_REPOSITORY "https://github.com/nthnn/QuickDigest5.git"
-    GIT_TAG "1d61aece0e023e4c41cf24547fa1ac2f8028219d"
-    UPDATE_DISCONNECTED TRUE
-)
-FetchContent_MakeAvailable(quick_digest5)
-
 
 #==============================================================================
 # Sources
@@ -210,6 +202,9 @@ find_package(OpenGL REQUIRED)
 # across toolchains (not all fold pthread into libc).
 find_package(Threads REQUIRED)
 
+# Use openssl instead of quickdigest5
+find_package(OpenSSL REQUIRED)
+
 #------------------------------------------------------------------------------
 # Sanitizers (GCC/Clang, opt-in). Applied at directory scope so the executable
 # and the tests (which each compile the game code they exercise) are instrumented
@@ -253,7 +248,6 @@ list(REMOVE_ITEM F15SE2_CORE_SOURCES ${SRC_DIR}/f15.c)
 add_library(f15se2_core STATIC
     ${F15SE2_CORE_SOURCES}
     ${nuked_opl3_SOURCE_DIR}/opl3.c
-    ${quick_digest5_SOURCE_DIR}/src/quickdigest5.cpp
 )
 target_include_directories(f15se2_core BEFORE PUBLIC
     ${SRC_DIR}/compat64
@@ -263,14 +257,13 @@ target_include_directories(f15se2_core BEFORE PUBLIC
 target_include_directories(f15se2_core PRIVATE
     ${SRC_DIR}/asound
     ${nuked_opl3_SOURCE_DIR}
-    ${quick_digest5_SOURCE_DIR}/include
 )
 # Keep the log.h diagnostics live (the Log* macros compile out without DEBUG).
 target_compile_definitions(f15se2_core PUBLIC DEBUG)
 if(AUTOSTART)
     target_compile_definitions(f15se2_core PUBLIC DEBUG_AUTOSTART)
 endif()
-target_link_libraries(f15se2_core PUBLIC SDL3::SDL3 OpenGL::GL)
+target_link_libraries(f15se2_core PUBLIC SDL3::SDL3 OpenGL::GL OpenSSL::Crypto)
 
 add_executable(f15se2 ${SRC_DIR}/f15.c)
 set_target_properties(f15se2 PROPERTIES OUTPUT_NAME "f15se2-ex")
@@ -406,9 +399,9 @@ function(add_behavior_test name)
     # Absolute path to the committed golden-image references (tests/golden.h).
     target_compile_definitions(${name} PRIVATE F15_GOLDEN_DIR="${TEST_DIR}/goldens")
     if(T_LINK_CORE)
-        target_link_libraries(${name} PRIVATE f15se2_core Threads::Threads)
+        target_link_libraries(${name} PRIVATE f15se2_core Threads::Threads OpenSSL::Crypto)
     else()
-        target_link_libraries(${name} PRIVATE SDL3::SDL3 Threads::Threads)
+        target_link_libraries(${name} PRIVATE SDL3::SDL3 Threads::Threads OpenSSL::Crypto)
     endif()
     if(T_DEFS)
         target_compile_definitions(${name} PRIVATE ${T_DEFS})

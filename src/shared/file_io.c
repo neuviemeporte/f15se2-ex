@@ -5,7 +5,8 @@
 #include "inttype.h"
 #include "log.h"
 #include <SDL3/SDL.h>
-#include <quickdigest5.hpp>
+#include <fstream>
+#include <openssl/md5.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -14,6 +15,25 @@
 #include <filesystem>
 #include <algorithm>
 #include <vector>
+
+static std::string fileToHash(const std::string &fname)
+{
+    std::ifstream file(fname, std::ios::binary | std::ios::ate);
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    std::vector<char> fbuf(size);
+    file.read(fbuf.data(), size);
+
+    unsigned char sbuf[MD5_DIGEST_LENGTH];
+    MD5((unsigned char *)&fbuf[0], fbuf.size(), sbuf);
+
+    std::ostringstream ss;
+    ss << std::hex << std::setfill('0');
+    for (auto ch: sbuf) {
+        ss << std::setw(2) << (int) ch;
+    }
+    return ss.str();
+}
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -196,9 +216,9 @@ bool verifyGameAssets() {
                 msg.c_str(), NULL);
             return false;
         }
-        if (QuickDigest5::fileToHash(pathStr) != a.md5) {
+        if (fileToHash(pathStr) != a.md5) {
             const string msg = "Checksum mismatch for asset file " + pathStr
-                + ": expected " + a.md5;
+                + ": expected " + a.md5 + ", got " + fileToHash(pathStr);
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Initialization failed",
                 msg.c_str(), NULL);
             return false;
