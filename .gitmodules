@@ -1,0 +1,3 @@
+[submodule "3rd-party/Nuked-OPL3"]
+	path = 3rd-party/Nuked-OPL3
+	url = https://github.com/nukeykt/Nuked-OPL3.git

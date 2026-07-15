@@ -64,22 +64,11 @@ else()
     endif()
 endif()
 
-# Nuked-OPL3: the YM3812/OPL2 emulator that turns the ported AdLib driver's
-# register state into PCM. Header-light (opl3.c/.h), no CMake of its own, so we
-# just pull the sources and compile opl3.c into the target (as C).
-include(FetchContent)
-FetchContent_Declare(
-    nuked_opl3
-    GIT_REPOSITORY "https://github.com/nukeykt/Nuked-OPL3.git"
-    GIT_TAG "cfedb09efc03f1d7b5fc1f04dd449d77d8c49d50"  # master has no release tags
-    UPDATE_DISCONNECTED TRUE
-)
-FetchContent_MakeAvailable(nuked_opl3)
-
 #==============================================================================
 # Sources
 #==============================================================================
 set(SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
+set(OPL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rd-party/Nuked-OPL3")
 
 # The four original DOS programs (f15 / start / egame / end) are being merged
 # into a single SDL executable.
@@ -247,7 +236,7 @@ list(REMOVE_ITEM F15SE2_CORE_SOURCES ${SRC_DIR}/f15.c)
 
 add_library(f15se2_core STATIC
     ${F15SE2_CORE_SOURCES}
-    ${nuked_opl3_SOURCE_DIR}/opl3.c
+    ${OPL_DIR}/opl3.c
 )
 target_include_directories(f15se2_core BEFORE PUBLIC
     ${SRC_DIR}/compat64
@@ -256,7 +245,7 @@ target_include_directories(f15se2_core BEFORE PUBLIC
 )
 target_include_directories(f15se2_core PRIVATE
     ${SRC_DIR}/asound
-    ${nuked_opl3_SOURCE_DIR}
+    ${OPL_DIR}
 )
 # Keep the log.h diagnostics live (the Log* macros compile out without DEBUG).
 target_compile_definitions(f15se2_core PUBLIC DEBUG)
