@@ -17,6 +17,7 @@ CMakeUserPresets.json
 __pycache__
 /f15se2-ex
 converted*
+src/generated
 # Coverage + golden-test scratch artifacts
 coverage.xml
 coverage.txt
