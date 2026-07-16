@@ -5,6 +5,7 @@
 // state (threat scoring, SAM acquisition, target/mission bookkeeping, replay
 // log, director scheduling, wreck physics, timing/LOD math).
 #include "egdata.h"
+#include "egkeys.h"
 #include "egmath.h"
 #include "inttype.h"
 #include "struct.h"
@@ -180,7 +181,7 @@ int main() {
     g_projectiles[0].worldX = 0;
     g_projectiles[0].ttl = 1000;
     g_frameRateScaling = 20;
-    require(samCanAcquireTarget(0, 1000, 3000, 0, 1) == 0,
+    require(samCanAcquireTarget(0, 1100, 3000, 0, 1) == 0,
             "samCanAcquireTarget rejects targets outside the turn cone");
     require(g_projectiles[0].ttl == (g_frameRateScaling << 4),
             "samCanAcquireTarget clamps far off-boresight SAM ttl for active slots");
@@ -194,6 +195,26 @@ int main() {
     g_frameRateScaling = 20;
     require(samCanAcquireTarget(0, 3000, 1000, 0, 0) == 0,
             "samCanAcquireTarget mode 0 requires the forward-heading cone");
+
+    resetGameplayState();
+    g_projectiles[0].mapX = 1000;
+    g_projectiles[0].mapY = 1000;
+    g_projectiles[0].speed = 1;
+    g_projectiles[0].worldX = static_cast<int16>(0x8000);
+    g_ourHead = 0;
+    g_frameRateScaling = 20;
+    require(samCanAcquireTarget(0, 1000, 3000, 0, 0) == 1,
+            "samCanAcquireTarget mode 0 preserves original int16 abs(-32768) heading seam");
+
+    resetGameplayState();
+    g_projectiles[0].mapX = 1000;
+    g_projectiles[0].mapY = 1000;
+    g_projectiles[0].speed = 1;
+    g_projectiles[0].worldX = static_cast<int16>(0x8000);
+    g_ourHead = 0;
+    g_frameRateScaling = 20;
+    require(samCanAcquireTarget(0, 1000, -1000, 0, 1) == 1,
+            "samCanAcquireTarget preserves original int16 abs(-32768) acquisition seam");
 
     // --- markTargetReached (egcombat) ---------------------------------------
     resetGameplayState();
@@ -390,6 +411,17 @@ int main() {
     exitSlowMotion();
     require(g_slowMotionMode == 1 && g_frameRateScaling == 8,
             "exitSlowMotion is a no-op when not in mode 2");
+
+    // --- training toggle shared-state handoff (egkeys) ----------------------
+    resetGameplayState();
+    comm = {};
+    commData = &comm;
+    keyDispatch(SCAN_ALT_T);
+    require((g_playerPlaneFlags & 0x1000) != 0 && comm.trainingFlag == 1,
+            "ALT+T sets the player training flag and shared debrief flag");
+    keyDispatch(SCAN_ALT_T);
+    require((g_playerPlaneFlags & 0x1000) == 0 && comm.trainingFlag == 0,
+            "ALT+T clears the player training flag and shared debrief flag");
 
     // --- setupLodDistances thresholds (egkeys) ------------------------------
     resetGameplayState();

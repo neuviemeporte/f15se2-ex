@@ -7,6 +7,15 @@
 
 extern void far egAdvanceFrameTick(void);
 
+static int g_gfxDacCycleCalls = 0;
+
+void FAR CDECL gfx_dacCycle(void) {
+    // egAdvanceFrameTick calls the renderer's DAC/colour-cycle hook once per
+    // tick. This test links only the timer/data objects, so provide the hook
+    // locally instead of pulling the full SDL renderer into the unit test.
+    g_gfxDacCycleCalls++;
+}
+
 /* Backs egdata.c's regnStr global (defined in stdata.c, not linked here). MSVC
  * links whole objects so this reference needs a definition; unused by the test. */
 char aRegn_xxx[] = "regn.xxx";
@@ -37,6 +46,7 @@ void resetTickState() {
     g_frameSyncPending = kFrameSyncPendingBeforeTick;
     g_timerTickByte[0] = kTimerTickBefore;
     g_frameTimingAccum = kFrameTimingBefore;
+    g_gfxDacCycleCalls = 0;
 }
 
 } // namespace
@@ -51,6 +61,8 @@ int main() {
             "egAdvanceFrameTick increments the original waitFrameSync tick byte");
     require(g_frameTimingAccum == kFrameTimingAfter,
             "egAdvanceFrameTick increments the original frame timing accumulator");
+    require(g_gfxDacCycleCalls == 1,
+            "egAdvanceFrameTick advances the renderer DAC/colour-cycle hook once per tick");
 
     // The tick byte is a uint8 that waitFrameSync busy-waits on; it must wrap
     // 0xFF -> 0x00 (not saturate or widen), or the pacing compare after a wrap
@@ -59,6 +71,8 @@ int main() {
     egAdvanceFrameTick();
     require(g_timerTickByte[0] == 0x00,
             "egAdvanceFrameTick wraps the uint8 tick byte 0xFF -> 0x00");
+    require(g_gfxDacCycleCalls == 2,
+            "egAdvanceFrameTick keeps DAC/colour-cycle timing tied to every timer tick");
 
     std::cout << "tick_behavior_tests passed\n";
     return 0;

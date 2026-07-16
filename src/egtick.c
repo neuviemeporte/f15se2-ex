@@ -25,6 +25,7 @@
 #include "egdata.h"
 #include "inttype.h"
 #include "slot.h"
+#include "gfx.h"
 
 void FAR egAdvanceFrameTick(void) {
     /* Clear the per-frame sync flag the render loop raises each iteration
@@ -35,4 +36,5 @@ void FAR egAdvanceFrameTick(void) {
     g_frameSyncPending = 0;
     g_timerTickByte[0]++;
     g_frameTimingAccum++;
+    gfx_dacCycle();
 }

@@ -496,7 +496,7 @@ int samCanAcquireTarget(int slot, int targetX, int targetY, int targetAlt, int m
         g_acqRange = range;
         return 1;
     }
-    bearDiff = abs((int16)(g_acqAimY - g_projectiles[slot].worldX));
+    bearDiff = abs16Compat((int16)(g_acqAimY - g_projectiles[slot].worldX));
     if (bearDiff > 0x1000 && mode != 3) {
         if (bearDiff > 0x6000 && slot < 8) {
             if ((g_projectiles[slot].speed << 4) / g_frameRateScaling < range) {
@@ -506,7 +506,7 @@ int samCanAcquireTarget(int slot, int targetX, int targetY, int targetAlt, int m
         return 0;
     }
     if (mode == 0) {
-        if (abs((int16)(g_projectiles[slot].worldX - g_ourHead)) > 0x2000) {
+        if (abs16Compat((int16)(g_projectiles[slot].worldX - g_ourHead)) > 0x2000) {
             return 0;
         }
     }
@@ -514,7 +514,7 @@ int samCanAcquireTarget(int slot, int targetX, int targetY, int targetAlt, int m
         g_acqRange = range;
         return 1;
     }
-    bearDiff = abs((int16)(g_projectiles[slot].worldX - g_ourHead));
+    bearDiff = abs16Compat((int16)(g_projectiles[slot].worldX - g_ourHead));
     if (abs(bearDiff - 0x4000) >= 0x2000 - g_missionStatus * 2048) {
         g_acqRange = range;
         return 1;
