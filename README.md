@@ -17,9 +17,9 @@ The project is based on the [SDL3 library](https://github.com/libsdl-org/SDL/rel
 
 Development journal: https://neuviemeporte.github.io/category/f15-se2
 
-## Status (27.06.2026)
+## Status
 
-The entire game is playable, rendering and input handling is ported to SDL, sound works using Adlib emulation through [Nuked-OPL3](https://github.com/nukeykt/Nuked-OPL3), joystick input is supported (not configurable right now).
+The entire game is playable, rendering and input handling is ported to SDL, sound works using Adlib emulation through [Nuked-OPL3](https://github.com/nukeykt/Nuked-OPL3) and joystick input is supported (though not configurable right now). Multiple improvements have been implemented including high resolution and widescreen support with some bugs from the original having been fixed too. Work is ongoing to add more features and eliminate bugs.
 
 ## Screenshots
 
@@ -66,7 +66,7 @@ The entire game is playable, rendering and input handling is ported to SDL, soun
 
 ## Planned features and improvements
 
-These are things that were never part of, or were broken in the original that are planned to get fixed in this project.
+These are things that were never part of, or were broken in the original that are planned to get fixed or added in this project.
 
 1. Improve the target view in the right display to show the actual view of the target from the player's perspective, right now it's just drawn on top of fake ground and sky.
 1. Make the missiles more difficult to evade, as it's currently trivial (just beam them, i.e. put them on approx 90deg angle to the plane). Implement quasi-realistic missile energy management with self propelled/ballistic stages and gradual reduction in maneuverability. Denser air at lower altitudes should influence missile drag. Terrain masking should make missiles lose track.
@@ -74,14 +74,13 @@ These are things that were never part of, or were broken in the original that ar
 1. Make enemy plane AI more capable, right now planes are barely a nuisance, slow, barely maneuvering, will rarely shoot missiles, not sure getting hit by gunfire is even possible.
 1. More realistic player aircraft handling, right now it's too responsive, turns too quickly.
 1. Implement missile trails for better situational awareness/cool visuals.
-1. Fix firing a missile at a new target (particularly air?) while the old target is still in the hud making the missile hit the old target.
 1. In-game menu for configuration (keyboard/joystick binds, video resolution, turn engine sounds on and off, ...)
 1. Better damage model for player aircraft, currently being hit by a missile only results in a small drop of maximum RPM. Simulate full/partial loss of stability, broken systems, weapons, hydraulics etc., up to instant destruction.
 1. Better clouds and smoke effects, right now these are solid polygons in mid air.
 1. More varied terrain and water, these are completely flat with occasional pyramids that are supposed to represent mountains. It can continue to be flat shaded/polygon based to not change the look of the game too much, but we definitely need more vertices and/or textures.
 1. Let player skip the ejection sequence and go straight to debriefing.
 1. Implement a full 3D cockpit with 3DOF/6DOF head movement with the hat switch and/or TrackIR.
-1. Map and  editor.
+1. Map and editor.
 1. Multiplayer.
 1. Port the game back to 32bit DOS.
 1. VR support. 😈
@@ -90,18 +89,16 @@ These are things that were never part of, or were broken in the original that ar
 
 Problems with the game that were introduces by the port, and to the best of our knowledge are not present in the original.
 
+1. SAMs seem to be broken, there's a message about a SAM launch and if the radar is nearby, the yellow hud square showing the incoming missile is briefly visible, but disappears soon after that.
 1. In external views sometimes the view is upside down (seems like it depends on the position relative to the horizon?).
 1. The bearing (`BRG`) value in the target screen is broken, mostly stuck on one value even though target is visibly turning.
 1. There's sometimes flickering beneath the left display (map) in the cockpit.
 1. Shaking in the cockpit after getting hit is too long.
-1. Need better visibility of missiles on the radar screen, these are too small after making the radar high resolution.
 1. When on the airfield/carrier, can see through to the ground on the sides of the view (exposed by widescreen support). Also, aircraft geometry sometimes flickers beneath the player.
-1. Vertical stabilizer shapes are missing in rear view with pilot's helmet (only lines drawn).
 1. Some z-fighting still visible, e.g. on the underside of the player aircraft in external view.
 1. When starting a new mission after a previous one has been completed, the sound for the previous flight's landing ("Nice landing") is played, looks as if the sound queue is not drained before terminating the previous mission?
 1. In the debriefing screen, shot down planes only display the NATO reporting name e.g. "Flogger shot down", should be "MIG-23 Flogger".
 1. Pausing the game (`Alt-P`) appears to be busy waiting, CPU/GPU not idle.
-1. Fired missiles (Maverick only?) sometimes disappear near the target without a message ("Ineffective hit") or any other feedback.
 1. It's sometimes impossible to lock some targets even when nearby, cycling targets just jumps over them.
 1. Sometimes after starting a mission, planes and missiles are invisible (3d models missing?).
 

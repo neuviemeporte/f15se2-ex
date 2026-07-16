@@ -10,6 +10,7 @@
 #include "r3d_gl.h"
 #include "struct.h"
 #include "log.h"
+#include "version.h"
 #include <dos.h>
 #include <stdio.h>
 
@@ -70,7 +71,7 @@ void gfx_videoInit(void) {
         int msaa = r3dgl_msaaSamples();
         for (;;) {
             r3dgl_setGLAttributes(msaa);
-            sdlWindow = SDL_CreateWindow("F-15 SE2 EX v0.9.0",
+            sdlWindow = SDL_CreateWindow("F-15 SE2 EX " F15_VERSION,
                                          INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT,
                                          SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
             if (sdlWindow && r3dgl_initContext(sdlWindow)) break; /* GL up */
@@ -87,7 +88,7 @@ void gfx_videoInit(void) {
     }
 
     if (!sdlWindow) {
-        sdlWindow = SDL_CreateWindow("F-15 SE2 EX v0.9.0", INITIAL_WINDOW_WIDTH,
+        sdlWindow = SDL_CreateWindow("F-15 SE2 EX " F15_VERSION, INITIAL_WINDOW_WIDTH,
                                      INITIAL_WINDOW_HEIGHT, SDL_WINDOW_RESIZABLE);
         if (!sdlWindow)
             LogCritical(("Window creation failed: %s", SDL_GetError()));

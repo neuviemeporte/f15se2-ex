@@ -1,0 +1,3 @@
+#pragma once
+
+#define F15_VERSION "@GIT_VERSION@"
