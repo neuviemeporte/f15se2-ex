@@ -306,6 +306,7 @@ add_custom_target(GenerateVersionHeader ALL
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     BYPRODUCTS "${SRC_DIR}/generated/version.h"
 )
+add_dependencies(f15se2_core GenerateVersionHeader)
 add_dependencies(f15se2 GenerateVersionHeader)
 
 # Strip symbols from Release builds to shrink the binary (GNU/Clang only; MSVC

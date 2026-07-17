@@ -87,7 +87,7 @@ void timerPump(void);
 void timerYield(void);
 uint64 timerNowNs(void);
 int getTimeOfDay();
-SDL_IOStream *__cdecl openFile(const char *path, int mode);
+SDL_IOStream *openFile(const char *path, int mode);
 int findReplacementAssetPath(const char *legacyFilename, const char *modernExt,
                              char *outPath, size_t outPathSize);
 int findReplacementShapeModelPath(const char *containerLegacyFilename, int shapeId,

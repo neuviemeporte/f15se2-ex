@@ -3016,8 +3016,14 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
      * frame's immediate HUD/MFD draws); only pure-2D screens (no 3D pass) compose it
      * here, on top of the black-cleared window. */
     if (!s_sceneRendered && !s_pageComposited) composePageBackdrop(page, shakeOffset);
+    SDL_GetWindowSizeInPixels(s_win, &win_w, &win_h);
     if (!s_sceneRendered) {
-        SDL_GetWindowSizeInPixels(s_win, &win_w, &win_h);
+        gfx_renderTtfTextOverlayOpenGL(page->w, page->h, win_w, win_h);
+    }
+    /* Runtime TTF/OTF text is deliberately kept out of the 320x200 page. Draw it
+     * after both pure-2D and live-3D frames so HUD/menu glyphs are rasterized at
+     * final window resolution instead of being baked tiny and scaled up. */
+    if (s_sceneRendered) {
         gfx_renderTtfTextOverlayOpenGL(page->w, page->h, win_w, win_h);
     }
     /* Remember whether THIS present carried a live 3D view. gfx_repaint (window

@@ -32,6 +32,15 @@
  * in gfx.h. */
 #define INITIAL_WINDOW_WIDTH 1280
 #define INITIAL_WINDOW_HEIGHT 800
+#define VGA_PAGE_HEIGHT 200
+
+/* The 3D HUD draws missile ammo at y=190 with the original bitmap font. Runtime
+ * TTF glyphs can extend below the old bitmap cell, so bottom-HUD overlay records
+ * need a small clip relaxation while still staying inside the native 320x200
+ * page. Keep this named because the threshold is a DOS-screen coordinate, not a
+ * renderer pixel value. */
+#define HUD_BOTTOM_TTF_CLIP_Y 188
+#define HUD_BOTTOM_TTF_EXTRA_LINES 2.0f
 
 /* Fixed fire colour-cycle rate, independent of render frame rate. The original
  * stepped the cycle once per rendered frame; we pin it at 15 Hz so the pulse
@@ -663,6 +672,7 @@ typedef struct TtfTextOverlayRecord {
 } TtfTextOverlayRecord;
 static TtfTextOverlayRecord g_ttfTextOverlayRecords[512];
 static int g_ttfTextOverlayCount;
+static int g_ttfTextOverlayGeneration;
 #endif
 
 typedef struct ReplacementFontGlyph {
@@ -804,6 +814,35 @@ static int ttfOverlayRectIsScreenChange(int x1, int y1, int x2, int y2) {
 static int ttfTextOverlayRecordWidth(const TtfTextOverlayRecord *record) {
     if (!record || !record->text) return 0;
     return replacementTtfStringAdvance(record->fontIdx, record->text);
+}
+
+static int ttfTextOverlayRecordsOverlap(const TtfTextOverlayRecord *a,
+                                        int x, int y, int width, int height,
+                                        int margin) {
+    int ax1, ay1, ax2, ay2;
+    int bx1, by1, bx2, by2;
+    if (!a || width <= 0 || height <= 0) return 0;
+    ax1 = a->x - margin;
+    ay1 = a->y - margin;
+    ax2 = a->x + ttfTextOverlayRecordWidth(a) + margin - 1;
+    ay2 = a->y + g_fontHeightsArr[a->fontIdx] + margin - 1;
+    bx1 = x - margin;
+    by1 = y - margin;
+    bx2 = x + width + margin - 1;
+    by2 = y + height + margin - 1;
+    return ax2 >= bx1 && ax1 <= bx2 && ay2 >= by1 && ay1 <= by2;
+}
+
+static int ttfTextOverlaySameDynamicRow(const TtfTextOverlayRecord *a,
+                                        int x, int y, int width, int height) {
+    int dy;
+    if (!a) return 0;
+    dy = a->y - y;
+    if (dy < 0) dy = -dy;
+    /* Only treat one-pixel HUD jitter as a replacement. Menu rows are retained
+     * text and can share wide clip windows; deleting by broad overlap there can
+     * remove neighboring labels such as the TODAY'S MISSION header. */
+    return dy <= 1 && ttfTextOverlayRecordsOverlap(a, x, y, width, height, 1);
 }
 
 static void removeTtfTextOverlayRecord(int index) {
@@ -1037,6 +1076,26 @@ static int replacementTtfStringAdvance(uint16 fontIdx, const char *text) {
     int drawnChars;
 
     if (!text || fontIdx >= 8 || !g_fontReplacementTtfFaces[fontIdx]) return 0;
+    if (fontIdx == 0) {
+        int width = 0;
+        for (charIdx = 0, drawnChars = 0; text[charIdx] != 0 && drawnChars < 256;) {
+            uint32 codepoint;
+            uint8 ch = (uint8)text[charIdx];
+            int byteCount = 1;
+            if (!decodeUtf8Codepoint(&text[charIdx], &codepoint, &byteCount)) {
+                codepoint = ch;
+                byteCount = 1;
+            }
+            if (byteCount == 1 && (ch & 0x80)) {
+                charIdx++;
+                continue;
+            }
+            width += replacementTtfAdvance(fontIdx, codepoint);
+            charIdx += byteCount;
+            drawnChars++;
+        }
+        return width;
+    }
     face = g_fontReplacementTtfFaces[fontIdx];
     replacementTtfLayoutScale(fontIdx, replacementTtfPixelSize(fontIdx), 1.0f, 1.0f,
                               &layoutScaleX, &layoutScaleY);
@@ -1221,38 +1280,57 @@ static int recordTtfTextOverlayAndAdvance(int16 *params, const char *string,
     int color;
     uint16 fontIdx;
     int i;
+    int newX;
+    int newY;
+    int newWidth;
+    int newHeight;
+    int recordIndex;
 
     if (!params || !string) return 0;
     fontIdx = (uint16)params[6] & 7;
     if (fontIdx >= 8 || !g_fontReplacementTtfFaces[fontIdx]) return 0;
+    newX = (int)params[4];
+    newY = (int)params[5];
+    newWidth = replacementTtfStringAdvance(fontIdx, string);
+    newHeight = g_fontHeightsArr[fontIdx];
 
-    record = NULL;
-    for (i = 0; i < g_ttfTextOverlayCount; i++) {
+    recordIndex = -1;
+    for (i = g_ttfTextOverlayCount - 1; i >= 0; i--) {
         TtfTextOverlayRecord *candidate = &g_ttfTextOverlayRecords[i];
-        if (candidate->x == (int)params[4] &&
-            candidate->y == (int)params[5] &&
-            candidate->fontIdx == fontIdx &&
-            candidate->clipL == clipL &&
-            candidate->clipR == clipR &&
-            candidate->clipT == clipT &&
-            candidate->clipB == clipB) {
-            record = candidate;
-            break;
+        if (candidate->fontIdx == fontIdx &&
+            candidate->clipL == clipL && candidate->clipR == clipR &&
+            candidate->clipT == clipT && candidate->clipB == clipB &&
+            candidate->x == newX && candidate->y == newY) {
+            recordIndex = i;
+            continue;
+        }
+        /* Dynamic HUD values are often cleared/redrawn with a one-pixel anchor
+         * shift as their width changes. Exact-position keys leave the old TTF
+         * overlay on screen, because it was never baked into the page being
+         * cleared. Treat near/overlapping same-font text in the same clip window
+         * as a replacement candidate. */
+        if (candidate->fontIdx == fontIdx &&
+            candidate->clipL == clipL && candidate->clipR == clipR &&
+            candidate->clipT == clipT && candidate->clipB == clipB &&
+            ttfTextOverlaySameDynamicRow(candidate, newX, newY, newWidth, newHeight)) {
+            removeTtfTextOverlayRecord(i);
+            if (recordIndex > i) recordIndex--;
         }
     }
 
     if (string[0] == '\0') {
-        if (record) {
-            removeTtfTextOverlayRecord((int)(record - g_ttfTextOverlayRecords));
+        if (recordIndex >= 0) {
+            removeTtfTextOverlayRecord(recordIndex);
         }
         return 1;
     }
 
-    if (!record) {
+    if (recordIndex < 0) {
         if (g_ttfTextOverlayCount >= (int)(sizeof(g_ttfTextOverlayRecords) / sizeof(g_ttfTextOverlayRecords[0]))) return 0;
         record = &g_ttfTextOverlayRecords[g_ttfTextOverlayCount++];
         memset(record, 0, sizeof(*record));
     } else {
+        record = &g_ttfTextOverlayRecords[recordIndex];
         SDL_free(record->text);
         record->text = NULL;
     }
@@ -1262,8 +1340,8 @@ static int recordTtfTextOverlayAndAdvance(int16 *params, const char *string,
         record->x = 0;
         return 0;
     }
-    record->x = (int)params[4];
-    record->y = (int)params[5];
+    record->x = newX;
+    record->y = newY;
     record->color = (int)params[2];
     record->fontIdx = fontIdx;
     record->clipL = clipL;
@@ -1288,7 +1366,7 @@ static int recordTtfTextOverlayAndAdvance(int16 *params, const char *string,
         charIdx += byteCount;
         drawnChars++;
     }
-    params[4] = (int16)(record->x + replacementTtfStringAdvance(fontIdx, string));
+    params[4] = (int16)(record->x + newWidth);
     params[2] = (int16)color;
     return 1;
 }
@@ -1353,6 +1431,7 @@ static void renderTtfTextOverlayRecord(const TtfTextOverlayRecord *record, R2DMa
     float cellY;
     float cellHeight;
     float baseline;
+    float ascender;
     float layoutScaleX;
     float layoutScaleY;
     SDL_FRect clip;
@@ -1369,11 +1448,22 @@ static void renderTtfTextOverlayRecord(const TtfTextOverlayRecord *record, R2DMa
     x = (float)m->offX + (float)record->x * m->scaleX;
     cellY = (float)m->offY + (float)record->y * m->scaleY;
     cellHeight = (float)g_fontHeightsArr[record->fontIdx] * m->scaleY;
-    baseline = cellY + cellHeight * 0.88f;
+    ascender = face->size ? (float)(face->size->metrics.ascender >> 6) * layoutScaleY : cellHeight;
+    baseline = cellY + ascender;
     clip.x = (float)m->offX + (float)record->clipL * m->scaleX;
     clip.y = (float)m->offY + (float)record->clipT * m->scaleY;
     clip.w = (float)(record->clipR - record->clipL + 1) * m->scaleX;
     clip.h = (float)(record->clipB - record->clipT + 1) * m->scaleY;
+    if (record->fontIdx == 0 && record->y >= HUD_BOTTOM_TTF_CLIP_Y) {
+        float maxBottom = (float)m->offY + (float)VGA_PAGE_HEIGHT * m->scaleY;
+        float wantedBottom =
+            ((float)record->y + (float)g_fontHeightsArr[record->fontIdx] +
+             HUD_BOTTOM_TTF_EXTRA_LINES) *
+                m->scaleY +
+            (float)m->offY;
+        if (wantedBottom > clip.y + clip.h) clip.h = wantedBottom - clip.y;
+        if (clip.y + clip.h > maxBottom) clip.h = maxBottom - clip.y;
+    }
 
     for (charIdx = 0, drawnChars = 0; record->text[charIdx] != 0 && drawnChars < 256;) {
         uint32 codepoint;
@@ -1385,6 +1475,8 @@ static void renderTtfTextOverlayRecord(const TtfTextOverlayRecord *record, R2DMa
         FT_Bitmap *bitmap;
         float gx;
         float gy;
+        float glyphScaleX;
+        float glyphScaleY;
 
         if (!decodeUtf8Codepoint(&record->text[charIdx], &codepoint, &byteCount)) {
             codepoint = ch;
@@ -1404,13 +1496,38 @@ static void renderTtfTextOverlayRecord(const TtfTextOverlayRecord *record, R2DMa
         if (FT_Load_Glyph(face, glyphIndex, FT_LOAD_RENDER) == 0) {
             glyph = face->glyph;
             bitmap = &glyph->bitmap;
-            gx = x + (float)glyph->bitmap_left * layoutScaleX;
-            gy = baseline - (float)glyph->bitmap_top * layoutScaleY;
+            glyphScaleX = layoutScaleX;
+            glyphScaleY = layoutScaleY;
+            if (record->fontIdx == 0) {
+                float targetAdvance = (float)replacementTtfAdvance(record->fontIdx, codepoint) * m->scaleX;
+                /* HUD font_0 is position-sensitive: original glyph cells are
+                 * anchored at the exact (x,y) page coordinate. FreeType natural
+                 * bearings make speed/altitude labels drift by pixels compared
+                 * with the bitmap HUD. Keep high-resolution rasterization, but fit
+                 * each glyph into the old cell width so digits/letters do not
+                 * collide or overflow the tiny legacy clear rectangles. */
+                if (bitmap->width > 0 && targetAdvance > 1.0f) {
+                    float fitScale = (targetAdvance * 0.82f) / (float)bitmap->width;
+                    if (fitScale > 0.0f && fitScale < glyphScaleX) glyphScaleX = fitScale;
+                }
+                gx = x;
+                if (glyph->bitmap_top > 0 &&
+                    (float)bitmap->rows * glyphScaleY < cellHeight * 0.8f) {
+                    gy = baseline - (float)glyph->bitmap_top * glyphScaleY;
+                } else {
+                    gy = cellY;
+                }
+            } else {
+                gx = x + (float)glyph->bitmap_left * layoutScaleX;
+                gy = baseline - (float)glyph->bitmap_top * layoutScaleY;
+            }
             if (gy < cellY) gy = cellY;
-            if (useGL) renderTtfTextOverlayGlyphGL(bitmap, gx, gy, layoutScaleX, layoutScaleY, c.r, c.g, c.b, clip);
-            else renderTtfTextOverlayGlyphSDL(renderer, bitmap, gx, gy, layoutScaleX, layoutScaleY, c.r, c.g, c.b, clip);
+            if (useGL) renderTtfTextOverlayGlyphGL(bitmap, gx, gy, glyphScaleX, glyphScaleY, c.r, c.g, c.b, clip);
+            else renderTtfTextOverlayGlyphSDL(renderer, bitmap, gx, gy, glyphScaleX, glyphScaleY, c.r, c.g, c.b, clip);
         }
-        if (FT_Load_Glyph(face, glyphIndex, FT_LOAD_DEFAULT) == 0) {
+        if (record->fontIdx == 0) {
+            x += (float)replacementTtfAdvance(record->fontIdx, codepoint) * m->scaleX;
+        } else if (FT_Load_Glyph(face, glyphIndex, FT_LOAD_DEFAULT) == 0) {
             x += (float)(face->glyph->advance.x >> 6) * layoutScaleX;
         }
         previousGlyphIndex = glyphIndex;
@@ -1924,9 +2041,11 @@ static void drawStringCore(int16 *params, const char *string,
     bitmaps = g_fontBitmapPtrs[fontIdx];
     widthTab = g_fontWidthTables[fontIdx];
 
-    /* On a GL flight frame, submit each lit glyph pixel as a native point (drawn
-     * over the composited frame at window resolution) instead of baking it into the
-     * shared 320x200 page. Software (retained) keeps writing the page directly. */
+    /* On a GL flight frame, legacy bitmap glyphs submit lit pixels as vector
+     * points over the composited frame. Runtime TTF/OTF replacements are different:
+     * they must be recorded and rasterized by the present-time overlay at the final
+     * window size. Rendering them here would create a tiny antialiased 320x200-page
+     * glyph that then gets enlarged with the game frame. */
     submit = r2d_vectorActive();
 
     /* The page is backed by an SDL surface (same buffer the pic decoder and
@@ -1939,7 +2058,7 @@ static void drawStringCore(int16 *params, const char *string,
     surfH = surf->h;
 
 #ifdef F15_HAVE_FREETYPE
-    if (!submit && fontIdx < 8 && g_fontReplacementTtfFaces[fontIdx]) {
+    if (fontIdx < 8 && g_fontReplacementTtfFaces[fontIdx]) {
         (void)recordTtfTextOverlayAndAdvance(params, string, clipL, clipR, clipT, clipB);
         return;
     }

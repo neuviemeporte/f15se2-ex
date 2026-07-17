@@ -12,6 +12,9 @@
 #include <stddef.h>
 
 int assetCompareEnabled(void);
+#ifdef DEBUG
+void assetCompareTestSetEnabled(int enabled);
+#endif
 void assetCompareNamedBytes(const char *label,
                             const char *matchText,
                             const char *diffText,
