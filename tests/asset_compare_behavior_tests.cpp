@@ -18,6 +18,8 @@ enum AssetCompareTestConstant : int {
     kFontHeight = 1,
     kFontWidth = 8,
     kCueRate = 7850,
+    k3dFormPoint = 1,
+    k3dFormEdgeRun = 2,
     kTestFailureExitCode = 1,
 };
 
@@ -87,6 +89,30 @@ int main() {
 
     const uint8 legacyBytes[] = {1, 2, 3, 4};
     const uint8 modernBytes[] = {1, 2, 3, 4};
+
+#ifdef DEBUG
+    assetCompareTestSetEnabled(0);
+#endif
+    resetLogCapture();
+    assetCompareNamedBytes("bytes",
+                           "modern bytes match",
+                           "modern bytes differ",
+                           "modern",
+                           legacyBytes,
+                           sizeof(legacyBytes),
+                           modernBytes,
+                           sizeof(modernBytes),
+                           "bytes.replacement");
+    require(g_log.calls == 0,
+            "disabled asset comparison is a no-op for byte comparisons");
+    resetLogCapture();
+    assetCompare3dShapeStats(nullptr);
+    require(g_log.calls == 0,
+            "disabled asset comparison is a no-op for 3D comparisons");
+#ifdef DEBUG
+    assetCompareTestSetEnabled(1);
+#endif
+
     resetLogCapture();
     assetCompareNamedBytes("bytes",
                            "modern bytes match",
@@ -309,6 +335,20 @@ int main() {
     requireLogContains(SDL_LOG_PRIORITY_WARN, "legacy cue range invalid",
                        "sound comparison logs invalid legacy cue range");
 
+    resetLogCapture();
+    assetCompareSoundCueRange("voice_cue_000_sample0",
+                              0,
+                              sizeof(legacySound) - 1,
+                              kCueRate,
+                              nullptr,
+                              0,
+                              modernSound,
+                              sizeof(modernSound),
+                              kCueRate,
+                              "sounds/voice_cue_000_sample0.wav");
+    requireLogContains(SDL_LOG_PRIORITY_WARN, "no legacy F15DGTL.BIN available",
+                       "sound comparison logs missing legacy digitized blob");
+
     int legacyFaceColor[256];
     int legacyLineColor[256];
     int legacyPointColor[256];
@@ -356,12 +396,67 @@ int main() {
                        "3D comparison logs missing source metadata");
     stats.missingSourceMeta = 0;
 
+    stats.missingSourceColor = 1;
+    resetLogCapture();
+    assetCompare3dShapeStats(&stats);
+    requireLogContains(SDL_LOG_PRIORITY_WARN, "lacks raw source color metadata",
+                       "3D comparison logs missing source color metadata");
+    stats.missingSourceColor = 0;
+
+    stats.badSourceOrder = 1;
+    resetLogCapture();
+    assetCompare3dShapeStats(&stats);
+    requireLogContains(SDL_LOG_PRIORITY_WARN, "source primitive order is not monotonic",
+                       "3D comparison logs bad source order");
+    stats.badSourceOrder = 0;
+
+    stats.badSourceMode = 1;
+    resetLogCapture();
+    assetCompare3dShapeStats(&stats);
+    requireLogContains(SDL_LOG_PRIORITY_WARN, "source primitive kind does not match",
+                       "3D comparison logs bad source draw mode");
+    stats.badSourceMode = 0;
+
     glbLineColor[13] = 2;
     resetLogCapture();
     assetCompare3dShapeStats(&stats);
     requireLogContains(SDL_LOG_PRIORITY_WARN, "line color coverage differs",
                        "3D comparison logs color coverage mismatch");
     glbLineColor[13] = 1;
+
+    stats.legacyForm = k3dFormPoint;
+    stats.glbPoints = 1;
+    stats.glbTriangles = 0;
+    stats.glbLines = 0;
+    fillColorCoverage(legacyPointColor, 14, 1);
+    fillColorCoverage(glbPointColor, 14, 1);
+    resetLogCapture();
+    assetCompare3dShapeStats(&stats);
+    requireLogContains(SDL_LOG_PRIORITY_INFO, "GLB point form matches legacy point form",
+                       "3D comparison logs matching point form");
+
+    stats.glbLines = 1;
+    resetLogCapture();
+    assetCompare3dShapeStats(&stats);
+    requireLogContains(SDL_LOG_PRIORITY_WARN, "GLB primitive form differs from legacy point",
+                       "3D comparison logs point form mismatch");
+    stats.glbLines = 0;
+
+    stats.legacyForm = k3dFormEdgeRun;
+    stats.legacyPoints = 3;
+    stats.glbPoints = 3;
+    resetLogCapture();
+    assetCompare3dShapeStats(&stats);
+    requireLogContains(SDL_LOG_PRIORITY_INFO, "GLB point run count matches legacy",
+                       "3D comparison logs matching edgerun point count");
+
+    stats.glbPoints = 2;
+    resetLogCapture();
+    assetCompare3dShapeStats(&stats);
+    requireLogContains(SDL_LOG_PRIORITY_WARN, "GLB point run differs",
+                       "3D comparison logs edgerun point-count mismatch");
+    stats.legacyForm = 0;
+    stats.glbPoints = 0;
 
     uint8 r = 0, g = 0, b = 0;
     gfx_paletteRGB(12, &r, &g, &b);
