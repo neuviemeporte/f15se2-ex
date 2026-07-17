@@ -73,7 +73,7 @@ This produces:
 - combined `.3D3.glb` and per-shape `shape_###*.glb` for supported 3D assets.
   Generated `cache/shape_###*.glmesh` runtime caches are optional and can be
   rebuilt by the game from GLB.
-- `fonts/font_<id>.bdf` and `fonts/font_<id>.png`.
+- `fonts/font_<id>.bdf`.
 - driver-backed `sounds/voice_cue_*.wav` files. Sound metadata JSON and the
   full digitized sound blob are not exported by default.
 
@@ -119,7 +119,12 @@ python3 -m tools.f15assets.cli export-fonts . converted_assets_all/fonts
 ```
 
 Add `--include-metadata` only when you need optional `font_<id>.json` sidecars
-and `fonts.json`; runtime loading uses BDF first and PNG as fallback.
+and `fonts.json`; runtime loading uses TTF/OTF first, then BDF, then PNG.
+
+Use TrueType/OpenType fonts directly by placing `font_<id>.ttf` or
+`font_<id>.otf` in `converted_assets_all/fonts`. To replace all non-small fonts
+with a single face, copy it as `font_1.ttf`, `font_3.ttf`, `font_4.ttf`, and
+`font_5.ttf`; leave `font_0.*` absent to keep the tiny HUD font.
 
 Export digitized cue WAVs:
 
@@ -253,7 +258,7 @@ not customized asset loadability. It also supersedes
 | `*.3DT` | ordered JSON sidecar in the related world directory | Terrain object placement tables. |
 | `*.3DG` | ordered JSON sidecar in the related world directory | Terrain grid lookup data. |
 | `*.WLD` | world directory with ordered JSON sidecar | Theater/world objects, terrain grid, mission object type table, flight-unit templates, and names. |
-| fonts | BDF + PNG, optional JSON | BDF is authoritative for glyph shapes and metrics. PNG is authoritative for atlas pixels only; the current runtime PNG fallback reuses existing advance widths. JSON maps codepoints to atlas/index metadata only with `--include-metadata`. |
+| fonts | BDF, optional JSON | BDF is authoritative for glyph shapes, Unicode codepoints, and metrics. JSON maps codepoints/index metadata only with `--include-metadata`; it does not override BDF glyph data. |
 | `F15DGTL.BIN` | cue WAVs, optional JSON, optional raw WAV | `voice_cue_*.wav` files are authoritative for runtime cue replacement. Current runtime replacement accepts mono unsigned 8-bit PCM cue WAVs and uses their RIFF sample rate for playback speed. JSON keeps cue/index metadata only when `--include-metadata` is requested. The full raw blob is not needed for customization; use `--include-raw-blob` only for reverse-engineering reference. |
 | sound drivers | optional JSON sidecars | Driver executable hashes, sizes, and unresolved status are preserved only when `--include-metadata` is requested; executable bytes are not duplicated into custom asset sidecars. |
 
@@ -477,13 +482,12 @@ Current runtime implementation status:
   replacement asset's `converted_assets_all` root, then tries nearby script
   paths, then falls back to `python3 -m tools.f15assets.cli`. JSON-rebuilt byte
   equivalence is checked by `validate-replacements` and CTest.
-- Font drawing now prefers `fonts/font_<id>.bdf` when present. The loader parses
-  BDF glyph rows and advance widths, then switches rendering to the BDF-backed
-  font. If BDF is absent or rejected, `fonts/font_<id>.png` is tried as the glyph
-  bitmap atlas; PNG glyph pixels are authoritative, while advance widths
-  currently come from the existing font metrics. BDF fonts with incomplete glyphs
-  or zero advance widths are rejected. Built-in font equivalence is checked by
-  `validate-replacements` and CTest.
+- Font drawing now prefers `fonts/font_<id>.ttf` or `.otf` when present and the
+  build has FreeType. The scalable font is fitted into the same in-memory glyph
+  rows and advance-width tables used by the original renderer, so layout and
+  clipping stay compatible. If TTF/OTF is absent or unavailable, the loader
+  falls back to BDF, then PNG atlas, then built-in fonts. Built-in font
+  equivalence is checked by `validate-replacements` and CTest.
 - Runtime GLB import is implemented for the OpenGL backend through a simple
   runtime mesh bridge generated from per-shape GLBs. The backend treats `.glb`
   as the source of truth, loads `cache/*.glmesh` only when the embedded source

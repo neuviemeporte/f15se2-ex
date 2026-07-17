@@ -222,6 +222,11 @@ find_package(OpenGL REQUIRED)
 # across toolchains (not all fold pthread into libc).
 find_package(Threads REQUIRED)
 
+# TrueType/OpenType font replacements are optional. When FreeType is available,
+# fonts/font_<id>.ttf and .otf are loaded directly by the runtime; otherwise the
+# game still builds and falls back to BDF/PNG/built-in font paths.
+find_package(Freetype QUIET)
+
 #------------------------------------------------------------------------------
 # Sanitizers (GCC/Clang, opt-in). Applied at directory scope so the executable
 # and the tests (which each compile the game code they exercise) are instrumented
@@ -284,6 +289,10 @@ if(AUTOSTART)
     target_compile_definitions(f15se2_core PUBLIC DEBUG_AUTOSTART)
 endif()
 target_link_libraries(f15se2_core PUBLIC SDL3::SDL3 OpenGL::GL)
+if(FREETYPE_FOUND)
+    target_compile_definitions(f15se2_core PUBLIC F15_HAVE_FREETYPE=1)
+    target_link_libraries(f15se2_core PUBLIC Freetype::Freetype)
+endif()
 
 add_executable(f15se2 ${SRC_DIR}/f15.c)
 set_target_properties(f15se2 PROPERTIES OUTPUT_NAME "f15se2-ex")

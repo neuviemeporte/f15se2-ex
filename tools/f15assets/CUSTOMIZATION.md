@@ -275,28 +275,28 @@ palette. This proof is intentionally a test-time check, not a runtime game mode.
 when present, using the hi-res title surface rather than the normal 320x200 page
 surface.
 
-## 7. Fonts: edit BDF first, PNG atlas second
+## 7. Fonts: edit TTF/OTF or BDF
 
 Authoritative files:
 
 ```text
+converted_assets_all/fonts/font_<id>.ttf
+converted_assets_all/fonts/font_<id>.otf
 converted_assets_all/fonts/font_<id>.bdf
-converted_assets_all/fonts/font_<id>.png
 ```
 
 Preferred workflow:
 
-1. Edit `font_<id>.bdf` for glyph shape and advance width.
-2. Use the PNG atlas for visual inspection or bitmap-only edits.
+1. Use `font_<id>.ttf` or `font_<id>.otf` for normal scalable-font replacement.
+2. Use `font_<id>.bdf` only when you need hand-edited pixel glyphs and metrics.
 3. Ignore JSON for normal customization; `font_<id>.json` is optional metadata
    emitted only with `--include-metadata`.
 
-BDF is the best source for future Unicode/localization work because it can carry
-codepoints and metrics directly. Runtime loading prefers BDF before PNG, but it
-tries the PNG atlas if BDF is missing or rejected. PNG is useful for artists, but
-the current runtime PNG fallback uses existing font advance widths; it is
-bitmap-authoritative, not metric-authoritative.
-JSON cannot override BDF/PNG glyph data.
+TTF/OTF is preferred for Unicode/localization because customizers can use normal
+font editors and do not need sidecar files. Runtime loads TTF/OTF first when the
+build has FreeType, then BDF, then legacy `font_<id>.png` atlases. Leave
+`font_0.*` absent to keep the original tiny HUD font. JSON cannot override font
+glyph data.
 
 ## 8. Sounds: edit separate WAV cues
 

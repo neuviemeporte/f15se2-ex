@@ -7,6 +7,48 @@
 #include <dos.h>
 
 extern int FAR gfx_setFont(uint16 ch, uint16 font);
+extern int gfx_getGlyphAdvance(uint32 codepoint, uint16 fontIdx);
+
+/* Match gfx_impl.c text rendering semantics: valid UTF-8 sequences are Unicode
+ * glyphs, malformed high bytes remain the original inline colour escapes. */
+static int decodeUtf8Codepoint(const char *text, uint32 *codepointOut, int16 *byteCountOut) {
+    const unsigned char *s = (const unsigned char *)text;
+    unsigned int cp;
+    int needed;
+    int i;
+
+    if (s[0] < 0x80) {
+        *codepointOut = s[0];
+        *byteCountOut = 1;
+        return 1;
+    }
+    if ((s[0] & 0xe0) == 0xc0) {
+        cp = (unsigned int)(s[0] & 0x1f);
+        needed = 2;
+        if (cp == 0) return 0; /* overlong ASCII */
+    } else if ((s[0] & 0xf0) == 0xe0) {
+        cp = (unsigned int)(s[0] & 0x0f);
+        needed = 3;
+    } else if ((s[0] & 0xf8) == 0xf0) {
+        cp = (unsigned int)(s[0] & 0x07);
+        needed = 4;
+    } else {
+        return 0;
+    }
+    for (i = 1; i < needed; i++) {
+        if ((s[i] & 0xc0) != 0x80) return 0;
+        cp = (cp << 6) | (unsigned int)(s[i] & 0x3f);
+    }
+    if ((needed == 2 && cp < 0x80) ||
+        (needed == 3 && cp < 0x800) ||
+        (needed == 4 && (cp < 0x10000 || cp > 0x10ffff)) ||
+        (cp >= 0xd800 && cp <= 0xdfff)) {
+        return 0;
+    }
+    *codepointOut = (uint32)cp;
+    *byteCountOut = (int16)needed;
+    return 1;
+}
 
 void drawStringCentered(int16 *page, const char *str, int16 startx, int16 y, int16 endx) {
     int16 width;
@@ -22,7 +64,19 @@ int16 stringWidth(int16 *page, const char *str) {
     j = page[6];
     n = 0;
     while (*l != '\0') {
-        n += gfx_setFont(*(l++), j);
+        uint32 codepoint;
+        int16 byteCount;
+        unsigned char ch = (unsigned char)*l;
+        if (!decodeUtf8Codepoint(l, &codepoint, &byteCount)) {
+            codepoint = ch;
+            byteCount = 1;
+        }
+        if (byteCount == 1 && (ch & 0x80)) {
+            l++;
+            continue;
+        }
+        n += gfx_getGlyphAdvance(codepoint, j);
+        l += byteCount;
     }
     return n;
 }

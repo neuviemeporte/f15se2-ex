@@ -86,7 +86,7 @@ void writeReplacementBdf(const std::filesystem::path &root, int fontId) {
            "FONT_ASCENT 5\n"
            "FONT_DESCENT 0\n"
            "ENDPROPERTIES\n"
-           "CHARS 96\n";
+           "CHARS 99\n";
     for (int ch = 0x20; ch < 0x80; ch++) {
         out << "STARTCHAR U+" << std::hex << ch << std::dec << "\n"
             << "ENCODING " << ch << "\n"
@@ -97,6 +97,30 @@ void writeReplacementBdf(const std::filesystem::path &root, int fontId) {
             << "F0\n90\nF0\n90\nF0\n"
             << "ENDCHAR\n";
     }
+    out << "STARTCHAR U+041F\n"
+        << "ENCODING 1055\n"
+        << "SWIDTH 500 0\n"
+        << "DWIDTH " << kReplacementFontAdvance << " 0\n"
+        << "BBX 4 5 0 0\n"
+        << "BITMAP\n"
+        << "F0\n90\n90\n90\n90\n"
+        << "ENDCHAR\n";
+    out << "STARTCHAR U+00C4\n"
+        << "ENCODING 196\n"
+        << "SWIDTH 500 0\n"
+        << "DWIDTH " << kReplacementFontAdvance << " 0\n"
+        << "BBX 4 5 0 0\n"
+        << "BITMAP\n"
+        << "90\nF0\n90\nF0\n90\n"
+        << "ENDCHAR\n";
+    out << "STARTCHAR U+0141\n"
+        << "ENCODING 321\n"
+        << "SWIDTH 500 0\n"
+        << "DWIDTH " << kReplacementFontAdvance << " 0\n"
+        << "BBX 4 5 0 0\n"
+        << "BITMAP\n"
+        << "80\nA0\nC0\nA0\nF0\n"
+        << "ENDCHAR\n";
     out << "ENDFONT\n";
 }
 
@@ -127,6 +151,13 @@ void writeReplacementFontPng(const std::filesystem::path &root, int fontId) {
     std::filesystem::create_directories(pngPath.parent_path());
     std::ofstream out(pngPath, std::ios::binary);
     out.write(reinterpret_cast<const char *>(kFontAtlasPng), sizeof(kFontAtlasPng));
+}
+
+void writeInvalidReplacementBdf(const std::filesystem::path &root, int fontId) {
+    const auto fontPath = root / "converted_assets_all" / "fonts" / ("font_" + std::to_string(fontId) + ".bdf");
+    std::filesystem::create_directories(fontPath.parent_path());
+    std::ofstream out(fontPath);
+    out << "STARTFONT 2.1\nFONT invalid\nCHARS 0\nENDFONT\n";
 }
 
 // ---- gfx_pagePixels + page-1 aliasing -------------------------------------
@@ -323,6 +354,22 @@ void test_setFont() {
     gfx_drawString(textParams, "A");
     require(gfx_setFont('A', 4) == kReplacementFontAdvance,
             "gfx_drawString lazily installs a BDF replacement font width table");
+    require(gfx_setFont(0x041f, 4) == kReplacementFontAdvance,
+            "BDF replacement font exposes Unicode glyph widths");
+    require(gfx_setFont(0x00c4, 4) == kReplacementFontAdvance,
+            "BDF replacement font exposes German Unicode glyph widths");
+    require(gfx_setFont(0x0141, 4) == kReplacementFontAdvance,
+            "BDF replacement font exposes Polish Unicode glyph widths");
+
+    fillPageRaw(0, 0);
+    textParams[4] = 70;
+    textParams[5] = 70;
+    textParams[6] = 4;
+    gfx_drawString(textParams, "\xd0\x9f");
+    require(pagePixel(0, 70, 70) == 7,
+            "gfx_drawString decodes UTF-8 and draws a BDF Unicode glyph");
+    require(textParams[4] == 70 + kReplacementFontAdvance,
+            "UTF-8 BDF Unicode glyph advances by its replacement width");
 
     fillPageRaw(0, 0);
     textParams[4] = 40;
@@ -441,6 +488,7 @@ int main() {
     std::filesystem::remove_all(replacementRoot);
     writeReplacementBdf(replacementRoot, 4);
     writeReplacementFontPng(replacementRoot, 5);
+    writeInvalidReplacementBdf(replacementRoot, 5);
     writeReplacementPng(replacementRoot);
 #if !defined(_WIN32)
     setenv("F15_REPLACEMENT_ROOT", replacementRoot.string().c_str(), 1);

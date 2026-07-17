@@ -1137,15 +1137,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     fonts = sub.add_parser(
         "export-fonts",
-        help="export extracted in-repo font tables to BDF and atlas PNG; metadata is optional",
+        help="export extracted in-repo font tables to BDF; metadata is optional",
     )
     fonts.add_argument("repo_root", help="Repository root containing src/fontdata.h and src/gfx_impl.c")
-    fonts.add_argument("output", help="Output folder for font atlas assets")
+    fonts.add_argument("output", help="Output folder for BDF font assets")
     fonts.add_argument("--no-bdf", action="store_true", help="Skip BDF font files")
     fonts.add_argument(
         "--include-metadata",
         action="store_true",
-        help="Also write font_<id>.json sidecars and fonts.json; default output is BDF/PNG only",
+        help="Also write font_<id>.json sidecars and fonts.json; default output is BDF only",
     )
     fonts.set_defaults(func=cmd_export_fonts)
 
