@@ -57,6 +57,7 @@ static void cleanupReplacementFonts(void);
 static void renderTtfTextOverlay(R2DMapping *m, SDL_Renderer *renderer, int useGL);
 static void invalidateTtfTextOverlayRecords(void);
 static int replacementTtfAdvance(uint16 fontIdx, uint32 codepoint);
+static int replacementTtfStringAdvance(uint16 fontIdx, const char *text);
 #endif
 
 /* Bring up the SDL window and renderer. The 320x200 logical surface is stretched
@@ -801,27 +802,8 @@ static int ttfOverlayRectIsScreenChange(int x1, int y1, int x2, int y2) {
 }
 
 static int ttfTextOverlayRecordWidth(const TtfTextOverlayRecord *record) {
-    int charIdx;
-    int drawnChars;
-    int width = 0;
     if (!record || !record->text) return 0;
-    for (charIdx = 0, drawnChars = 0; record->text[charIdx] != 0 && drawnChars < 256;) {
-        uint32 codepoint;
-        uint8 ch = (uint8)record->text[charIdx];
-        int byteCount = 1;
-        if (!decodeUtf8Codepoint(&record->text[charIdx], &codepoint, &byteCount)) {
-            codepoint = ch;
-            byteCount = 1;
-        }
-        if (byteCount == 1 && (ch & 0x80)) {
-            charIdx++;
-            continue;
-        }
-        width += replacementTtfAdvance(record->fontIdx, codepoint);
-        charIdx += byteCount;
-        drawnChars++;
-    }
-    return width;
+    return replacementTtfStringAdvance(record->fontIdx, record->text);
 }
 
 static void removeTtfTextOverlayRecord(int index) {
@@ -1006,21 +988,90 @@ static int replacementTtfAdvance(uint16 fontIdx, uint32 codepoint) {
     return advance > 0 ? advance : 1;
 }
 
-static float replacementTtfAdvanceScaled(uint16 fontIdx, uint32 codepoint, float scaleX, float scaleY) {
+static void replacementTtfLayoutScale(uint16 fontIdx, int pixelSize,
+                                      float targetScaleX, float targetScaleY,
+                                      float *layoutScaleX, float *layoutScaleY) {
     FT_Face face;
-    int advance;
-    if (fontIdx >= 8 || !g_fontReplacementTtfFaces[fontIdx]) return 8.0f * scaleX;
-    if (codepoint >= 0x20 && codepoint < 0x80 && g_fontWidthTables[fontIdx]) {
-        return (float)g_fontWidthTables[fontIdx][codepoint - 0x20] * scaleX;
-    }
-    if (codepoint >= 0x80) return (float)replacementTtfUnicodeAdvance(fontIdx) * scaleX;
+    const uint8 *legacyWidths;
+    int ch;
+    int legacyAdvance = 0;
+    int ftAdvance = 0;
+    float targetHeight;
+    float ftHeight;
+
+    *layoutScaleX = 1.0f;
+    *layoutScaleY = 1.0f;
+    if (fontIdx >= 8 || !g_fontReplacementTtfFaces[fontIdx]) return;
     face = g_fontReplacementTtfFaces[fontIdx];
-    if (FT_Set_Pixel_Sizes(face, 0, (FT_UInt)SDL_max(1, (int)((float)g_fontHeightsArr[fontIdx] * scaleY + 0.5f))) != 0) {
-        return 8.0f * scaleX;
+    legacyWidths = g_fontWidthTables[fontIdx];
+    if (!legacyWidths) return;
+    if (FT_Set_Pixel_Sizes(face, 0, (FT_UInt)SDL_max(1, pixelSize)) != 0) return;
+
+    /* Calibrate the scalable face once per rendered font size against the whole
+     * printable ASCII width table. This keeps all TTF/OTF lines for a font at a
+     * single consistent scale while still matching the old menu footprint. */
+    for (ch = 0x20; ch < 0x80; ch++) {
+        legacyAdvance += legacyWidths[ch - 0x20];
+        if (FT_Load_Glyph(face, FT_Get_Char_Index(face, (FT_ULong)ch), FT_LOAD_DEFAULT) == 0) {
+            ftAdvance += (int)(face->glyph->advance.x >> 6);
+        }
     }
-    if (FT_Load_Char(face, (FT_ULong)codepoint, FT_LOAD_DEFAULT) != 0) return 8.0f * scaleX;
-    advance = (int)((face->glyph->advance.x + 32) >> 6);
-    return (float)(advance > 0 ? advance : 1);
+    if (ftAdvance > 0) {
+        *layoutScaleX = ((float)legacyAdvance * targetScaleX) / (float)ftAdvance;
+    }
+
+    targetHeight = (float)g_fontHeightsArr[fontIdx] * targetScaleY;
+    ftHeight = face->size ? (float)(face->size->metrics.height >> 6) : (float)pixelSize;
+    if (ftHeight > 0.0f) {
+        *layoutScaleY = targetHeight / ftHeight;
+    }
+}
+
+static int replacementTtfStringAdvance(uint16 fontIdx, const char *text) {
+    FT_Face face;
+    FT_UInt previousGlyphIndex = 0;
+    float layoutScaleX;
+    float layoutScaleY;
+    float x = 0.0f;
+    int charIdx;
+    int drawnChars;
+
+    if (!text || fontIdx >= 8 || !g_fontReplacementTtfFaces[fontIdx]) return 0;
+    face = g_fontReplacementTtfFaces[fontIdx];
+    replacementTtfLayoutScale(fontIdx, replacementTtfPixelSize(fontIdx), 1.0f, 1.0f,
+                              &layoutScaleX, &layoutScaleY);
+    (void)layoutScaleY;
+    if (FT_Set_Pixel_Sizes(face, 0, (FT_UInt)replacementTtfPixelSize(fontIdx)) != 0) return 0;
+
+    for (charIdx = 0, drawnChars = 0; text[charIdx] != 0 && drawnChars < 256;) {
+        uint32 codepoint;
+        uint8 ch = (uint8)text[charIdx];
+        int byteCount = 1;
+        FT_UInt glyphIndex;
+        FT_Vector kerning;
+
+        if (!decodeUtf8Codepoint(&text[charIdx], &codepoint, &byteCount)) {
+            codepoint = ch;
+            byteCount = 1;
+        }
+        if (byteCount == 1 && (ch & 0x80)) {
+            charIdx++;
+            continue;
+        }
+        glyphIndex = FT_Get_Char_Index(face, (FT_ULong)codepoint);
+        if (previousGlyphIndex && glyphIndex && FT_HAS_KERNING(face)) {
+            if (FT_Get_Kerning(face, previousGlyphIndex, glyphIndex, FT_KERNING_DEFAULT, &kerning) == 0) {
+                x += (float)(kerning.x >> 6) * layoutScaleX;
+            }
+        }
+        if (FT_Load_Glyph(face, glyphIndex, FT_LOAD_DEFAULT) == 0) {
+            x += (float)(face->glyph->advance.x >> 6) * layoutScaleX;
+        }
+        previousGlyphIndex = glyphIndex;
+        charIdx += byteCount;
+        drawnChars++;
+    }
+    return (int)(x + 0.5f);
 }
 
 static uint8 blendReplacementTtfPixel(uint8 dstColor, uint8 srcColor, uint8 coverage) {
@@ -1167,7 +1218,6 @@ static int recordTtfTextOverlayAndAdvance(int16 *params, const char *string,
     TtfTextOverlayRecord *record;
     int charIdx;
     int drawnChars;
-    int x;
     int color;
     uint16 fontIdx;
     int i;
@@ -1221,7 +1271,6 @@ static int recordTtfTextOverlayAndAdvance(int16 *params, const char *string,
     record->clipT = clipT;
     record->clipB = clipB;
 
-    x = record->x;
     color = record->color;
     for (charIdx = 0, drawnChars = 0; string[charIdx] != 0 && drawnChars < 256;) {
         uint32 codepoint;
@@ -1236,11 +1285,10 @@ static int recordTtfTextOverlayAndAdvance(int16 *params, const char *string,
             charIdx++;
             continue;
         }
-        x += replacementTtfAdvance(fontIdx, codepoint);
         charIdx += byteCount;
         drawnChars++;
     }
-    params[4] = (int16)x;
+    params[4] = (int16)(record->x + replacementTtfStringAdvance(fontIdx, string));
     params[2] = (int16)color;
     return 1;
 }
@@ -1305,12 +1353,16 @@ static void renderTtfTextOverlayRecord(const TtfTextOverlayRecord *record, R2DMa
     float cellY;
     float cellHeight;
     float baseline;
+    float layoutScaleX;
+    float layoutScaleY;
     SDL_FRect clip;
 
     if (!record || !record->text || record->fontIdx >= 8 || !g_fontReplacementTtfFaces[record->fontIdx]) return;
     face = g_fontReplacementTtfFaces[record->fontIdx];
     pixelSize = SDL_max(1, (int)((float)g_fontHeightsArr[record->fontIdx] * m->scaleY + 0.5f));
     if (FT_Set_Pixel_Sizes(face, 0, (FT_UInt)pixelSize) != 0) return;
+    replacementTtfLayoutScale(record->fontIdx, pixelSize, m->scaleX, m->scaleY,
+                              &layoutScaleX, &layoutScaleY);
     pal = gfx_getPalette();
     if (!pal) return;
     c = pal->colors[record->color & 0xff];
@@ -1333,11 +1385,6 @@ static void renderTtfTextOverlayRecord(const TtfTextOverlayRecord *record, R2DMa
         FT_Bitmap *bitmap;
         float gx;
         float gy;
-        float targetAdvance;
-        float inkWidth;
-        float inkHeight;
-        float pixelScaleX;
-        float pixelScaleY;
 
         if (!decodeUtf8Codepoint(&record->text[charIdx], &codepoint, &byteCount)) {
             codepoint = ch;
@@ -1345,48 +1392,27 @@ static void renderTtfTextOverlayRecord(const TtfTextOverlayRecord *record, R2DMa
         }
         if (byteCount == 1 && (ch & 0x80)) {
             c = pal->colors[ch & 0x7f];
-            previousGlyphIndex = 0;
             charIdx++;
             continue;
         }
         glyphIndex = FT_Get_Char_Index(face, (FT_ULong)codepoint);
-        if ((codepoint < 0x20 || codepoint >= 0x80) && previousGlyphIndex && glyphIndex && FT_HAS_KERNING(face)) {
+        if (previousGlyphIndex && glyphIndex && FT_HAS_KERNING(face)) {
             if (FT_Get_Kerning(face, previousGlyphIndex, glyphIndex, FT_KERNING_DEFAULT, &kerning) == 0) {
-                x += (float)(kerning.x >> 6);
+                x += (float)(kerning.x >> 6) * layoutScaleX;
             }
         }
         if (FT_Load_Glyph(face, glyphIndex, FT_LOAD_RENDER) == 0) {
             glyph = face->glyph;
             bitmap = &glyph->bitmap;
-            targetAdvance = replacementTtfAdvanceScaled(record->fontIdx, codepoint, m->scaleX, m->scaleY);
-            inkWidth = (float)bitmap->width;
-            inkHeight = (float)bitmap->rows;
-            pixelScaleX = 1.0f;
-            pixelScaleY = 1.0f;
-            gx = x + (float)glyph->bitmap_left;
-            if (inkWidth > 0.0f && targetAdvance > 0.0f) {
-                /* Replacement TTF glyphs must stay inside the original fixed
-                 * bitmap-font cell. This is required for Unicode letters too:
-                 * Cyrillic glyphs from common TTF faces are much wider/taller
-                 * than the DOS 8-pixel menu font and otherwise land outside the
-                 * visible row or collide with following text. */
-                pixelScaleX = targetAdvance / inkWidth;
-                if (pixelScaleX > 1.0f) pixelScaleX = 1.0f;
-                gx = x + (targetAdvance - inkWidth * pixelScaleX) * 0.5f;
-            }
-            if (inkHeight > 0.0f && cellHeight > 0.0f) {
-                pixelScaleY = cellHeight / inkHeight;
-                if (pixelScaleY > 1.0f) pixelScaleY = 1.0f;
-            }
-            gy = baseline - (float)glyph->bitmap_top * pixelScaleY;
+            gx = x + (float)glyph->bitmap_left * layoutScaleX;
+            gy = baseline - (float)glyph->bitmap_top * layoutScaleY;
             if (gy < cellY) gy = cellY;
-            /* Do not bottom-clamp descenders: q/g/ф need to hang below the
-             * baseline or the whole glyph is pushed upward relative to x-height
-             * letters. The row-level clip still keeps text inside the viewport. */
-            if (useGL) renderTtfTextOverlayGlyphGL(bitmap, gx, gy, pixelScaleX, pixelScaleY, c.r, c.g, c.b, clip);
-            else renderTtfTextOverlayGlyphSDL(renderer, bitmap, gx, gy, pixelScaleX, pixelScaleY, c.r, c.g, c.b, clip);
+            if (useGL) renderTtfTextOverlayGlyphGL(bitmap, gx, gy, layoutScaleX, layoutScaleY, c.r, c.g, c.b, clip);
+            else renderTtfTextOverlayGlyphSDL(renderer, bitmap, gx, gy, layoutScaleX, layoutScaleY, c.r, c.g, c.b, clip);
         }
-        x += replacementTtfAdvanceScaled(record->fontIdx, codepoint, m->scaleX, m->scaleY);
+        if (FT_Load_Glyph(face, glyphIndex, FT_LOAD_DEFAULT) == 0) {
+            x += (float)(face->glyph->advance.x >> 6) * layoutScaleX;
+        }
         previousGlyphIndex = glyphIndex;
         charIdx += byteCount;
         drawnChars++;
@@ -2566,6 +2592,37 @@ int gfx_getGlyphAdvance(uint32 codepoint, uint16 fontIdx) {
     wt = g_fontWidthTables[fontIdx];
     if (!wt || codepoint < 0x20) return 8;
     return wt[codepoint - 0x20];
+}
+
+int gfx_getStringAdvanceUtf8(const char *text, uint16 fontIdx) {
+    int width = 0;
+    int charIdx;
+    int drawnChars;
+    if (!text) return 0;
+    if (fontIdx >= 8) return 0;
+    tryLoadReplacementFont(fontIdx);
+#ifdef F15_HAVE_FREETYPE
+    if (g_fontReplacementTtfFaces[fontIdx]) {
+        return replacementTtfStringAdvance(fontIdx, text);
+    }
+#endif
+    for (charIdx = 0, drawnChars = 0; text[charIdx] != 0 && drawnChars < 256;) {
+        uint32 codepoint;
+        uint8 ch = (uint8)text[charIdx];
+        int byteCount = 1;
+        if (!decodeUtf8Codepoint(&text[charIdx], &codepoint, &byteCount)) {
+            codepoint = ch;
+            byteCount = 1;
+        }
+        if (byteCount == 1 && (ch & 0x80)) {
+            charIdx++;
+            continue;
+        }
+        width += gfx_getGlyphAdvance(codepoint, fontIdx);
+        charIdx += byteCount;
+        drawnChars++;
+    }
+    return width;
 }
 
 int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx) {

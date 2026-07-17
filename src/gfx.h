@@ -112,6 +112,7 @@ void FAR CDECL gfx_dacAnimate();                                                
 void FAR CDECL gfx_dacCycle();                                                                                                    /* slot 0x2e: DAC fire/colour-cycle animation */
 int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx);                                                                             /* slot 0x2f: setup font metrics */
 int gfx_getGlyphAdvance(uint32 codepoint, uint16 fontIdx);                                                                        /* native UTF-aware font metric */
+int gfx_getStringAdvanceUtf8(const char *text, uint16 fontIdx);                                                                   /* native UTF-aware line metric */
 void gfx_invalidateTtfTextOverlayRect(int x1, int y1, int x2, int y2);
 int FAR CDECL gfx_getRowOffset(int y);                                                                                            /* slot 0x3a: returns y*320 */
 /* dseg:0xbe4 */
