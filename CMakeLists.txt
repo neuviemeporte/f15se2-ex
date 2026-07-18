@@ -485,6 +485,9 @@ add_behavior_test(eg3drast_internal_behavior_tests SOURCES ${SRC_DIR}/egdata.c)
 add_behavior_test(start_behavior_tests LINK_CORE)
 add_behavior_test(log_behavior_tests LINK_CORE)
 add_behavior_test(vgapal_behavior_tests SOURCES ${SRC_DIR}/vgapal.c DEFS main=vgapal_program_main)
+add_test(NAME blackbox_inspect_tool_tests
+    COMMAND python3 ${TEST_DIR}/blackbox_inspect_tool_tests.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/blackbox_inspect.py)
 #------------------------------------------------------------------------------
 # Coverage/inventory audits (opt-in custom targets; not part of `ctest`).
 #------------------------------------------------------------------------------
