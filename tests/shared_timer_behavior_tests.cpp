@@ -1,10 +1,12 @@
 #include "egcode.h"
 #include "inttype.h"
 #include "shared/blackbox.h"
+#include "shared/blackbox_wait.h"
 
 #include <SDL3/SDL_timer.h>
 
 #include <cstdlib>
+#include <cstdio>
 #include <iostream>
 
 /* The LINK_CORE test uses the live timer globals defined by stdata.c. Keep
@@ -28,8 +30,11 @@ enum SharedTimerOriginalConstant : int {
     kMaxYieldPolls = 300,
     kNowNondecreasingSleepNs = 1,
     kCatchupResyncSleepMs = 300,
+    kRecordTickSleepMs = 25,
     kTestFailureExitCode = 1,
 };
+
+constexpr const char *kRecordPath = "shared-timer-record-test.bb";
 
 int g_hookCalls = 0;
 
@@ -77,6 +82,8 @@ int main() {
     resetTimerState();
     require(blackbox_startDebug(BLACKBOX_DEFAULT_SEED) != 0,
             "timer test can enable deterministic blackbox time");
+    require(blackbox_usesVirtualTime() != 0,
+            "debug mode owns the deterministic virtual clock");
     setTimerTickHook(testTickHook);
     setTimerIrqHandler();
     timerPump();
@@ -84,6 +91,40 @@ int main() {
                 timerCounter3 == 1 && timerCounter4 == 1 && g_hookCalls == 1,
             "blackbox timer pump advances exactly one deterministic tick and hook");
     blackbox_shutdown();
+
+    resetTimerState();
+    require(blackbox_startRecord(kRecordPath, BLACKBOX_DEFAULT_SEED) != 0,
+            "timer test can enable blackbox recording");
+    {
+        const uint8 hallFameFixture = 0;
+        blackbox_captureMutableFile("HallFame", &hallFameFixture, 1);
+    }
+    require(blackbox_usesVirtualTime() == 0,
+            "recording leaves tick production on the native clock");
+    setTimerTickHook(testTickHook);
+    setTimerIrqHandler();
+    SDL_DelayNS(static_cast<Uint64>(kRecordTickSleepMs) * SDL_NS_PER_MS);
+    timerPump();
+    const uint8 recordedTicks = timerCounter;
+    require(timerCounter > 0 && blackbox_tick() == timerCounter &&
+                g_hookCalls == timerCounter &&
+                timerNowNs() == blackbox_timerNowNs(),
+            "recording timestamps native ticks on the deterministic simulation clock");
+    restoreTimerIrqHandler();
+    blackbox_shutdown();
+
+    resetTimerState();
+    require(blackbox_startReplay(kRecordPath) != 0,
+            "timer test can replay the native timer schedule");
+    setTimerTickHook(testTickHook);
+    setTimerIrqHandler();
+    timerPump();
+    require(timerCounter == recordedTicks && blackbox_tick() == recordedTicks &&
+                g_hookCalls == recordedTicks,
+            "replay consumes the exact recorded ticks for each timer pump");
+    restoreTimerIrqHandler();
+    blackbox_shutdown();
+    std::remove(kRecordPath);
 
     resetTimerState();
     setTimerTickHook(testTickHook);

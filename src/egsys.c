@@ -348,6 +348,9 @@ void gameMainLoop(void) {
 
     do {
         uint64 nowNs;
+        /* Record and replay consume the same pump-before-clock sequence. In
+         * record mode the pump is paced by native 60 Hz time; replay consumes
+         * the recorded per-pump tick count. */
         if (blackbox_enabled()) timerPump();
         nowNs = timerNowNs();
         accumNs += nowNs - prevNs;

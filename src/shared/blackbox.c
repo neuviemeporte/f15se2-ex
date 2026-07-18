@@ -35,7 +35,7 @@ void blackbox_diagOnTick(void) __attribute__((weak));
 #endif
 
 enum {
-    BLACKBOX_FILE_VERSION = 5,
+    BLACKBOX_FILE_VERSION = 7,
     BLACKBOX_TIMER_HZ = 60,
     BLACKBOX_RAND_MASK = 0x7fff,
     BLACKBOX_MAX_KEY_WORD = 0xffff,
@@ -74,6 +74,11 @@ typedef struct BlackboxFrameEvent {
     uint32 hash;
 } BlackboxFrameEvent;
 
+typedef struct BlackboxTimerPumpEvent {
+    uint32 startTick;
+    uint32 tickCount;
+} BlackboxTimerPumpEvent;
+
 static BlackboxMode s_mode = BLACKBOX_OFF;
 static FILE *s_file = NULL;
 static uint32 s_tick = 0;
@@ -104,6 +109,11 @@ static size_t s_frameCount = 0;
 static size_t s_frameCapacity = 0;
 static size_t s_framePos = 0;
 static uint32 s_frameIndex = 0;
+static BlackboxTimerPumpEvent *s_timerPumps = NULL;
+static size_t s_timerPumpCount = 0;
+static size_t s_timerPumpCapacity = 0;
+static size_t s_timerPumpPos = 0;
+static int s_reportedTimerPumpDivergence = 0;
 static int s_reportedSeedDivergence = 0;
 static int s_reportedRandDivergence = 0;
 static int s_reportedFrameDivergence = 0;
@@ -136,11 +146,13 @@ static void blackbox_resetReplayData(void) {
     free(s_randEvents);
     free(s_seedEvents);
     free(s_frames);
+    free(s_timerPumps);
     s_keys = NULL;
     s_axes = NULL;
     s_randEvents = NULL;
     s_seedEvents = NULL;
     s_frames = NULL;
+    s_timerPumps = NULL;
     s_keyCount = 0;
     s_keyCapacity = 0;
     s_keyPos = 0;
@@ -157,6 +169,9 @@ static void blackbox_resetReplayData(void) {
     s_frameCapacity = 0;
     s_framePos = 0;
     s_frameIndex = 0;
+    s_timerPumpCount = 0;
+    s_timerPumpCapacity = 0;
+    s_timerPumpPos = 0;
     s_currentAxes.tick = 0;
     s_currentAxes.rawX = 0x80;
     s_currentAxes.rawY = 0x80;
@@ -214,6 +229,15 @@ static int blackbox_appendAxes(uint32 tick, uint8 rawX, uint8 rawY, uint8 joyX, 
     return 1;
 }
 
+static int blackbox_appendTimerPump(uint32 startTick, uint32 tickCount) {
+    if (!reserveEvents((void **)&s_timerPumps, &s_timerPumpCapacity,
+                       s_timerPumpCount, sizeof(*s_timerPumps))) return 0;
+    s_timerPumps[s_timerPumpCount].startTick = startTick;
+    s_timerPumps[s_timerPumpCount].tickCount = tickCount;
+    s_timerPumpCount++;
+    return 1;
+}
+
 static int blackbox_validAxes(unsigned rawX, unsigned rawY, unsigned joyX, unsigned joyY) {
     return rawX <= BLACKBOX_MAX_AXIS_VALUE && rawY <= BLACKBOX_MAX_AXIS_VALUE &&
            joyX <= BLACKBOX_MAX_AXIS_VALUE && joyY <= BLACKBOX_MAX_AXIS_VALUE;
@@ -238,6 +262,7 @@ static void blackbox_resetState(BlackboxMode mode, uint32 seed) {
     s_reportedSeedDivergence = 0;
     s_reportedRandDivergence = 0;
     s_reportedFrameDivergence = 0;
+    s_reportedTimerPumpDivergence = 0;
     s_passivePresentDepth = 0;
     s_overlayPage = NULL;
     s_overlayWidth = 0;
@@ -293,11 +318,17 @@ int blackbox_startReplay(const char *path) {
     }
 
     while (fgets(line, sizeof(line), f)) {
-        unsigned tick, inputPump, word, rawX, rawY, joyX, joyY, seed, frame, hash;
+        unsigned tick, inputPump, word, rawX, rawY, joyX, joyY, seed, frame, hash, tickCount;
         int randValue;
         if (sscanf(line, "seed %u", &seed) == 1) {
             s_seed = seed ? seed : BLACKBOX_DEFAULT_SEED;
             s_rngState = s_seed;
+        } else if (sscanf(line, "timer_pump %u %u", &tick, &tickCount) == 2) {
+            if (!blackbox_appendTimerPump((uint32)tick, (uint32)tickCount)) {
+                fclose(f);
+                blackbox_resetState(BLACKBOX_OFF, BLACKBOX_DEFAULT_SEED);
+                return 0;
+            }
         } else if (sscanf(line, "rng_seed %u %u", &tick, &seed) == 2) {
             if (!blackbox_appendSeed((uint32)tick, seed ? (uint32)seed : BLACKBOX_DEFAULT_SEED)) {
                 fclose(f);
@@ -364,9 +395,10 @@ int blackbox_startReplay(const char *path) {
         blackbox_resetState(BLACKBOX_OFF, BLACKBOX_DEFAULT_SEED);
         return 0;
     }
-    log_info("blackbox: replaying '%s', seed=%u, keys=%u, axes=%u, rng_seeds=%u, rng=%u, frames=%u",
+    log_info("blackbox: replaying '%s', seed=%u, keys=%u, axes=%u, timer_pumps=%u, rng_seeds=%u, rng=%u, frames=%u",
              path, (unsigned)s_seed, (unsigned)s_keyCount, (unsigned)s_axesCount,
-             (unsigned)s_seedCount, (unsigned)s_randCount, (unsigned)s_frameCount);
+             (unsigned)s_timerPumpCount, (unsigned)s_seedCount,
+             (unsigned)s_randCount, (unsigned)s_frameCount);
     return 1;
 }
 
@@ -389,6 +421,10 @@ void blackbox_shutdown(void) {
         log_error("blackbox: replay presented %u of %u recorded frames",
                   (unsigned)s_framePos, (unsigned)s_frameCount);
     }
+    if (blackbox_replaying() && !pausedForInspection && s_timerPumpPos != s_timerPumpCount) {
+        log_error("blackbox: replay consumed %u of %u recorded timer-pump events",
+                  (unsigned)s_timerPumpPos, (unsigned)s_timerPumpCount);
+    }
     if (s_file) {
         fclose(s_file);
         s_file = NULL;
@@ -401,6 +437,9 @@ void blackbox_shutdown(void) {
 int blackbox_enabled(void) { return s_mode != BLACKBOX_OFF; }
 int blackbox_recording(void) { return s_mode == BLACKBOX_RECORD; }
 int blackbox_replaying(void) { return s_mode == BLACKBOX_REPLAY; }
+int blackbox_usesVirtualTime(void) {
+    return s_mode == BLACKBOX_DEBUG || s_mode == BLACKBOX_REPLAY;
+}
 int blackbox_suppressPersistentWrites(void) {
     /* Blackbox record/replay sessions are investigation artifacts, not normal
      * gameplay sessions. Keep player/profile files stable even if the run
@@ -462,6 +501,34 @@ void blackbox_afterTick(void) {
     /* Keep flight diagnostics optional for isolated core/timer tests. The game
      * links the implementation through its simulation and rendering hooks. */
     if (blackbox_diagOnTick) blackbox_diagOnTick();
+}
+
+void blackbox_recordTimerPump(uint32 startTick, uint32 tickCount) {
+    if (!blackbox_recording() || !s_file) return;
+    /* Zero-count entries are essential: they preserve which polling/render
+     * iteration observed the next real 60 Hz tick. */
+    fprintf(s_file, "timer_pump %u %u\n", (unsigned)startTick,
+            (unsigned)tickCount);
+}
+
+uint32 blackbox_replayTimerPump(void) {
+    BlackboxTimerPumpEvent event;
+    if (!blackbox_replaying()) return 0;
+    if (s_timerPumpPos >= s_timerPumpCount) {
+        if (!s_reportedTimerPumpDivergence) {
+            s_reportedTimerPumpDivergence = 1;
+            log_error("blackbox: timer-pump divergence at tick %u: replay advanced past recorded schedule",
+                      (unsigned)s_tick);
+        }
+        return 0;
+    }
+    event = s_timerPumps[s_timerPumpPos++];
+    if (event.startTick != s_tick && !s_reportedTimerPumpDivergence) {
+        s_reportedTimerPumpDivergence = 1;
+        log_error("blackbox: timer-pump divergence at tick %u: expected start tick %u",
+                  (unsigned)s_tick, (unsigned)event.startTick);
+    }
+    return event.tickCount;
 }
 
 void blackbox_noteInputPump(void) {

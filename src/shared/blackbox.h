@@ -46,6 +46,9 @@ void blackbox_setAllowBuildMismatch(int allow);
 int blackbox_enabled(void);
 int blackbox_recording(void);
 int blackbox_replaying(void);
+/* Debug/replay own a synthetic clock. Recording observes the native 60 Hz
+ * clock so enabling a recorder cannot change gameplay speed. */
+int blackbox_usesVirtualTime(void);
 int blackbox_suppressPersistentWrites(void);
 uint32 blackbox_tick(void);
 void blackbox_getDebugState(BlackboxDebugState *state);
@@ -56,6 +59,11 @@ int blackbox_fastForwarding(void);
 void blackbox_noteTick(void);
 /* Called after the timer's optional gameplay hook has completed. */
 void blackbox_afterTick(void);
+/* Record/replay the number of native 60 Hz ticks produced by one timerPump()
+ * invocation. This preserves real-time recording without making replay depend
+ * on host speed or renderer timing. */
+void blackbox_recordTimerPump(uint32 startTick, uint32 tickCount);
+uint32 blackbox_replayTimerPump(void);
 /* Count shared input-pump calls separately from timer ticks. Static menu phases
  * continue polling input even when their 60 Hz timer is not installed. */
 void blackbox_noteInputPump(void);

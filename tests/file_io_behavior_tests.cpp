@@ -100,7 +100,7 @@ int main() {
         const auto replayLogPath = testDir / "replay.log";
         {
             std::ofstream log(replayLogPath, std::ios::binary);
-            log << "F15SE2_BLACKBOX 5\nseed " << kReplaySeed << "\n"
+            log << "F15SE2_BLACKBOX 7\nseed " << kReplaySeed << "\n"
                 << "build_version unknown\n"
                 << "mutable_file HallFame 4 5245504c\n";
         }

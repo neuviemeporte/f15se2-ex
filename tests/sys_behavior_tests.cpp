@@ -24,6 +24,7 @@ void renderHudFrame(int) {}
 void stepFlightModel(void) {}
 void updateFrame(void) {}
 int blackbox_enabled(void) { return 0; }
+int blackbox_usesVirtualTime(void) { return 0; }
 void blackbox_diagCaptureSimStep(void) {}
 void blackbox_diagBeginRenderFrame(void) {}
 

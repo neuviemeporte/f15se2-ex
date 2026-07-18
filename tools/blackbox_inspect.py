@@ -35,7 +35,7 @@ def parse_log(path: Path) -> tuple[int | None, list[Event]]:
     events: list[Event] = []
     with path.open("r", encoding="utf-8") as f:
         header = f.readline().strip()
-        if header != "F15SE2_BLACKBOX 5":
+        if header != "F15SE2_BLACKBOX 7":
             raise SystemExit(f"unsupported blackbox header: {header!r}")
         for lineno, line in enumerate(f, start=2):
             parts = line.strip().split()

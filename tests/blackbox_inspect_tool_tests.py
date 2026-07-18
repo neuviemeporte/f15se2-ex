@@ -16,7 +16,7 @@ def require(condition: bool, message: str) -> None:
 def main() -> int:
     tool = Path(sys.argv[1])
     with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as f:
-        f.write("F15SE2_BLACKBOX 5\n")
+        f.write("F15SE2_BLACKBOX 7\n")
         f.write("seed 7\n")
         f.write("build_version test\n")
         f.write("mutable_file HallFame 0 -\n")
