@@ -1,6 +1,7 @@
 #include "shared/blackbox.h"
 #include "shared/blackbox_gl.h"
 #include "headless.h"
+#include "r2d.h"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
@@ -38,6 +39,14 @@ extern "C" void APIENTRY glEnd(void) { ++gEndCalls; }
 
 extern "C" int blackbox_enabled(void) { return gEnabled; }
 extern "C" uint32 blackbox_tick(void) { return gTick; }
+
+void r2d_computeMapping(int pageW, int pageH, int winW, int winH,
+                        int, R2DMapping *mapping) {
+    mapping->scaleX = static_cast<float>(winW) / pageW;
+    mapping->scaleY = static_cast<float>(winH) / pageH;
+    mapping->offX = 0;
+    mapping->offY = 0;
+}
 
 int main() {
     test_headless_init();
