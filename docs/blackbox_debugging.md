@@ -404,7 +404,7 @@ python3 tools/blackbox_inspect.py /tmp/f15-run.bb \
 The log starts with:
 
 ```text
-F15SE2_BLACKBOX 5
+F15SE2_BLACKBOX 7
 seed 7
 build_version v0.9.4-1-g25b4664
 ```
@@ -413,6 +413,7 @@ Event lines use internal raw ticks, not displayed-time notation:
 
 ```text
 phase 0 start
+timer_pump 0 0
 key 120 487 1f73
 axes 121 128 128 128 128
 rng_seed 240 1234
@@ -427,6 +428,10 @@ render_hash 240 19 1 12 3 1a2b3c4d
 Field meanings:
 
 - `phase <tick> <name>`: executable phase marker.
+- `timer_pump <start_tick> <tick_count>`: number of native 60 Hz ticks produced
+  by one timer-pump call. Zero-count entries preserve the exact polling/render
+  iteration on which the next tick became visible. Replay rejects counts above
+  the native catch-up limit.
 - `key <tick> <input_pump> <bios_word_hex>`: BIOS-style key word and the exact
   shared-input polling call that observed it. The pump sequence remains ordered
   while static menu/death screens have their 60 Hz timer stopped.
@@ -444,7 +449,7 @@ Field meanings:
 - `render_hash <tick> <frame> <scene> <objects> <lines> <hash>`: compact scene
   submission summary used for replay comparison.
 
-Replay and the inspector only accept the current `F15SE2_BLACKBOX 5` format.
+Replay and the inspector only accept the current `F15SE2_BLACKBOX 7` format.
 Unknown log lines are errors. This is intentional: silently accepting stale or
 malformed troubleshooting logs would make divergence analysis unreliable.
 

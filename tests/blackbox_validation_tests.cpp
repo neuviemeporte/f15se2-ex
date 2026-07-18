@@ -222,6 +222,9 @@ void testCoreFailures(const std::filesystem::path &path) {
     writeFile(path, validLog("axes 0 0 0 0 256\n"));
     require(!blackbox_startReplay(path.string().c_str()),
             "replay rejects out-of-range axes");
+    writeFile(path, validLog("timer_pump 0 17\n"));
+    require(!blackbox_startReplay(path.string().c_str()),
+            "replay rejects impossible timer-pump counts instead of hanging");
     writeFile(path, validLog("unknown 1 2 3\n"));
     require(!blackbox_startReplay(path.string().c_str()),
             "replay rejects unknown event lines");

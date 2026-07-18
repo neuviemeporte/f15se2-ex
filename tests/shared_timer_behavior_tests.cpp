@@ -30,13 +30,13 @@ enum SharedTimerOriginalConstant : int {
     kMaxYieldPolls = 300,
     kNowNondecreasingSleepNs = 1,
     kCatchupResyncSleepMs = 300,
-    kRecordTickSleepMs = 25,
     kTestFailureExitCode = 1,
 };
 
 constexpr const char *kRecordPath = "shared-timer-record-test.bb";
 
 int g_hookCalls = 0;
+int g_waitPolls = 0;
 
 void require(bool condition, const char *message) {
     if (!condition) {
@@ -59,6 +59,12 @@ void resetTimerState() {
 
 void far testTickHook(void) {
     ++g_hookCalls;
+}
+
+bool pollTimerWait() {
+    ++g_waitPolls;
+    timerPump();
+    return false;
 }
 
 int main() {
@@ -103,13 +109,16 @@ int main() {
             "recording leaves tick production on the native clock");
     setTimerTickHook(testTickHook);
     setTimerIrqHandler();
-    SDL_DelayNS(static_cast<Uint64>(kRecordTickSleepMs) * SDL_NS_PER_MS);
-    timerPump();
+    g_waitPolls = 0;
+    require(blackbox_virtualWait(kTargetTicks, 0, pollTimerWait) != 0,
+            "recording uses the deterministic polling wait path");
     const uint8 recordedTicks = timerCounter;
+    const int recordedWaitPolls = g_waitPolls;
     require(timerCounter > 0 && blackbox_tick() == timerCounter &&
                 g_hookCalls == timerCounter &&
-                timerNowNs() == blackbox_timerNowNs(),
-            "recording timestamps native ticks on the deterministic simulation clock");
+                timerNowNs() == blackbox_timerNowNs() &&
+                recordedWaitPolls > recordedTicks,
+            "recording preserves zero-tick polls on the deterministic simulation clock");
     restoreTimerIrqHandler();
     blackbox_shutdown();
 
@@ -118,10 +127,12 @@ int main() {
             "timer test can replay the native timer schedule");
     setTimerTickHook(testTickHook);
     setTimerIrqHandler();
-    timerPump();
+    g_waitPolls = 0;
+    require(blackbox_virtualWait(kTargetTicks, 0, pollTimerWait) != 0,
+            "replay follows the recorded polling wait path");
     require(timerCounter == recordedTicks && blackbox_tick() == recordedTicks &&
-                g_hookCalls == recordedTicks,
-            "replay consumes the exact recorded ticks for each timer pump");
+                g_hookCalls == recordedTicks && g_waitPolls == recordedWaitPolls,
+            "replay consumes zero and nonzero timer pumps at the recorded polls");
     restoreTimerIrqHandler();
     blackbox_shutdown();
     std::remove(kRecordPath);

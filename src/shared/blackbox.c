@@ -40,6 +40,9 @@ enum {
     BLACKBOX_RAND_MASK = 0x7fff,
     BLACKBOX_MAX_KEY_WORD = 0xffff,
     BLACKBOX_MAX_AXIS_VALUE = 0xff,
+    /* timer.c resynchronizes after 250 ms. At 60 Hz, a valid call can emit at
+     * most the due tick plus fifteen catch-up ticks. */
+    BLACKBOX_MAX_TIMER_PUMP_TICKS = 16,
     BLACKBOX_DEBUG_BG = 0,
     BLACKBOX_DEBUG_FG = 15
 };
@@ -324,6 +327,12 @@ int blackbox_startReplay(const char *path) {
             s_seed = seed ? seed : BLACKBOX_DEFAULT_SEED;
             s_rngState = s_seed;
         } else if (sscanf(line, "timer_pump %u %u", &tick, &tickCount) == 2) {
+            if (tickCount > BLACKBOX_MAX_TIMER_PUMP_TICKS) {
+                log_error("blackbox: invalid timer-pump count in replay log: %s", line);
+                fclose(f);
+                blackbox_resetState(BLACKBOX_OFF, BLACKBOX_DEFAULT_SEED);
+                return 0;
+            }
             if (!blackbox_appendTimerPump((uint32)tick, (uint32)tickCount)) {
                 fclose(f);
                 blackbox_resetState(BLACKBOX_OFF, BLACKBOX_DEFAULT_SEED);
