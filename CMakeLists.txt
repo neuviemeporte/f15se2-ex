@@ -98,6 +98,14 @@ set(F15SE2_SOURCES
     ${SRC_DIR}/shared/ovlimpl.c
     ${SRC_DIR}/shared/picimpl.c
     ${SRC_DIR}/shared/timer.c
+    ${SRC_DIR}/shared/blackbox.c
+    ${SRC_DIR}/shared/blackbox_diag.c
+    ${SRC_DIR}/shared/blackbox_snapshot.c
+    ${SRC_DIR}/shared/blackbox_cli.c
+    ${SRC_DIR}/shared/blackbox_gl.c
+    ${SRC_DIR}/shared/blackbox_io.c
+    ${SRC_DIR}/shared/blackbox_state.c
+    ${SRC_DIR}/shared/blackbox_wait.c
 
     # Shared file + string helpers
     ${SRC_DIR}/shared/file_io.c
@@ -449,6 +457,7 @@ add_behavior_test(load_behavior_tests SOURCES
     ${SRC_DIR}/eg3dload.c ${SRC_DIR}/egmath.c ${SRC_DIR}/egdata.c
     ${SRC_DIR}/egfarbuf.c)
 add_behavior_test(shared_timer_behavior_tests LINK_CORE)
+add_behavior_test(blackbox_behavior_tests LINK_CORE)
 add_behavior_test(shared_runtime_behavior_tests SOURCES
     ${SRC_DIR}/shared/cleanup.c ${SRC_DIR}/shared/drawstr.c)
 add_behavior_test(eg3drast_behavior_tests LINK_CORE)
@@ -476,8 +485,6 @@ add_behavior_test(eg3drast_internal_behavior_tests SOURCES ${SRC_DIR}/egdata.c)
 add_behavior_test(start_behavior_tests LINK_CORE)
 add_behavior_test(log_behavior_tests LINK_CORE)
 add_behavior_test(vgapal_behavior_tests SOURCES ${SRC_DIR}/vgapal.c DEFS main=vgapal_program_main)
-
-
 #------------------------------------------------------------------------------
 # Coverage/inventory audits (opt-in custom targets; not part of `ctest`).
 #------------------------------------------------------------------------------

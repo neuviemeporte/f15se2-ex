@@ -30,6 +30,7 @@ extern "C" {
 #include "common.h" /* openFile */
 #include "input.h"  /* input_keyWaiting / input_setMode */
 #include "log.h"
+#include "shared/blackbox_wait.h"
 
 #define ASND_OUT_RATE 44100 /* SDL output sample rate (Hz) */
 #define ASND_TICK_HZ 60     /* sequencer tick = game tick rate */
@@ -264,20 +265,27 @@ int FAR CDECL audio_playIntro(void) {
     SDL_UnlockMutex(g_lock);
 
     input_setMode(INPUT_MODE_MENU);
-    Uint64 deadline = SDL_GetTicksNS() + 15 * SDL_NS_PER_SECOND;
-    while (asnd_introVoicesActive() && !input_keyWaiting() &&
-           SDL_GetTicksNS() < deadline) {
-        SDL_DelayNS(2 * SDL_NS_PER_MS); /* input_keyWaiting() pumps the clock */
-    }
+    if (blackbox_virtualWait(15u * 60u, 1, input_keyWaiting)) {
+        SDL_LockMutex(g_lock);
+        asound_driver_start_intro_rel(sound_driver_state());
+        SDL_UnlockMutex(g_lock);
+        blackbox_virtualWait(2u * 60u, 0, input_keyWaiting);
+    } else {
+        Uint64 deadline = SDL_GetTicksNS() + 15 * SDL_NS_PER_SECOND;
+        while (asnd_introVoicesActive() && !input_keyWaiting() &&
+               SDL_GetTicksNS() < deadline) {
+            SDL_DelayNS(2 * SDL_NS_PER_MS); /* input_keyWaiting() pumps the clock */
+        }
 
-    /* release tail (adlib_start_intro_release), then let it decay out */
-    SDL_LockMutex(g_lock);
-    asound_driver_start_intro_rel(sound_driver_state());
-    SDL_UnlockMutex(g_lock);
-    deadline = SDL_GetTicksNS() + 2 * SDL_NS_PER_SECOND;
-    while (asnd_introVoicesActive() && SDL_GetTicksNS() < deadline) {
-        SDL_DelayNS(2 * SDL_NS_PER_MS);
-        input_keyWaiting();
+        /* release tail (adlib_start_intro_release), then let it decay out */
+        SDL_LockMutex(g_lock);
+        asound_driver_start_intro_rel(sound_driver_state());
+        SDL_UnlockMutex(g_lock);
+        deadline = SDL_GetTicksNS() + 2 * SDL_NS_PER_SECOND;
+        while (asnd_introVoicesActive() && SDL_GetTicksNS() < deadline) {
+            SDL_DelayNS(2 * SDL_NS_PER_MS);
+            input_keyWaiting();
+        }
     }
 
     /* silence the chip (adlib_reset_state) */

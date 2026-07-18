@@ -8,6 +8,7 @@
 #include <SDL3/SDL.h>
 #include "r2d.h"
 #include "r3d_gl.h"
+#include "shared/blackbox.h"
 
 /* The shared 256-entry VGA palette lives in the software backend (gfx_impl.c).
  * Image blits copy raw indices and never read it, but attaching it keeps an
@@ -308,11 +309,16 @@ void r2d_vectorMarkPresented(void) {
 }
 
 void r2d_present(struct SDL_Surface *page, int shakeOffset) {
+    blackbox_recordFrame(page);
     if (r3dgl_active()) {
+        /* The GL compositor draws its own final overlay after native geometry. */
         r3dgl_present(page, shakeOffset);
-        return;
+    } else if (s_swPresent) {
+        if (blackbox_fastForwarding()) return;
+        blackbox_drawDebugOverlay(page);
+        s_swPresent(page, shakeOffset);
+        blackbox_restoreDebugOverlay(page);
     }
-    if (s_swPresent) s_swPresent(page, shakeOffset);
 }
 
 const char *r2d_backendName(void) {

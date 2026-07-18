@@ -3,6 +3,7 @@
  * environment wins. Software is last and always claims. */
 #include "r3d.h"
 #include "log.h"
+#include "shared/blackbox_diag.h"
 
 #include <SDL3/SDL.h> /* SDL_getenv */
 
@@ -74,7 +75,19 @@ void r3d_shutdown(void) {
 const char *r3d_backendName(void) { return g_r3d ? g_r3d->name() : "none"; }
 R3DMesh r3d_registerMesh(R3DMesh raw) { return g_r3d->registerMesh(raw); }
 void r3d_releaseMesh(R3DMesh mesh) { g_r3d->releaseMesh(mesh); }
-void r3d_beginScene(const R3DScene *scene) { g_r3d->beginScene(scene); }
-void r3d_submit(const R3DSubmit *sub) { g_r3d->submit(sub); }
-void r3d_submitLine(const R3DLine *line) { g_r3d->submitLine(line); }
-void r3d_endScene(void) { g_r3d->endScene(); }
+void r3d_beginScene(const R3DScene *scene) {
+    blackbox_diagRenderBeginScene(scene);
+    g_r3d->beginScene(scene);
+}
+void r3d_submit(const R3DSubmit *sub) {
+    blackbox_diagRenderSubmit(sub);
+    g_r3d->submit(sub);
+}
+void r3d_submitLine(const R3DLine *line) {
+    blackbox_diagRenderLine(line);
+    g_r3d->submitLine(line);
+}
+void r3d_endScene(void) {
+    g_r3d->endScene();
+    blackbox_diagRenderEndScene();
+}

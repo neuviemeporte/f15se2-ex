@@ -35,6 +35,8 @@
 #include "egcode.h"
 #include "egdata.h"
 #include "egtypes.h"
+#include "shared/blackbox_gl.h"
+#include "shared/blackbox.h"
 #include "log.h"
 
 #include <stdlib.h> /* qsort */
@@ -2215,6 +2217,11 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
     s_sceneRendered = 0;
     s_pageComposited = 0;
     r2d_vectorMarkPresented();
+    /* Keep all GL composition and per-frame state transitions deterministic,
+     * but avoid the host-visible overlay/swap cost while catching up. */
+    if (blackbox_fastForwarding()) return;
+    blackbox_drawGlOverlay(page, shakeOffset, s_win, gfx_getPalette(),
+                           overlay2DState);
     SDL_GL_SwapWindow(s_win);
 }
 

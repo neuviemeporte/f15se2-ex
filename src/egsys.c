@@ -8,6 +8,8 @@
 #include "egdata.h"
 #include "inttype.h"
 #include "gfx.h"
+#include "shared/blackbox.h"
+#include "shared/blackbox_diag.h"
 
 /* per-frame work reconstructed in their own TUs (egflight/egtacmap/egframe),
  * not surfaced in a header; declared here for the game loop below. */
@@ -345,10 +347,13 @@ void gameMainLoop(void) {
     objCapture(simPrev, projPrev);
 
     do {
-        uint64 nowNs = timerNowNs();
+        uint64 nowNs;
+        if (blackbox_enabled()) timerPump();
+        nowNs = timerNowNs();
         accumNs += nowNs - prevNs;
         prevNs = nowNs;
-        timerPump(); /* advance the 60 Hz tick counters + per-tick / colour-cycle hook */
+        if (!blackbox_enabled())
+            timerPump(); /* advance the 60 Hz tick counters + per-tick / colour-cycle hook */
 
         steps = 0;
         while (accumNs >= simStepNs) {
@@ -357,6 +362,7 @@ void gameMainLoop(void) {
             objCapture(simPrev, projPrev); /* prev = live = previous step's result */
             stepFlightModel();
             updateFrame();
+            blackbox_diagCaptureSimStep();
             camCapture(&camNext);
             objCapture(simNext, projNext); /* next = live = this step's result */
             if (g_initPhase < 2) {
@@ -381,6 +387,7 @@ void gameMainLoop(void) {
          * and the moving objects. The director/target/crash views track an
          * object, but that object (and the player coords they bear against) are
          * now interpolated too, so the whole view stays coherent and smooth. */
+        blackbox_diagBeginRenderFrame();
         camApplyInterp(&camPrev, &camNext, (int64)accumNs, (int64)simStepNs);
         objApplyInterp(simPrev, simNext, projPrev, projNext, (int64)accumNs, (int64)simStepNs);
         renderFrame();

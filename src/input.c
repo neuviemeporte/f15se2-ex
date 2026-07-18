@@ -18,6 +18,8 @@
 #include "const.h"
 #include "gfx.h"
 #include "joystick.h"
+#include "shared/blackbox.h"
+#include "shared/blackbox_diag.h"
 #include <SDL3/SDL.h>
 
 /* Game tick clock (timer.c); pumped here so the window stays responsive and the
@@ -67,6 +69,14 @@ static void ringPush(uint16 word) {
     if (next == ringHead) return; /* full: drop, as the BIOS buffer would */
     keyRing[ringTail] = word;
     ringTail = next;
+    blackbox_recordKey(word);
+}
+
+static void ringPushReplay(uint16 word) {
+    int next = (ringTail + 1) % KEY_RING;
+    if (next == ringHead) return;
+    keyRing[ringTail] = word;
+    ringTail = next;
 }
 
 void input_ringReset(void) {
@@ -84,7 +94,8 @@ uint16 input_readKey(void) {
     uint16 word;
     input_pumpEvents();
     while (ringHead == ringTail) {
-        SDL_Delay(2); /* idle a touch so the wait doesn't peg a core */
+        if (!blackbox_fastForwarding())
+            SDL_Delay(2); /* idle a touch so normal waits don't peg a core */
         input_pumpEvents();
     }
     word = keyRing[ringHead];
@@ -698,10 +709,17 @@ static void pollGamepadMenu(void) {
 
 void input_pumpEvents(void) {
     SDL_Event ev;
+    uint16 replayWord;
     /* Every key-polling wait loop funnels through here, so advance the game
      * clock too: this is what drives the tick counters those loops spin on, and
      * what keeps the window responsive on a poll-only frame. */
     timerPump();
+    /* Key replay is ordered by pump calls, not only by ticks. End/menu phases
+     * can stop the timer and clear the ring between two distinct input polls. */
+    blackbox_noteInputPump();
+    if (blackbox_replaying()) {
+        while (blackbox_replayNextKey(&replayWord)) ringPushReplay(replayWord);
+    }
     while (SDL_PollEvent(&ev)) {
         joy_handleEvent(&ev); /* device hotplug, every phase */
         /* Window / system events are handled here for every phase, before any
@@ -742,6 +760,14 @@ void input_pumpEvents(void) {
                 gfx_toggleFullscreen();
                 break;
             }
+            /* Host-only diagnostic shortcut: never enqueue it as a game key, so
+             * taking a dump cannot perturb the run being investigated. */
+            if (ev.key.scancode == SDL_SCANCODE_F10 && (ev.key.mod & SDL_KMOD_CTRL) &&
+                blackbox_enabled()) {
+                blackbox_diagWriteAutomaticDump();
+                break;
+            }
+            if (blackbox_replaying()) break;
             if (g_mode == INPUT_MODE_FLIGHT) {
                 uint16 word = biosWord(ev.key.scancode, ev.key.mod);
                 if (word) ringPush(word);
@@ -753,7 +779,7 @@ void input_pumpEvents(void) {
             /* Printable characters for menu text entry arrive here already
              * shifted/localized; queue each ASCII byte in AL (AH = 0). Flight
              * takes its letters as commands from biosWord instead. */
-            if (g_mode == INPUT_MODE_MENU) {
+            if (!blackbox_replaying() && g_mode == INPUT_MODE_MENU) {
                 const char *p = ev.text.text;
                 for (; *p; ++p) {
                     unsigned char c = (unsigned char)*p;
@@ -766,10 +792,15 @@ void input_pumpEvents(void) {
         }
     }
 
+    if (blackbox_replaying()) {
+        blackbox_applyReplayAxes(&g_joyRawX, &g_joyRawY, &joyAxes[0], &joyAxes[1]);
+        return;
+    }
     if (g_mode == INPUT_MODE_FLIGHT) {
         updateStick();
         pollGamepadFlight();
     } else {
         pollGamepadMenu();
     }
+    blackbox_recordAxes(g_joyRawX, g_joyRawY, joyAxes[0], joyAxes[1]);
 }

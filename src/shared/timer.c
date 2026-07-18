@@ -14,6 +14,7 @@
  */
 
 #include "inttype.h"
+#include "blackbox.h"
 #include <dos.h>
 #include <SDL3/SDL.h>
 
@@ -46,6 +47,20 @@ void setTimerTickHook(void(far *fn)(void)) {
 void timerPump(void) {
     Uint64 now;
     if (!timerRunning) return;
+    if (blackbox_enabled()) {
+        if (blackbox_pauseReached()) return;
+        timerCounter++;
+        timerCounter2++;
+        timerCounter3++;
+        timerCounter4++;
+        blackbox_noteTick();
+        if (gameTickHook != 0)
+            gameTickHook();
+        /* A tick snapshot must observe the completed per-tick game update, not
+         * the state between incrementing the clock and running its hook. */
+        blackbox_afterTick();
+        return;
+    }
     now = SDL_GetTicksNS();
     if (now > nextTickNs + MAX_CATCHUP_NS)
         nextTickNs = now; /* fell too far behind: resync, don't burst */
@@ -64,6 +79,7 @@ void timerPump(void) {
  * pacing and interpolation alpha (same clock timerPump advances the 60 Hz ticks
  * from, so sim cadence and tick counters stay coherent). */
 uint64 timerNowNs(void) {
+    if (blackbox_enabled()) return blackbox_timerNowNs();
     return SDL_GetTicksNS();
 }
 
@@ -71,7 +87,7 @@ uint64 timerNowNs(void) {
  * clock and yield the CPU so the wait doesn't peg a core. */
 void timerYield(void) {
     timerPump();
-    SDL_DelayNS(SDL_NS_PER_MS);
+    if (!blackbox_fastForwarding()) SDL_DelayNS(SDL_NS_PER_MS);
 }
 
 void setTimerIrqHandler(void) {

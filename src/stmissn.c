@@ -12,6 +12,7 @@
 #include "stdata.h"
 #include "stgen.h"
 #include "stmissn.h"
+#include "shared/blackbox.h"
 #include "stpilot.h"
 #include "stsprit.h"
 #include "sttypes.h"
@@ -151,7 +152,7 @@ int joyOrKey() {
 }
 
 void waitMdaCgaStatus(int16 iter) {
-    SDL_Delay(1000 * iter / 60);
+    if (!blackbox_fastForwarding()) SDL_Delay(1000 * iter / 60);
 }
 
 void drawLine(const int16 *pageNum, int x1, int y1, int x2, int y2, int color) {
