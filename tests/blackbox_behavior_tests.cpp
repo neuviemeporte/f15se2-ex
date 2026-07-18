@@ -8,9 +8,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <iostream>
 #include <string>
-#include <unistd.h>
 
 namespace {
 
@@ -42,10 +42,14 @@ void require(bool condition, const char *message) {
 }
 
 std::string tempLogPath() {
-    char path[] = "/tmp/f15-blackbox-test-XXXXXX";
-    int fd = mkstemp(path);
-    if (fd >= 0) close(fd);
-    return std::string(path);
+    static unsigned sequence = 0;
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() /
+        ("f15-blackbox-test-" + std::to_string(SDL_GetTicksNS()) + "-" +
+         std::to_string(sequence++));
+    FILE *file = std::fopen(path.string().c_str(), "wb");
+    if (file) std::fclose(file);
+    return path.string();
 }
 
 } // namespace

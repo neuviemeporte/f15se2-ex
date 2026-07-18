@@ -141,6 +141,26 @@ int main() {
                 "blackbox recording leaves missing persistent files missing");
     }
 
+    {
+        const auto recordLogPath = testDir / "record-existing.log";
+        {
+            std::ofstream hallFame("HallFame", std::ios::binary);
+            hallFame << "LOCAL";
+        }
+        require(blackbox_startRecord(recordLogPath.string().c_str(), kReplaySeed) != 0,
+                "test can record an existing mutable file");
+        input = openFile("HallFame", kDosReadMode);
+        require(input != nullptr && fileReadRaw(input, buf, kReadWholeRemainingStream) == 5 &&
+                    std::string(buf, 5) == "LOCAL",
+                "recording captures an existing HallFame without changing normal reads");
+        fileClose(input);
+        blackbox_shutdown();
+        require(readWholeFile(recordLogPath).find("mutable_file HallFame 5 4c4f43414c") !=
+                    std::string::npos,
+                "existing mutable state is encoded in the recording");
+        std::filesystem::remove("HallFame");
+    }
+
     // Null/zero-size guards: the I/O helpers reject bad streams before dereferencing.
     require(fileReadRaw(nullptr, buf, kSingleByte) == kNullStreamError,
             "fileReadRaw reports null stream");

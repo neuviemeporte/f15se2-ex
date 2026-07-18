@@ -1,16 +1,20 @@
 #include "egcode.h"
 #include "inttype.h"
+#include "shared/blackbox.h"
 
 #include <SDL3/SDL_timer.h>
 
 #include <cstdlib>
 #include <iostream>
 
-uint8 timerCounter = 0;
-uint8 timerCounter2 = 0;
-uint8 timerCounter3 = 0;
-uint8 timerCounter4 = 0;
-uint8 timerHandlerInstalled = 0;
+/* The LINK_CORE test uses the live timer globals defined by stdata.c. Keep
+ * declarations here because the translated data headers expose only the subset
+ * used by original modules. */
+extern uint8 timerCounter;
+extern uint8 timerCounter2;
+extern uint8 timerCounter3;
+extern uint8 timerCounter4;
+extern uint8 timerHandlerInstalled;
 
 namespace {
 
@@ -69,6 +73,17 @@ int main() {
             "timerYield/timerPump advance all original timer counters together");
     require(g_hookCalls == timerCounter,
             "timerPump invokes the original per-tick hook once per advanced tick");
+
+    resetTimerState();
+    require(blackbox_startDebug(BLACKBOX_DEFAULT_SEED) != 0,
+            "timer test can enable deterministic blackbox time");
+    setTimerTickHook(testTickHook);
+    setTimerIrqHandler();
+    timerPump();
+    require(blackbox_tick() == 1 && timerCounter == 1 && timerCounter2 == 1 &&
+                timerCounter3 == 1 && timerCounter4 == 1 && g_hookCalls == 1,
+            "blackbox timer pump advances exactly one deterministic tick and hook");
+    blackbox_shutdown();
 
     resetTimerState();
     setTimerTickHook(testTickHook);
