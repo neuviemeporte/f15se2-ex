@@ -2,6 +2,7 @@
 #include "shared/blackbox_cli.h"
 #include "shared/blackbox_diag.h"
 #include "shared/blackbox_gl.h"
+#include "shared/blackbox_snapshot.h"
 #include "shared/blackbox_state.h"
 #include "egdata.h"
 #include "strand.h"
@@ -66,6 +67,13 @@ void testCli(const std::filesystem::path &recordPath) {
     require(blackbox_cliParseOption(&options, 2, singleArgv, &index) == 0,
             "CLI leaves unrelated options to the main parser");
 
+    char replayPath[] = "replay.bb";
+    char *replayArgv[] = {program, replayOption, replayPath};
+    index = 1;
+    require(blackbox_cliParseOption(&options, 3, replayArgv, &index) == 1 &&
+                options.replayPath == replayPath,
+            "CLI parses and consumes a replay path");
+
     char *missingArgv[] = {program, replayOption};
     index = 1;
     require(blackbox_cliParseOption(&options, 2, missingArgv, &index) == -1,
@@ -128,6 +136,15 @@ void testCli(const std::filesystem::path &recordPath) {
     blackbox_cliInit(&options);
     require(blackbox_cliStart(&options) && !blackbox_enabled(),
             "CLI accepts normal mode without enabling blackbox");
+
+    writeFile(recordPath, validLog());
+    blackbox_cliInit(&options);
+    options.replayPath = recordString.c_str();
+    options.fastForwardTick = 10;
+    options.ignoreBuild = 1;
+    require(blackbox_cliStart(&options) && blackbox_fastForwarding(),
+            "CLI starts replay and applies its fast-forward target");
+    blackbox_shutdown();
 }
 
 void testState(const std::filesystem::path &path) {
@@ -297,6 +314,87 @@ void testDiagnosticTransitions(const std::filesystem::path &path) {
     g_projectiles[0] = savedProjectile;
 }
 
+void testRngSnapshotsAndDivergence(const std::filesystem::path &dir) {
+    const auto streamsPath = dir / "streams.bb";
+    const auto recordPath = dir / "coverage-record.bb";
+    const auto snapshotPath = dir / "snapshot.json";
+    const auto dumpPath = dir / "render-dump.txt";
+
+    writeFile(streamsPath, validLog(
+        "rng_seed 9 1234\nrng 9 2468\nframe 9 1 deadbeef\nkey 9 9 1234\n"));
+    require(blackbox_startReplay(streamsPath.string().c_str()),
+            "replay accepts complete deterministic event streams");
+    blackbox_shutdown();
+
+    require(blackbox_startReplay(streamsPath.string().c_str()),
+            "external-seed divergence fixture starts replay");
+    require(blackbox_seedExternalRandom(9999) == 1234,
+            "replay restores an external seed despite a tick mismatch");
+    (void)blackbox_seedExternalRandom(9999);
+    blackbox_shutdown();
+
+    require(blackbox_startRecord(recordPath.string().c_str(), kSeed),
+            "recording starts for duplicate-axis suppression");
+    blackbox_recordAxes(1, 2, 3, 4);
+    blackbox_recordAxes(1, 2, 3, 4);
+    blackbox_shutdown();
+
+    seedRandom();
+    int16 clockSeed = 0;
+    gameSrandFromClock(&clockSeed);
+    require(blackbox_startDebug(kSeed), "debug starts for RNG wrapper coverage");
+    seedRandom();
+    gameSrandFromClock(&clockSeed);
+    (void)gameRand();
+    blackbox_setBuildVersion("build-\"\\\n");
+    require(blackbox_snapshotWriteJson(snapshotPath.string().c_str()),
+            "debug snapshot escapes build metadata as valid JSON");
+    blackbox_shutdown();
+
+    require(blackbox_startRecord(recordPath.string().c_str(), kSeed),
+            "record mode starts for snapshot and clock-seed coverage");
+    gameSrandFromClock(&clockSeed);
+    require(blackbox_snapshotWriteJson(snapshotPath.string().c_str()),
+            "record-mode state can be serialized");
+    blackbox_shutdown();
+
+    blackbox_setBuildVersion("test-build");
+    writeFile(streamsPath, validLog());
+    require(blackbox_startReplay(streamsPath.string().c_str()),
+            "replay mode starts for snapshot coverage");
+    require(blackbox_snapshotWriteJson(snapshotPath.string().c_str()),
+            "replay-mode state can be serialized");
+    blackbox_shutdown();
+
+    writeFile(streamsPath, validLog(
+        "marker 9 expected 1 2 3\n"
+        "state 9 9 expected deadbeef\n"
+        "render_hash 9 9 9 9 9 deadbeef\n"));
+    require(blackbox_startReplay(streamsPath.string().c_str()),
+            "diagnostic stream fixture starts replay");
+    blackbox_shutdown();
+    require(blackbox_startReplay(streamsPath.string().c_str()),
+            "diagnostic divergence fixture restarts replay");
+    blackbox_diagMarker("actual", 4, 5, 6);
+    blackbox_diagCaptureSimStep();
+    R3DScene scene = {nullptr, 1, 2, 3, 4, 5, 6, 1};
+    blackbox_diagBeginRenderFrame();
+    blackbox_diagRenderBeginScene(&scene);
+    blackbox_diagRenderEndScene();
+    blackbox_shutdown();
+
+    require(blackbox_startDebug(kSeed), "debug starts for render-command diagnostics");
+    R3DSubmit submit = {g_world3dData, 1, 2, 3, 4, 5, 6, 0};
+    R3DLine line = {1, 2, 3, 4, 5, 6, 15};
+    blackbox_diagBeginRenderFrame();
+    blackbox_diagRenderBeginScene(&scene);
+    for (int i = 0; i < 300; ++i) blackbox_diagRenderSubmit(&submit);
+    blackbox_diagRenderLine(&line);
+    require(blackbox_diagWriteDump(dumpPath.string().c_str()),
+            "diagnostic dump includes retained and dropped render commands");
+    blackbox_shutdown();
+}
+
 } // namespace
 
 int main() {
@@ -312,6 +410,7 @@ int main() {
     testState(statePath);
     testCoreFailures(replayPath);
     testDiagnosticTransitions(dir / "diagnostics.bb");
+    testRngSnapshotsAndDivergence(dir);
 
     blackbox_shutdown();
     std::filesystem::remove_all(dir);

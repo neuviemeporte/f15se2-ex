@@ -190,6 +190,8 @@ int main() {
     require(blackbox_replayNextKey(&word) != 0 && word == kBiosWord,
             "replay emits the recorded BIOS key on the matching input poll");
     blackbox_diagMarker("test_event", 1, 2, 3);
+    blackbox_diagMarker("test_event", 1, 2, 3);
+    blackbox_diagCaptureSimStep();
     blackbox_diagCaptureSimStep();
     {
         R3DScene scene = {nullptr, 1, 2, 3, 4, 5, 6, 1};
@@ -199,6 +201,7 @@ int main() {
         blackbox_diagRenderBeginScene(&scene);
         blackbox_diagRenderSubmit(&submit);
         blackbox_diagRenderLine(&line);
+        blackbox_diagRenderEndScene();
         blackbox_diagRenderEndScene();
     }
     uint8 rawX = 0x80, rawY = 0x80, joyX = 0x80, joyY = 0x80;

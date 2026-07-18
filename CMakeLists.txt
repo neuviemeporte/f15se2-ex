@@ -459,6 +459,8 @@ add_behavior_test(load_behavior_tests SOURCES
 add_behavior_test(shared_timer_behavior_tests LINK_CORE)
 add_behavior_test(blackbox_behavior_tests LINK_CORE)
 add_behavior_test(blackbox_validation_tests LINK_CORE)
+add_behavior_test(blackbox_gl_behavior_tests SOURCES
+    ${SRC_DIR}/shared/blackbox_gl.c ${SRC_DIR}/r2d.c)
 add_behavior_test(shared_runtime_behavior_tests SOURCES
     ${SRC_DIR}/shared/cleanup.c ${SRC_DIR}/shared/drawstr.c)
 add_behavior_test(eg3drast_behavior_tests LINK_CORE)
