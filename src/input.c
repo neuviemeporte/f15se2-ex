@@ -742,6 +742,11 @@ void input_pumpEvents(void) {
                 gfx_toggleFullscreen();
                 break;
             }
+            /* Alt+P toggles the FPS overlay. */
+            if (ev.key.scancode == SDL_SCANCODE_P && (ev.key.mod & SDL_KMOD_ALT)) {
+                gfx_toggleFps();
+                break;
+            }
             if (g_mode == INPUT_MODE_FLIGHT) {
                 uint16 word = biosWord(ev.key.scancode, ev.key.mod);
                 if (word) ringPush(word);

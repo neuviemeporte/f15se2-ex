@@ -28,6 +28,23 @@ option(COVERAGE "Build with gcov code-coverage instrumentation" OFF)
 # through the front end each run.
 option(AUTOSTART "Skip menus and start a mission directly (DEBUG_AUTOSTART)" OFF)
 
+# The DJGPP toolchain (build-scripts/i586-pc-msdosdjgpp.cmake) sets
+# CMAKE_SYSTEM_NAME=DOS. DOS has no GPU/OpenGL, so the GL backend is compiled out
+# there and the software rasterizer is the only 3D backend.
+if(CMAKE_SYSTEM_NAME STREQUAL "DOS")
+    set(F15_DOS TRUE)
+endif()
+
+# 3D render backends are chosen per platform at compile time; the runtime probe
+# (r3d.c) then claims the first compiled-in backend whose environment it supports.
+# OpenGL 1.1 is the desktop default but does not exist on DOS. A future GPU backend
+# such as Glide would gate the same way (DOS-yes / desktop-no).
+option(ENABLE_OPENGL1 "Build the OpenGL 1.1 3D backend" ON)
+if(F15_DOS AND ENABLE_OPENGL1)
+    message(STATUS "DOS build: forcing ENABLE_OPENGL1 OFF (no GPU on DOS)")
+    set(ENABLE_OPENGL1 OFF)
+endif()
+
 #==============================================================================
 # Global settings
 #==============================================================================
@@ -51,12 +68,23 @@ else()
     if(DOWNLOAD_DEPENDENCIES)
         message(STATUS "System SDL3 not found, building it from source")
         include(FetchContent)
-        FetchContent_Declare(
-            SDL3
-            GIT_REPOSITORY "https://github.com/libsdl-org/SDL.git"
-            GIT_TAG "release-3.4.12"
-            UPDATE_DISCONNECTED TRUE
-        )
+        if(F15_DOS)
+            # DOS support landed after 3.4.12; pin the commit that carries the DOS
+            # video/timer/audio backends and the DJGPP toolchain.
+            FetchContent_Declare(
+                SDL3
+                URL "https://github.com/libsdl-org/SDL/archive/e442a9a5e1d6eb2621e9206f5176c53b0d034e09.tar.gz"
+                URL_HASH SHA256=8ebc84ff04c076c0e6249c885fc1efc6dc5f13a411b31de8621478646ff76bcf
+                UPDATE_DISCONNECTED TRUE
+            )
+        else()
+            FetchContent_Declare(
+                SDL3
+                GIT_REPOSITORY "https://github.com/libsdl-org/SDL.git"
+                GIT_TAG "release-3.4.12"
+                UPDATE_DISCONNECTED TRUE
+            )
+        endif()
         FetchContent_MakeAvailable(SDL3)
     else()
         # DOWNLOAD_DEPENDENCIES is off: a system SDL3 is mandatory.
@@ -191,6 +219,11 @@ set(END_SOURCES
 list(APPEND F15SE2_SOURCES ${EGAME_SOURCES})
 list(APPEND F15SE2_SOURCES ${END_SOURCES})
 
+# The GL backend is compiled in only when the OpenGL 1.1 backend is enabled.
+if(NOT ENABLE_OPENGL1)
+    list(REMOVE_ITEM F15SE2_SOURCES ${SRC_DIR}/r3d_gl.c)
+endif()
+
 #==============================================================================
 # Target
 #==============================================================================
@@ -204,11 +237,16 @@ set_source_files_properties(
 
 # OpenGL for the GL 3D backend (r3d_gl.c). The immediate-mode 1.x path needs only
 # the base GL library; SDL3 supplies the GL headers and context management.
-find_package(OpenGL REQUIRED)
+if(ENABLE_OPENGL1)
+    find_package(OpenGL REQUIRED)
+endif()
 
 # Some tests use std::thread; link a threads library explicitly so it resolves
-# across toolchains (not all fold pthread into libc).
-find_package(Threads REQUIRED)
+# across toolchains (not all fold pthread into libc). DJGPP has no pthreads and the
+# tests aren't cross-built for DOS, so skip it there.
+if(NOT F15_DOS)
+    find_package(Threads REQUIRED)
+endif()
 
 #------------------------------------------------------------------------------
 # Sanitizers (GCC/Clang, opt-in). Applied at directory scope so the executable
@@ -270,10 +308,20 @@ target_compile_definitions(f15se2_core PUBLIC DEBUG)
 if(AUTOSTART)
     target_compile_definitions(f15se2_core PUBLIC DEBUG_AUTOSTART)
 endif()
-target_link_libraries(f15se2_core PUBLIC SDL3::SDL3 OpenGL::GL)
+target_link_libraries(f15se2_core PUBLIC SDL3::SDL3)
+if(ENABLE_OPENGL1)
+    target_link_libraries(f15se2_core PUBLIC OpenGL::GL)
+    target_compile_definitions(f15se2_core PUBLIC ENABLE_OPENGL1)
+endif()
 
 add_executable(f15se2 ${SRC_DIR}/f15.c)
-set_target_properties(f15se2 PROPERTIES OUTPUT_NAME "f15se2-ex")
+# DOS 8.3 filenames cap the base name at 8 chars, so "f15se2-ex" (9) becomes
+# "f15se2ex" there; other platforms keep the full name.
+if(F15_DOS)
+    set_target_properties(f15se2 PROPERTIES OUTPUT_NAME "f15se2ex")
+else()
+    set_target_properties(f15se2 PROPERTIES OUTPUT_NAME "f15se2-ex")
+endif()
 target_link_libraries(f15se2 PRIVATE f15se2_core)
 
 # Strip symbols from Release builds to shrink the binary (GNU/Clang only; MSVC
@@ -377,6 +425,10 @@ add_custom_command(
     COMMENT "Mirroring assets to the build dir"
 )
 add_custom_target(mirror_assets ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/assets.stamp)
+
+# The behavior tests and coverage targets are host-only (they run under ctest with
+# SDL dummy drivers and std::thread); they aren't cross-built for the DOS target.
+if(NOT F15_DOS)
 
 #==============================================================================
 # Behavior tests
@@ -513,3 +565,5 @@ if(COVERAGE)
         message(WARNING "COVERAGE=ON but gcovr not found; the `coverage` target is unavailable")
     endif()
 endif()
+
+endif() # NOT F15_DOS (host-only tests + coverage)
