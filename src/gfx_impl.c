@@ -37,6 +37,11 @@ static bool s_useGL = false; /* OpenGL backend owns the context + present */
  * targets with no compositor/scaling (DOS); desktop keeps the renderer for its
  * resizable, scaled window. */
 static bool s_directFB = false;
+/* Software frame pacer for the no-vsync direct-FB present (DOS): pads each frame to
+ * the slowest recent frame's wall time so delivery is even. s_paceCapNs != 0 forces
+ * a fixed cap (F15_FPS_CAP) instead of the adaptive target. */
+static bool s_pace = false;
+static Uint64 s_paceCapNs = 0;
 
 /* FPS overlay (toggle: Alt+P, handled in input.c). Frames are counted per present
  * in gfx_presentPage; the shown value refreshes ~2x/second so it reads steady. It's
@@ -419,20 +424,29 @@ void gfx_freeSpriteBuf(int handle) {
  * clears it when the title is dismissed. */
 static bool gfxHiResActive = false;
 
-/* Bring up the direct-framebuffer present: request the native-resolution INDEX8
- * fullscreen mode (mode 13h on DOS) and adopt its window surface. Only the DOS
- * driver maps SDL_UpdateWindowSurface straight to VRAM + the VGA DAC, so the fast
- * path is gated to it; elsewhere this returns false and the caller keeps the
- * SDL_Renderer (which scales the resizable desktop window). */
+/* Bring up the window-surface present: request the native-resolution INDEX8
+ * fullscreen mode (mode 13h on DOS) and adopt its window surface, presenting with
+ * SDL_UpdateWindowSurface (a straight VRAM copy + VGA DAC program) instead of the
+ * SDL_Renderer texture-upload path. Gated to DOS; elsewhere this returns false and
+ * the caller keeps the SDL_Renderer (which scales the resizable desktop window).
+ *
+ * Present pacing: the direct-framebuffer hint skips SDL's vsync wait (which is
+ * pathologically slow under DOSBox — it collapsed the frame rate), so the loop runs
+ * free. That surfaces the fixed-timestep sim's per-frame step-count variance (0 vs 1
+ * step, and a step costs real time) as judder when the render is cheap (low detail /
+ * high fps). Instead of vsync we pace the loop ourselves (gfx_paceFrame): each frame
+ * is padded to the slowest recent frame's wall time, so delivery is even without
+ * capping throughput below what the scene can sustain. */
 static bool gfx_initDirectFB(void) {
 #ifdef __DJGPP__
     SDL_DisplayID disp;
     SDL_DisplayMode **modes;
-    int i, n = 0;
+    int i, n = 0, cap;
     SDL_Surface *ws;
+    const char *capEnv;
 
-    /* The DOS driver copies system RAM straight to VRAM (dosmemput) and reprograms
-     * the DAC only when the surface palette changes — enable that fast path. */
+    /* Fast present: copy system RAM straight to VRAM, no per-frame texture upload.
+     * Must be set before the first SDL_GetWindowSurface. */
     SDL_SetHint(SDL_HINT_DOS_ALLOW_DIRECT_FRAMEBUFFER, "1");
 
     /* Pin the 320x200 INDEX8 (mode 13h) fullscreen mode so the window surface comes
@@ -468,7 +482,14 @@ static bool gfx_initDirectFB(void) {
      * driver reprograms the DAC on the next present. */
     if (!gfxPalette) gfxPalette = gfx_buildPalette();
     if (gfxPalette) SDL_SetSurfacePalette(ws, gfxPalette);
-    LogInfo(("direct FB present: %dx%d INDEX8 window surface", ws->w, ws->h));
+
+    /* Even out frame delivery ourselves (no vsync). F15_NO_PACE disables it (raw
+     * throughput, judder); F15_FPS_CAP=<n> forces a fixed cap instead of adaptive. */
+    s_pace = SDL_getenv("F15_NO_PACE") == NULL;
+    capEnv = SDL_getenv("F15_FPS_CAP");
+    cap = capEnv ? SDL_atoi(capEnv) : 0;
+    if (cap > 0) s_paceCapNs = (Uint64)SDL_NS_PER_SECOND / (Uint64)cap;
+    LogInfo(("direct FB present: %dx%d INDEX8, pace=%d cap=%d", ws->w, ws->h, s_pace, cap));
     return true;
 #else
     return false;
@@ -587,6 +608,40 @@ static void gfx_drawFpsOverlay(SDL_Surface *s) {
     }
 }
 
+/* Pace frame delivery for the no-vsync direct-FB present. Called once per present,
+ * AFTER the present: measure the frame's own work (present-to-present, excluding this
+ * pad), then sleep until the frame occupies `target` — the slowest work time over a
+ * ~1s window (or the fixed F15_FPS_CAP). Padding every frame up to the slowest evens
+ * the cadence the fixed-timestep sim's 0-vs-1-step cost variance would otherwise make
+ * lumpy. On desktop the SDL_Renderer's own vsync paces instead, so s_pace stays off. */
+static void gfx_paceFrame(void) {
+    static Uint64 frameStart = 0;
+    static Uint64 ring[16];
+    static int ringN = 0, ringPos = 0;
+    Uint64 now, target = 0;
+    int i;
+    if (!s_pace) return;
+    now = SDL_GetTicksNS();
+    if (frameStart != 0) {
+        Uint64 elapsed = now - frameStart;
+        if (s_paceCapNs) {
+            target = s_paceCapNs;
+        } else {
+            /* Feed the window (ignore stalls — menu key-waits, level loads — so a
+             * one-off long gap doesn't peg the target and starve the frame rate). */
+            if (elapsed < 200 * SDL_NS_PER_MS) {
+                ring[ringPos] = elapsed;
+                ringPos = (ringPos + 1) % 16;
+                if (ringN < 16) ringN++;
+            }
+            for (i = 0; i < ringN; i++)
+                if (ring[i] > target) target = ring[i];
+        }
+        if (target > elapsed) SDL_DelayNS(target - elapsed);
+    }
+    frameStart = SDL_GetTicksNS();
+}
+
 /* Count one present and refresh s_fpsValue about twice a second. */
 static void gfx_fpsTick(void) {
     static Uint64 last = 0;
@@ -611,12 +666,14 @@ static void gfx_presentPage(int page) {
     if (gfxHiResActive) {
         if (s_showFps) gfx_drawFpsOverlay(gfx_getHiResSurface());
         gfx_presentHiRes();
+        gfx_paceFrame();
         return;
     }
     {
         SDL_Surface *ps = ensurePage(page);
         if (s_showFps) gfx_drawFpsOverlay(ps);
         r2d_present(ps, gfx_getState()->shakeOffset);
+        gfx_paceFrame();
     }
 }
 
