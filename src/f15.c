@@ -29,6 +29,7 @@
 #include <ctype.h>
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
 
 const int RET_MENU = 0xc;
 const int RET_DEBRIEFING = 0x23;

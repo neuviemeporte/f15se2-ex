@@ -7,7 +7,9 @@
  * registered callback so this module needs no SDL renderer state of its own. */
 #include <SDL3/SDL.h>
 #include "r2d.h"
+#ifdef ENABLE_OPENGL1
 #include "r3d_gl.h"
+#endif
 
 /* The shared 256-entry VGA palette lives in the software backend (gfx_impl.c).
  * Image blits copy raw indices and never read it, but attaching it keeps an
@@ -172,11 +174,13 @@ void r2d_registerSoftwareImage(void (*image)(R2DImage *, int, int, int, int, int
 
 void r2d_submitImage(R2DImage *img, int srcX, int srcY, int w, int h,
                      int dstX, int dstY, int key) {
+#ifdef ENABLE_OPENGL1
     if (img && r2d_vectorActive()) {
         r3dgl_drawImage(img, srcX, srcY, w, h, dstX, dstY, w, h, key); /* 1:1 footprint */
-    } else if (s_swImage) {
-        s_swImage(img, srcX, srcY, w, h, dstX, dstY, key);
+        return;
     }
+#endif
+    if (s_swImage) s_swImage(img, srcX, srcY, w, h, dstX, dstY, key);
 }
 
 void r2d_submitImageScaled(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
@@ -184,13 +188,17 @@ void r2d_submitImageScaled(R2DImage *img, int srcX, int srcY, int srcW, int srcH
     /* GL-only (HD art). Off a vector frame there is no software scaled-blit, so
      * drop — callers fall back to the legacy sprite. */
     if (!img || !r2d_vectorActive()) return;
+#ifdef ENABLE_OPENGL1
     r3dgl_drawImage(img, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH, key);
+#endif
 }
 
 int r2d_submitImageF(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
                      float dstX, float dstY, float dstW, float dstH, int key) {
     if (!img || !r2d_vectorActive()) return 0;
+#ifdef ENABLE_OPENGL1
     r3dgl_drawImageF(img, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH, key);
+#endif
     return 1;
 }
 
@@ -198,19 +206,25 @@ int r2d_submitImageRot(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
                        float cx, float cy, float dstW, float dstH,
                        float angleRad, int key) {
     if (!img || !r2d_vectorActive()) return 0;
+#ifdef ENABLE_OPENGL1
     r3dgl_drawImageRot(img, srcX, srcY, srcW, srcH, cx, cy, dstW, dstH, angleRad, key);
+#endif
     return 1;
 }
 
 int r2d_submitImageWindow(R2DImage *img) {
     if (!img || !r2d_vectorActive()) return 0;
+#ifdef ENABLE_OPENGL1
     r3dgl_drawImageWindow(img);
+#endif
     return 1;
 }
 
 int r2d_submitImageWindowBoxX(R2DImage *img, float boxLeftX) {
     if (!img || !r2d_vectorActive()) return 0;
+#ifdef ENABLE_OPENGL1
     r3dgl_drawImageWindowBoxX(img, boxLeftX);
+#endif
     return 1;
 }
 
@@ -221,36 +235,55 @@ int r2d_submitImageWindowBoxX(R2DImage *img, float boxLeftX) {
 static int s_vectorFrame;
 
 void r2d_vectorBeginFrame(int composePageFirst) {
+#ifdef ENABLE_OPENGL1
     s_vectorFrame = 1;
     /* Set the immediate-draw letterbox+shake context. composePageFirst lays the
      * page backdrop down under the overlay for a pure-2D screen (a flight frame
      * passes 0 — its 3D pass composites the page mid-frame). */
     if (r3dgl_active()) r3dgl_beginOverlay(composePageFirst);
+#else
+    /* No native (GPU) overlay compiled in: every submission bakes into the page. */
+    (void)composePageFirst;
+#endif
 }
 
 int r2d_vectorActive(void) { return s_vectorFrame; }
 
-int r2d_hasNativeOverlay(void) { return r3dgl_active(); }
+int r2d_hasNativeOverlay(void) {
+#ifdef ENABLE_OPENGL1
+    return r3dgl_active();
+#else
+    return 0;
+#endif
+}
 
 void r2d_submitLine(int x1, int y1, int x2, int y2, int color) {
-    if (r2d_vectorActive()) r3dgl_drawLine(x1, y1, x2, y2, color);
-    else if (s_swLine) s_swLine(x1, y1, x2, y2, color);
+#ifdef ENABLE_OPENGL1
+    if (r2d_vectorActive()) { r3dgl_drawLine(x1, y1, x2, y2, color); return; }
+#endif
+    if (s_swLine) s_swLine(x1, y1, x2, y2, color);
 }
 
 void r2d_submitPoint(int x, int y, int color) {
-    if (r2d_vectorActive()) r3dgl_drawPoint(x, y, color);
-    else if (s_swPoint) s_swPoint(x, y, color);
+#ifdef ENABLE_OPENGL1
+    if (r2d_vectorActive()) { r3dgl_drawPoint(x, y, color); return; }
+#endif
+    if (s_swPoint) s_swPoint(x, y, color);
 }
 
 void r2d_submitRect(int x0, int y0, int x1, int y1, int color) {
+#ifdef ENABLE_OPENGL1
     if (r2d_vectorActive()) r3dgl_drawRect(x0, y0, x1, y1, color);
+#endif
     /* else: caller bakes via fillSpanRect (software retained page) */
 }
 
 void r2d_submitQuadF(const float *xy, int color, int cx0, int cy0, int cx1, int cy1) {
     /* GL vector frame only; the software page has no rotated/sub-grid text path, so
      * the caller keeps upright integer glyphs there (the DOS look). */
+#ifdef ENABLE_OPENGL1
     if (r2d_vectorActive()) r3dgl_drawQuadF(xy, color, cx0, cy0, cx1, cy1);
+#endif
 }
 
 /* Cohen-Sutherland clip of an integer segment to the inclusive box [x0,x1]x[y0,y1].
@@ -285,9 +318,13 @@ static int csClip(int *px1, int *py1, int *px2, int *py2,
 
 void r2d_submitScopeLine(float x1, float y1, float x2, float y2, int color,
                          int cx0, int cy0, int cx1, int cy1, float widthScale) {
+#ifdef ENABLE_OPENGL1
     if (r2d_vectorActive()) {
         r3dgl_drawScopeLine(x1, y1, x2, y2, color, cx0, cy0, cx1, cy1, widthScale);
-    } else if (s_swLine) {
+        return;
+    }
+#endif
+    if (s_swLine) {
         int ix1 = (int)SDL_floorf(x1 + 0.5f), iy1 = (int)SDL_floorf(y1 + 0.5f);
         int ix2 = (int)SDL_floorf(x2 + 0.5f), iy2 = (int)SDL_floorf(y2 + 0.5f);
         if (csClip(&ix1, &iy1, &ix2, &iy2, cx0, cy0, cx1 - 1, cy1 - 1))
@@ -300,7 +337,9 @@ void r2d_submitPoly(const short *xy, int n, int color,
     /* GL vector frame only; software fills the face in the page span rasterizer
      * and never reaches here (the call site branches on r2d_vectorActive first). */
     if (n < 3 || !r2d_vectorActive()) return;
+#ifdef ENABLE_OPENGL1
     r3dgl_drawPoly(xy, n, color, clipX0, clipY0, clipX1, clipY1);
+#endif
 }
 
 void r2d_vectorMarkPresented(void) {
@@ -308,13 +347,19 @@ void r2d_vectorMarkPresented(void) {
 }
 
 void r2d_present(struct SDL_Surface *page, int shakeOffset) {
+#ifdef ENABLE_OPENGL1
     if (r3dgl_active()) {
         r3dgl_present(page, shakeOffset);
         return;
     }
+#endif
     if (s_swPresent) s_swPresent(page, shakeOffset);
 }
 
 const char *r2d_backendName(void) {
+#ifdef ENABLE_OPENGL1
     return r3dgl_active() ? "opengl1" : "software";
+#else
+    return "software";
+#endif
 }
