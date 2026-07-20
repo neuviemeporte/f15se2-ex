@@ -130,6 +130,11 @@ void fireGroundThreat(int16 planeIdx) {
                                     if (sams[threatType].lockRange > (uint16)range[0]) {
                                         g_projectiles[slot].mapX = g_planeTable.planes[planeIdx].mapX + 8;
                                         g_projectiles[slot].mapY = g_planeTable.planes[planeIdx].mapY;
+                                        /* Seed the fine (mapX<<5) position so the first
+                                         * movement step (which derives mapX = fineX>>5)
+                                         * starts at the launcher, not a stale slot value. */
+                                        g_projectiles[slot].fineX = ((int32)(uint16)g_projectiles[slot].mapX << 5) & 0x1FFFFF;
+                                        g_projectiles[slot].fineY = ((int32)(uint16)g_projectiles[slot].mapY << 5) & 0x1FFFFF;
                                         g_projectiles[slot].alt = 0;
                                         g_projectiles[slot].speed = 1;
                                         g_projectiles[slot].worldX = bearing[0];
