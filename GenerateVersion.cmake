@@ -10,6 +10,7 @@ execute_process(
 if(NOT GIT_VERSION)
     set(GIT_VERSION "v0.0.0-unknown")
 endif()
+message(STATUS "Using version number ${GIT_VERSION}")
 
 # Configure the file. configure_file is smart: it only writes
 # the output file if the content actually changed, preventing useless rebuilds.
