@@ -49,7 +49,7 @@ def parse_log(path: Path) -> tuple[int | None, list[Event]]:
                 continue
             if kind == "mutable_file":
                 continue
-            if kind in {"phase", "rng_seed", "rng", "key", "axes", "frame",
+            if kind in {"phase", "timer_pump", "rng_seed", "rng", "key", "axes", "frame",
                         "marker", "state", "render_scene", "render_object",
                         "render_line", "render_hash"} and len(parts) >= 2:
                 try:
@@ -65,6 +65,8 @@ def parse_log(path: Path) -> tuple[int | None, list[Event]]:
 def format_event(event: Event) -> str:
     if event.kind == "key" and len(event.fields) == 2:
         detail = f"pump={event.fields[0]} word=0x{int(event.fields[1], 16):04x}"
+    elif event.kind == "timer_pump" and len(event.fields) == 1:
+        detail = f"ticks={event.fields[0]}"
     elif event.kind == "axes" and len(event.fields) == 4:
         detail = f"raw=({event.fields[0]},{event.fields[1]}) joy=({event.fields[2]},{event.fields[3]})"
     elif event.kind == "rng" and event.fields:

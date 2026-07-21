@@ -21,6 +21,7 @@ def main() -> int:
         f.write("build_version test\n")
         f.write("mutable_file HallFame 0 -\n")
         f.write("phase 1 start\n")
+        f.write("timer_pump 2 0\n")
         f.write("key 2 17 1f73\n")
         f.write("axes 3 64 128 128 192\n")
         f.write("rng_seed 4 7\n")
@@ -36,7 +37,8 @@ def main() -> int:
             text=True,
         )
         event_lines = [line for line in text.splitlines() if line.lstrip()[:1].isdigit()]
-        require(any(" key " in line for line in event_lines) and
+        require(any("timer_pump" in line and "ticks=0" in line for line in event_lines) and
+                any(" key " in line for line in event_lines) and
                 any(" axes " in line for line in event_lines) and
                 not any(" phase " in line for line in event_lines),
                 "text window includes only events around the requested tick")
