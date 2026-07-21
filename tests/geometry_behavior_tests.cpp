@@ -9,6 +9,7 @@
 // hand-checked against the current source.
 #include "egdata.h"
 #include "egtypes.h"
+#include "egterrain.h"
 #include "inttype.h"
 #include "struct.h"
 #include "comm.h"
@@ -223,6 +224,41 @@ void zeroTileGridBuffers() {
 
 int main() {
     test_headless_init();
+
+    // --- rendered terrain face height --------------------------------------
+    {
+        MeshLod terrain = {};
+        int height = 0;
+        terrain.form = MESH_FORM_MODEL;
+        terrain.nVerts = 4;
+        terrain.verts[0] = {-10, -10, 5};
+        terrain.verts[1] = {10, -10, 5};
+        terrain.verts[2] = {10, 10, 15};
+        terrain.verts[3] = {-10, 10, 15};
+        terrain.nEdges = 4;
+        terrain.edges[0] = {0, 1, 0};
+        terrain.edges[1] = {2, 3, 0}; /* deliberately unordered */
+        terrain.edges[2] = {1, 2, 0};
+        terrain.edges[3] = {3, 0, 0};
+        terrain.nFaces = 1;
+        terrain.faces[0].nEdges = 4;
+        terrain.faces[0].edge[0] = 0;
+        terrain.faces[0].edge[1] = 1;
+        terrain.faces[0].edge[2] = 2;
+        terrain.faces[0].edge[3] = 3;
+        terrain.faces[0].colorByte = 3;
+        require(egTerrainMeshHeight(&terrain, 0, 0, &height) && height == 10,
+                "terrain ray reconstructs unordered edges and interpolates model Z");
+        require(!egTerrainMeshHeight(&terrain, 15, 0, &height),
+                "terrain ray rejects points outside the rendered face");
+        terrain.faces[0].colorByte = 0xff;
+        require(!egTerrainMeshHeight(&terrain, 0, 0, &height),
+                "terrain ray ignores transparent faces like the renderers");
+        require(egTerrainViewToFlightAltitude(0x1800) == 0x1800 &&
+                    egTerrainViewToFlightAltitude(0x2800) == 0x3000 &&
+                    egTerrainViewToFlightAltitude(0x3800) == 0x6000,
+                "terrain collision reverses the flight model altitude compression");
+    }
 
     // --- scaleCoordToLod rounded LOD shifts (eg3dproj) ----------------------
     for (auto [level, coord, expected] : {std::tuple{4, 0x10000u, (0x10000u + 0x20u) >> 6},

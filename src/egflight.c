@@ -8,6 +8,7 @@
 #include "egpic.h"
 #include "egtacmap.h"
 #include "egthreat.h"
+#include "egterrain.h"
 #include "egtypes.h"
 #include "egui.h"
 #include "offsets.h"
@@ -570,6 +571,17 @@ switch_break:
         g_viewZ = ((g_altitude - 0x4000) >> 2) + 0x3000;
     }
 
+    /* Runways/carriers already use g_groundAltitude. Mountains and other tile
+     * geometry never did: sample the same 3DT/3D3 faces the renderer submits and
+     * treat penetration of a higher visual surface as a crash. */
+    egTerrainUpdateHeight(g_ViewX, g_ViewY);
+    if (g_terrainAltitude > g_groundAltitude && g_viewZ <= g_terrainAltitude) {
+        g_viewZ = g_terrainAltitude;
+        g_altitude = egTerrainViewToFlightAltitude(g_viewZ);
+        makeSound(0, 2);
+        finalizeMission(1);
+    }
+
     if (g_groundAltitude == g_viewZ) {
         if (prevAlt > g_groundAltitude && g_inLandingCorridor != 0) {
             makeSound(12, 2);
@@ -1130,13 +1142,16 @@ void drawVectorShape(const int16 *shapeData) {
 
 void waitForKeyPress(void) {
     int16 savedTiming;
+    int key;
 
     audio_engineDroneOff();
     savedTiming = g_frameTimingAccum;
-loop:
-    while (kbhit() == 0);
-    if (egReadKey() == 0x1900)
-        goto loop;
+    /* The DOS version busy-polled BIOS kbhit(). The native blocking reader
+     * pumps SDL/blackbox input and yields between polls, keeping pause from
+     * consuming a CPU core while preserving Alt+P's wait-for-another-key rule. */
+    do {
+        key = egReadKey();
+    } while (key == 0x1900);
     updateEngineSound();
     g_frameTimingAccum = savedTiming;
 }

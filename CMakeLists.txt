@@ -139,6 +139,7 @@ set(EGAME_SOURCES
     ${SRC_DIR}/eg3dgrid.c
     ${SRC_DIR}/eg3dload.c
     ${SRC_DIR}/eg3dmap.c
+    ${SRC_DIR}/egterrain.c
     ${SRC_DIR}/eg3dvp.c
     ${SRC_DIR}/eg3dcam.c
     ${SRC_DIR}/egflight.c

@@ -138,11 +138,11 @@ extern int missionResult;
 extern int selectedMenuItem;
 
 /* Named views into weaponDataBlock[] (offsets documented in endata.c):
- *   planeArray     +0x156  SamDataEntry[] — enemy aircraft specs
+ *   planeArray     +0x14E  SamDataEntry[] — 8-byte prefix then aircraft name
  *   samWeaponTable +0x3B6  Sam[]          — SAM/missile entries
  *   nightMission   +0x6DA  int16          — night-mission flag
  */
-#define planeArray ((struct SamDataEntry *)((unsigned char *)&weaponDataBlock + 0x156))
+#define planeArray ((struct SamDataEntry *)((unsigned char *)&weaponDataBlock + 0x14E))
 #define samWeaponTable ((struct Sam *)((unsigned char *)&weaponDataBlock + 0x3B6))
 #define nightMission (*(int16 *)((unsigned char *)&weaponDataBlock + 0x6DA))
 

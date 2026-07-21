@@ -6,6 +6,7 @@
 // (approxDistance/calcBearing/clampValue are covered by start_behavior_tests.)
 
 #include "endata.h"    /* pulls struct.h, comm.h, endtypes.h */
+#include "enbrief.h"
 #include "worldxfer.h"
 
 #include <cstdlib>
@@ -171,6 +172,12 @@ int main() {
     char copied[16] = {};
     mystrcpy(copied, "VIPER");
     require(std::strcmp(copied, "VIPER") == 0, "mystrcpy copies through the terminating nul");
+    {
+        char eventText[64];
+        formatAircraftShotDownEvent(eventText, 0);
+        require(std::strcmp(eventText, "MIG-23 Flogger shot down") == 0,
+                "debrief reads primary and NATO names from the real packed aircraft table");
+    }
 
     unsigned char memory[] = {1, 2, 3, 4, 5};
     nearmemset(&memory[1], static_cast<char>(0x5A), 3);
