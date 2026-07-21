@@ -1631,6 +1631,54 @@ int main() {
                 "projectSceneObject preserves the original store-transform opcode before sorted insertion");
     }
 
+    // The GL transform bridge must retain the software renderer's model-plane
+    // containment side effect. Four zero normals with threshold +1 contain the
+    // camera (0 < 1 for every plane); changing one threshold to -1 excludes it.
+    {
+        unsigned char model[2 + 4 * 8] = {};
+        int16 combined[9] = {};
+        long camBase = 0, camX = 0, camY = 0;
+        int shade = 0;
+        model[0] = 0; // render mode
+        model[1] = 4; // four plane records
+        for (int plane = 0; plane < 4; ++plane)
+            writeLe16(&model[2 + plane * 8 + 6], 1);
+
+        resetSceneState();
+        require(r3d_objTransformFar(reinterpret_cast<char *>(model), 0, 0, 0,
+                                    0, kSceneRelY, 0,
+                                    combined, &camBase, &camX, &camY, &shade) == 0 &&
+                    g_posVisibleFlag == 1,
+                "GL transform preserves original four-plane containment collision");
+
+        writeLe16(&model[2 + 6], -1);
+        resetSceneState();
+        require(r3d_objTransformFar(reinterpret_cast<char *>(model), 0, 0, 0,
+                                    0, kSceneRelY, 0,
+                                    combined, &camBase, &camX, &camY, &shade) == 0 &&
+                    g_posVisibleFlag == 0,
+                "GL transform rejects a point outside one model plane");
+
+        model[1] = kTransformOpcodeBase | kTransformOpcodeIndex;
+        model[2] = kPointOpcode;
+        resetSceneState();
+        g_spinAngle = kSpinAngle;
+        require(r3d_objTransformFar(reinterpret_cast<char *>(model), 0, 0, 0,
+                                    0, kSceneRelY, 0,
+                                    combined, &camBase, &camX, &camY, &shade) == 0 &&
+                    g_objTransform[kTransformOpcodeIndex] == kSpinAngle &&
+                    g_posVisibleFlag == 0,
+                "GL transform advances past a spinning point-form prefix");
+
+        model[1] = kPointOpcode;
+        resetSceneState();
+        require(r3d_objTransformFar(reinterpret_cast<char *>(model), 0, 0, 0,
+                                    0, kSceneRelY, 0,
+                                    combined, &camBase, &camX, &camY, &shade) == 0 &&
+                    g_posVisibleFlag == 0,
+                "GL transform does not treat point forms as collision volumes");
+    }
+
     std::cout << "eg3drast_internal_behavior_tests passed\n";
     return 0;
 }

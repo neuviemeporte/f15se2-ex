@@ -8,7 +8,6 @@
 #include "egpic.h"
 #include "egtacmap.h"
 #include "egthreat.h"
-#include "egterrain.h"
 #include "egtypes.h"
 #include "egui.h"
 #include "offsets.h"
@@ -569,17 +568,6 @@ switch_break:
         g_viewZ = ((g_altitude - 0x2000) >> 1) + 0x2000;
     } else {
         g_viewZ = ((g_altitude - 0x4000) >> 2) + 0x3000;
-    }
-
-    /* Runways/carriers already use g_groundAltitude. Mountains and other tile
-     * geometry never did: sample the same 3DT/3D3 faces the renderer submits and
-     * treat penetration of a higher visual surface as a crash. */
-    egTerrainUpdateHeight(g_ViewX, g_ViewY);
-    if (g_terrainAltitude > g_groundAltitude && g_viewZ <= g_terrainAltitude) {
-        g_viewZ = g_terrainAltitude;
-        g_altitude = egTerrainViewToFlightAltitude(g_viewZ);
-        makeSound(0, 2);
-        finalizeMission(1);
     }
 
     if (g_groundAltitude == g_viewZ) {
