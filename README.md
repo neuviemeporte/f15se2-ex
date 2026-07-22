@@ -163,12 +163,12 @@ Contributions to this project are very welcome. However, contributors are expect
 1. Keep politics and sensitive topics out of it, this is not the place for it.
 1. No copyrighted content can ever be submitted into the project.
 1. Even though this is already a different game than the reconstruction, we try to maintain some degree of compatibility. So, at least for the files which exist in both projects:
-  1. Don't move routines around, keep the order as is.
-  1. Don't refactor the code unless you are prepared to do it to the reconstruction also. This is actually encouraged, but make sure you plan for the extra work in such case.
-  1. If you have a good reason to break compatibility, do so in the possibly least intrusive way. For example, don't drop a huge change in the middle of a legacy routine, factor it out.
+    1. Don't move routines around, keep the order as is.
+    1. Don't refactor the code unless you are prepared to do it to the reconstruction also. This is actually encouraged, but make sure you plan for the extra work in such case.
+    1. If you have a good reason to break compatibility, do so in the possibly least intrusive way. For example, don't drop a huge change in the middle of a legacy routine, factor it out.
 1. We don't discourage the usage of LLMs. However, all PRs must be possible to be reviewed by a human and the resulting code needs to be maintainable. Some practical suggestions to that end:
-  1. Take on one task at a time.
-  1. Keep changes small-ish.
-  1. Test every change.
-  1. Verify how the change was implemented.
+    1. Take on one task at a time.
+    1. Keep changes small-ish.
+    1. Test every change.
+    1. Verify how the change was implemented.
 1. Keep the game's spirit and style intact. This is subjective, and we can always discuss specific cases, but the game should remain identifiable as F15 SE2 despite the fresh coat of paint. Whenever a change is implemented that changes the look and feel significantly, try to have it behind a toggle which lets the user flip it on or off at will.
