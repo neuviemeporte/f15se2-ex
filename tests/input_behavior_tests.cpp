@@ -11,6 +11,7 @@
 #include <thread>
 
 extern int kbhit(void);
+extern void waitForKeyPress(void);
 
 namespace {
 
@@ -23,6 +24,7 @@ enum InputOriginalConstant : int {
     kBiosShiftR = 0x1352,
     kBiosCtrlR = 0x1312,
     kBiosAltQ = 0x1000,
+    kPauseTimingValue = 1234,
     kBiosA = 0x1E61,
     kBiosB = 0x3062,
     kBiosC = 0x2E63,
@@ -251,6 +253,18 @@ int main() {
     require(egReadKey() == kBiosEscape,
             "egReadKey blocks until a key is ready, BIOS-read style");
     delayedKey.join();
+
+    // The flight pause loop must ignore another Alt-P and block for a real
+    // resume key without advancing simulation timing while paused.
+    resetInputState();
+    g_frameTimingAccum = kPauseTimingValue;
+    pushKey(SDL_SCANCODE_P, SDL_KMOD_ALT);
+    pushKey(SDL_SCANCODE_ESCAPE);
+    waitForKeyPress();
+    require(g_frameTimingAccum == kPauseTimingValue,
+            "waitForKeyPress ignores repeated Alt-P and restores frame timing");
+    require(kbhit() == 0,
+            "waitForKeyPress consumes the resume key after repeated Alt-P");
 
     resetInputState();
     pushKey(SDL_SCANCODE_RETURN, SDL_KMOD_ALT);
