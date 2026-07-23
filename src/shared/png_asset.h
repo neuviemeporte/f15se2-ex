@@ -12,8 +12,9 @@ extern "C" {
 
 /*
  * Load legacyFilename with a .png extension into an existing indexed surface.
- * Indexed PNGs preserve their palette; RGB/RGBA PNGs use the active game
- * palette, matching the legacy renderer's in-memory representation.
+ * Indexed PNGs preserve their index bytes while the caller's active game
+ * palette remains authoritative. RGB/RGBA PNGs are quantized to that palette,
+ * matching the legacy renderer's in-memory representation.
  */
 int loadReplacementPng(const char *legacyFilename, struct SDL_Surface *destination);
 
