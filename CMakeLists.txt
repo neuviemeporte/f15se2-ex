@@ -27,6 +27,12 @@ option(COVERAGE "Build with gcov code-coverage instrumentation" OFF)
 # through the front end each run.
 option(AUTOSTART "Skip menus and start a mission directly (DEBUG_AUTOSTART)" OFF)
 
+# When OFF, the whole sound subsystem is compiled out: the SDL3/OPL3/Sound Blaster
+# backend (asound/) and the Nuked-OPL3 emulator are dropped and replaced with the
+# silent nsound.c no-op backend. Handy for bring-up on a new platform where the
+# audio path is unproven — isolates hangs to (or away from) the sound code.
+option(AUDIO "Build the sound subsystem (SDL3 OPL3/Sound Blaster backend)" ON)
+
 # The DJGPP toolchain (cmake/i586-pc-msdosdjgpp.cmake, from SDL) sets
 # CMAKE_SYSTEM_NAME=DOS. DOS has no GPU/OpenGL, so the GL backend is compiled out
 # there and the software rasterizer is the only 3D backend.
@@ -93,15 +99,18 @@ endif()
 
 # Nuked-OPL3: the YM3812/OPL2 emulator that turns the ported AdLib driver's
 # register state into PCM. Header-light (opl3.c/.h), no CMake of its own, so we
-# just pull the sources and compile opl3.c into the target (as C).
+# just pull the sources and compile opl3.c into the target (as C). Only needed by
+# the real audio backend, so skip the fetch entirely when AUDIO is off.
 include(FetchContent)
-FetchContent_Declare(
-    nuked_opl3
-    GIT_REPOSITORY "https://github.com/nukeykt/Nuked-OPL3.git"
-    GIT_TAG "cfedb09efc03f1d7b5fc1f04dd449d77d8c49d50"  # master has no release tags
-    UPDATE_DISCONNECTED TRUE
-)
-FetchContent_MakeAvailable(nuked_opl3)
+if(AUDIO)
+    FetchContent_Declare(
+        nuked_opl3
+        GIT_REPOSITORY "https://github.com/nukeykt/Nuked-OPL3.git"
+        GIT_TAG "cfedb09efc03f1d7b5fc1f04dd449d77d8c49d50"  # master has no release tags
+        UPDATE_DISCONNECTED TRUE
+    )
+    FetchContent_MakeAvailable(nuked_opl3)
+endif()
 FetchContent_Declare(
     quick_digest5
     GIT_REPOSITORY "https://github.com/nthnn/QuickDigest5.git"
@@ -194,12 +203,19 @@ set(EGAME_SOURCES
     ${SRC_DIR}/egtick.c
     ${SRC_DIR}/eginput.c
     ${SRC_DIR}/egstubs.c
-
-    # audio: ported ASOUND AdLib driver on SDL3
-    ${SRC_DIR}/asound/asound_model.c
-    ${SRC_DIR}/asound/asopl.c
-    ${SRC_DIR}/asound/asound_sdl.c
 )
+
+# audio backend: the real ASOUND AdLib driver on SDL3, or the silent nsound.c
+# no-op backend (AUDIO=OFF). Both satisfy the same audio_* / loadF15DgtlBin ABI.
+if(AUDIO)
+    list(APPEND EGAME_SOURCES
+        ${SRC_DIR}/asound/asound_model.c
+        ${SRC_DIR}/asound/asopl.c
+        ${SRC_DIR}/asound/asound_sdl.c
+    )
+else()
+    list(APPEND EGAME_SOURCES ${SRC_DIR}/asound/nsound.c)
+endif()
 
 # end (debrief) module
 set(END_SOURCES
@@ -287,9 +303,15 @@ endif()
 set(F15SE2_CORE_SOURCES ${F15SE2_SOURCES})
 list(REMOVE_ITEM F15SE2_CORE_SOURCES ${SRC_DIR}/f15.c)
 
+# opl3.c (the OPL emulator) is only pulled in by the real audio backend.
+set(AUDIO_SOURCES "")
+if(AUDIO)
+    list(APPEND AUDIO_SOURCES ${nuked_opl3_SOURCE_DIR}/opl3.c)
+endif()
+
 add_library(f15se2_core STATIC
     ${F15SE2_CORE_SOURCES}
-    ${nuked_opl3_SOURCE_DIR}/opl3.c
+    ${AUDIO_SOURCES}
     ${quick_digest5_SOURCE_DIR}/src/quickdigest5.cpp
 )
 target_include_directories(f15se2_core BEFORE PUBLIC
@@ -300,9 +322,11 @@ target_include_directories(f15se2_core BEFORE PUBLIC
 )
 target_include_directories(f15se2_core PRIVATE
     ${SRC_DIR}/asound
-    ${nuked_opl3_SOURCE_DIR}
     ${quick_digest5_SOURCE_DIR}/include
 )
+if(AUDIO)
+    target_include_directories(f15se2_core PRIVATE ${nuked_opl3_SOURCE_DIR})
+endif()
 # Keep the log.h diagnostics live (the Log* macros compile out without DEBUG).
 target_compile_definitions(f15se2_core PUBLIC DEBUG)
 if(AUTOSTART)

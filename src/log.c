@@ -11,6 +11,27 @@ void log_set_app(const char *name) {
     app_tag = name ? name : "";
 }
 
+#ifdef __DJGPP__
+#include <stdio.h>
+/* SDL's default log sink is stderr, which real DOS's COMMAND.COM can't redirect
+ * to a file (no 2>/2>&1 support, unlike DOSBox's host shell or bash) and which
+ * is invisible anyway once mode 13h is active. Log to a flushed file instead so
+ * a hang/hard-reset on real hardware still leaves a trail. */
+static void dosFileLogOutput(void *userdata, int category, SDL_LogPriority priority, const char *message) {
+    (void)userdata;
+    (void)category;
+    (void)priority;
+    FILE *f = fopen("F15.LOG", "a");
+    if (!f) return;
+    fprintf(f, "%s\n", message);
+    fclose(f); /* reopen+close per line so partial logs survive a hard hang */
+}
+
+__attribute__((constructor)) static void installDosFileLog(void) {
+    SDL_SetLogOutputFunction(dosFileLogOutput, NULL);
+}
+#endif
+
 static void emit(SDL_LogPriority prio, const char *fmt, va_list ap) {
     char buf[1024];
     SDL_vsnprintf(buf, sizeof buf, fmt, ap);
