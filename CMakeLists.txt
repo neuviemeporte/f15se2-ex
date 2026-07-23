@@ -485,11 +485,11 @@ add_behavior_test(asound_music_replacement_behavior_tests LINK_CORE)
 if(F15SE2_ORIGINAL_ASSETS AND F15SE2_CONVERTED_ASSETS
    AND IS_DIRECTORY "${F15SE2_ORIGINAL_ASSETS}"
    AND IS_DIRECTORY "${F15SE2_CONVERTED_ASSETS}")
-    add_behavior_test(asound_asset_full_validation_tests LINK_CORE
+    add_behavior_test(asound_music_full_validation_tests LINK_CORE
         DEFS
             F15_ORIGINAL_ASSETS="${F15SE2_ORIGINAL_ASSETS}"
             F15_CONVERTED_ASSETS="${F15SE2_CONVERTED_ASSETS}")
-    set_tests_properties(asound_asset_full_validation_tests PROPERTIES
+    set_tests_properties(asound_music_full_validation_tests PROPERTIES
         LABELS "assets;integration"
         TIMEOUT 120)
 else()
