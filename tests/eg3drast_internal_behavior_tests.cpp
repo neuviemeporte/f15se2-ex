@@ -103,6 +103,11 @@ enum Eg3dRastInternalOriginalConstant : int {
     kTransformOpcodeBase = 0x60,
     kTransformOpcodeIndex = 2,
     kSpinAngle = 0x1234,
+    kModelHeaderBytes = 2,
+    kCollisionPlaneCount = 4,
+    kCollisionPlaneRecordBytes = 8,
+    kCollisionPlaneThresholdOffset = 6,
+    kInsidePlaneThreshold = 1,
     kDacDepthHi = 0x1000,
     kDacShade = 0xf0,
     kLodSkipOpcode = 0x80,
@@ -1635,14 +1640,18 @@ int main() {
     // containment side effect. Four zero normals with threshold +1 contain the
     // camera (0 < 1 for every plane); changing one threshold to -1 excludes it.
     {
-        unsigned char model[2 + 4 * 8] = {};
+        unsigned char model[kModelHeaderBytes +
+                            kCollisionPlaneCount * kCollisionPlaneRecordBytes] = {};
         int16 combined[9] = {};
         long camBase = 0, camX = 0, camY = 0;
         int shade = 0;
         model[0] = 0; // render mode
-        model[1] = 4; // four plane records
-        for (int plane = 0; plane < 4; ++plane)
-            writeLe16(&model[2 + plane * 8 + 6], 1);
+        model[1] = kCollisionPlaneCount;
+        for (int plane = 0; plane < kCollisionPlaneCount; ++plane)
+            writeLe16(&model[kModelHeaderBytes +
+                             plane * kCollisionPlaneRecordBytes +
+                             kCollisionPlaneThresholdOffset],
+                      kInsidePlaneThreshold);
 
         resetSceneState();
         require(r3d_objTransformFar(reinterpret_cast<char *>(model), 0, 0, 0,
@@ -1651,7 +1660,7 @@ int main() {
                     g_posVisibleFlag == 1,
                 "GL transform preserves original four-plane containment collision");
 
-        writeLe16(&model[2 + 6], -1);
+        writeLe16(&model[kModelHeaderBytes + kCollisionPlaneThresholdOffset], -1);
         resetSceneState();
         require(r3d_objTransformFar(reinterpret_cast<char *>(model), 0, 0, 0,
                                     0, kSceneRelY, 0,

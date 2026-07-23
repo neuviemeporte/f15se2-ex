@@ -37,17 +37,6 @@ static void drawEventBlinkSprite(int recordIdx);
  * popupVisible; picked by showEventPopup. */
 static int popupSpriteIdx;
 
-void formatAircraftShotDownEvent(char *buffer, int unitIdx) {
-    /* The DOS code reached the nickname through &name[7] because both strings
-     * occupied one packed byte sequence. SamDataEntry models them as separate
-     * fields; use those fields directly so host layout cannot drop the primary
-     * designation or accidentally read padding. */
-    mystrcpy(buffer, planeArray[unitIdx].name);
-    mystrcat(buffer, " ");
-    mystrcat(buffer, planeArray[unitIdx].nickname);
-    mystrcat(buffer, " shot down");
-}
-
 /* Menu label geometry (matches the setup draw in debriefMainLoop). */
 #define MENU_LABEL_X 236
 #define MENU_LABEL_Y 150
@@ -478,7 +467,14 @@ void drawMenuItem(const MenuItem *items, unsigned int index, int16 *gfxPage) {
             }
             break;
         case EVENT_SAM_KILL:
-            formatAircraftShotDownEvent(scoreString, unitIdx);
+            /* The DOS code reached the nickname through &name[7] because both
+             * strings occupied one packed byte sequence. SamDataEntry models
+             * them separately, so use both fields without relying on host
+             * structure layout. */
+            mystrcpy(scoreString, planeArray[unitIdx].name);
+            mystrcat(scoreString, " ");
+            mystrcat(scoreString, planeArray[unitIdx].nickname);
+            mystrcat(scoreString, " shot down");
             break;
         case EVENT_GROUND_KILL:
             mystrcpy(scoreString, worldStrings[unitIdx]);
