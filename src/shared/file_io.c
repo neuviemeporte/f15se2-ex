@@ -3,6 +3,7 @@
  */
 
 #include "inttype.h"
+#include "structured_asset_replacement.h"
 #include "log.h"
 #include <SDL3/SDL.h>
 #include <quickdigest5.hpp>
@@ -62,6 +63,9 @@ static string resolveCasePath(const char *filename, const bool require = false) 
 SDL_IOStream *openFile(const char *filename, int mode) {
     (void)mode; /* the resident open service only distinguished read vs. write;
                  * every openFile caller in the game opens an asset for reading */
+    if (SDL_IOStream *replacement = openStructuredAssetReplacement(filename)) {
+        return replacement;
+    }
     return SDL_IOFromFile(resolveCasePath(filename).c_str(), "rb");
 }
 
