@@ -78,7 +78,9 @@ These are bugfixes and new features that were not part of the original game, and
 1. Better damage model for player aircraft, currently being hit by a missile only results in a small drop of maximum RPM. Simulate full/partial loss of stability, broken systems, weapons, hydraulics etc., up to instant destruction.
 1. Better clouds and smoke effects, right now these are solid polygons in mid air.
 1. More varied terrain and water, these are completely flat with occasional pyramids that are supposed to represent mountains. It can continue to be flat shaded/polygon based to not change the look of the game too much, but we definitely need more vertices and/or textures.
+1. Add more information (altitude/speed) to the target display MFD for airborne targets.
 1. Let player skip the ejection sequence and go straight to debriefing.
+1. It's sometimes impossible to lock some targets even when nearby, cycling targets just jumps over them.
 1. Implement a full 3D cockpit with 3DOF/6DOF head movement with the hat switch and/or TrackIR.
 1. Map and 3D model editors.
 1. Multiplayer.
@@ -89,17 +91,14 @@ These are bugfixes and new features that were not part of the original game, and
 
 Problems with the game that were introduces by the port, and to the best of our knowledge are not present in the original.
 
+1. There seem to be some kind of gimbal lock problems with the input; pointing the plane straight up or straight down, then rolling 90 degrees to either side and pulling on the stick seems to have little to no effect.
 1. In external views sometimes the view is upside down (seems like it depends on the position relative to the horizon?).
-1. The bearing (`BRG`) value in the target screen is broken, mostly stuck on one value even though target is visibly turning.
+1. The bearing (`BRG`) value on the airborne target screen is broken, mostly stuck on one value even though target is visibly turning.
+1. When starting a new mission after a previous one has been completed, the sound for the previous flight's landing ("Nice landing") is played. Sometimes the message "Weapons replenished" also appears. It seems not all state from the previous mission is properly cleaned.
 1. There's sometimes flickering beneath and above the left display (map) in the cockpit.
 1. Shaking in the cockpit after getting hit is too long.
 1. When on the airfield/carrier, can see through to the ground on the sides of the view (exposed by widescreen support). Also, aircraft geometry sometimes flickers beneath the player.
 1. Some z-fighting still visible, e.g. on the underside of the player aircraft in external view.
-1. When starting a new mission after a previous one has been completed, the sound for the previous flight's landing ("Nice landing") is played, looks as if the sound queue is not drained before terminating the previous mission?
-1. In the debriefing screen, shot down planes only display the NATO reporting name e.g. "Flogger shot down", should be "MIG-23 Flogger".
-1. Pausing the game (`Alt-P`) appears to be busy waiting, CPU/GPU not idle.
-1. It's sometimes impossible to lock some targets even when nearby, cycling targets just jumps over them.
-1. Sometimes after starting a mission, planes and missiles are invisible (3d models missing?).
 
 ## Building
 
