@@ -20,7 +20,7 @@ extern int fileReadRaw(SDL_IOStream *handle, void *dst, int count);
 /* Hi-res title surface + present (gfx_impl.c). */
 extern SDL_Surface *gfx_getHiResSurface(void);
 extern void gfx_presentHiRes(void);
-extern void gfx_clearTtfTextOverlay(void) __attribute__((weak));
+extern void gfx_clearTtfTextOverlay(void);
 
 /* Pic decode work data */
 extern uint8 picDecodedRowBuf[320];
@@ -318,7 +318,7 @@ static SDL_Surface *picScratchSurface(void) {
 void showPicFile(SDL_IOStream *handle, int page) {
     if (!handle) return;
     (void)page; /* all pages are the single back buffer */
-    if (gfx_clearTtfTextOverlay) gfx_clearTtfTextOverlay();
+    gfx_clearTtfTextOverlay();
     /* Decode straight into the back buffer; the decoder overwrites every row. */
     picDecodeToSurface(handle, gfx_getCurPageSurface());
 }
@@ -358,7 +358,7 @@ void picBlit(SDL_IOStream *handle, int pageIndex) {
     (void)pageIndex;
     if (!handle) return;
 
-    if (gfx_clearTtfTextOverlay) gfx_clearTtfTextOverlay();
+    gfx_clearTtfTextOverlay();
     dst = gfx_getHiResSurface();
     if (!dst) return;
     base = (uint8 *)dst->pixels;
