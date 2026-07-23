@@ -83,7 +83,7 @@ std::string replacementDirectory(const fs::path &legacy) {
 bool findStructuredJson(const fs::path &legacy, char *path, size_t pathSize) {
     const std::string filename = upper(legacy.filename().string()) + ".json";
     const std::string directory = replacementDirectory(legacy);
-    std::vector<fs::path> candidates;
+    std::vector<fs::path> candidates{};
 
     if (!legacy.parent_path().empty()) {
         candidates.push_back(legacy.parent_path() / directory / filename);
@@ -103,10 +103,10 @@ bool findStructuredJson(const fs::path &legacy, char *path, size_t pathSize) {
 
 /* Check whether a constrained converter-generated JSON file contains a required property. */
 bool fileContainsProperty(const char *path, const char *property) {
-    FILE *file;
-    std::vector<char> bytes;
-    char chunk[4096];
-    size_t count;
+    FILE *file{};
+    std::vector<char> bytes{};
+    char chunk[4096]{};
+    size_t count{};
 
     if (!path || !property) return false;
     file = std::fopen(path, "rb");
@@ -143,7 +143,7 @@ std::string defaultToolCommand(const fs::path &jsonPath) {
     const char *configured = std::getenv("F15_ASSET_TOOL");
     if (configured && configured[0]) return configured;
 
-    std::vector<fs::path> candidates;
+    std::vector<fs::path> candidates{};
     fs::path cursor = jsonPath.parent_path();
     while (!cursor.empty()) {
         if (cursor.filename() == "converted_assets_all") {
@@ -157,7 +157,7 @@ std::string defaultToolCommand(const fs::path &jsonPath) {
     candidates.push_back("tools/f15assets/cli.py");
     candidates.push_back("../tools/f15assets/cli.py");
     for (const fs::path &candidate : candidates) {
-        std::error_code error;
+        std::error_code error{};
         if (fs::is_regular_file(candidate, error) && !error) {
             return "python3 " + shellQuote(candidate.string());
         }
@@ -181,16 +181,16 @@ SDL_IOStream *streamFromBytes(const std::vector<unsigned char> &bytes) {
 
 /* Open an editable structured replacement, rebuilding legacy bytes only for the existing loader. */
 SDL_IOStream *openStructuredAssetReplacement(const char *legacyFilename) {
-    fs::path legacy;
-    const char *format;
-    char jsonPath[512];
-    std::string command;
-    FILE *pipe;
-    std::vector<unsigned char> rebuilt;
-    unsigned char chunk[4096];
-    size_t count;
-    int status;
-    bool readFailed;
+    fs::path legacy{};
+    const char *format{};
+    char jsonPath[512]{};
+    std::string command{};
+    FILE *pipe{};
+    std::vector<unsigned char> rebuilt{};
+    unsigned char chunk[4096]{};
+    size_t count{};
+    int status{};
+    bool readFailed{};
     bool tooLarge = false;
 
     if (!legacyFilename || !legacyFilename[0]) return nullptr;
