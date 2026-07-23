@@ -3,6 +3,11 @@
  */
 
 #include <SDL3/SDL.h>
+#ifdef F15_HAVE_FREETYPE
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#include <SDL3/SDL_opengl.h>
+#endif
 
 #include "gfx_impl.h"
 #include "gfx.h"
@@ -11,8 +16,13 @@
 #include "struct.h"
 #include "log.h"
 #include "version.h"
+#include "shared/asset_path.h"
+#include "shared/common.h"
+#include "shared/utf8.h"
 #include <dos.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "fontdata.h"
 #include "shared/bitmap_font_replacement.h"
@@ -24,6 +34,15 @@
  * in gfx.h. */
 #define INITIAL_WINDOW_WIDTH 640
 #define INITIAL_WINDOW_HEIGHT 400
+#define VGA_PAGE_HEIGHT 200
+
+/* The 3D HUD draws missile ammo at y=190 with the original bitmap font. Runtime
+ * TTF glyphs can extend below the old bitmap cell, so bottom-HUD overlay records
+ * need a small clip relaxation while still staying inside the native 320x200
+ * page. Keep this named because the threshold is a DOS-screen coordinate, not a
+ * renderer pixel value. */
+#define HUD_BOTTOM_TTF_CLIP_Y 188
+#define HUD_BOTTOM_TTF_EXTRA_LINES 2.0f
 
 /* Fixed fire colour-cycle rate, independent of render frame rate. The original
  * stepped the cycle once per rendered frame; we pin it at 15 Hz so the pulse
@@ -44,6 +63,13 @@ static void gfx_swLine(int x1, int y1, int x2, int y2, int color);
 static void gfx_swPoint(int x, int y, int color);
 static void gfx_swImage(struct R2DImage *img, int srcX, int srcY, int w, int h,
                         int dstX, int dstY, int key);
+static void cleanupReplacementFonts(void);
+#ifdef F15_HAVE_FREETYPE
+static void renderTtfTextOverlay(R2DMapping *m, SDL_Renderer *renderer, int useGL);
+static void invalidateTtfTextOverlayRecords(void);
+static int replacementTtfAdvance(uint16 fontIdx, uint32 codepoint);
+static int replacementTtfStringAdvance(uint16 fontIdx, const char *text);
+#endif
 
 /* Bring up the SDL window and renderer. The 320x200 logical surface is stretched
  * to fill the resizable window (SDL_LOGICAL_PRESENTATION_STRETCH). */
@@ -137,6 +163,7 @@ void gfx_videoShutdown(void) {
         SDL_DestroyPalette(gfxPalette);
         gfxPalette = NULL;
     }
+    cleanupReplacementFonts();
     bitmapFontReplacementShutdown();
     if (sdlRenderer) SDL_DestroyRenderer(sdlRenderer);
     if (sdlWindow) SDL_DestroyWindow(sdlWindow);
@@ -418,6 +445,9 @@ static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake) {
     dst.w = (float)surf->w * m.scaleX;
     dst.h = (float)surf->h * m.scaleY;
     SDL_RenderTexture(sdlRenderer, tex, NULL, &dst);
+#ifdef F15_HAVE_FREETYPE
+    renderTtfTextOverlay(&m, sdlRenderer, 0);
+#endif
     SDL_RenderPresent(sdlRenderer);
     SDL_DestroyTexture(tex);
 }
@@ -471,6 +501,9 @@ static void initRowOffsets(void) {
  * SDL. This is also the lo-res restore after the (possibly hi-res) title. */
 void FAR CDECL gfx_setMode13(void) {
     initRowOffsets();
+#ifdef F15_HAVE_FREETYPE
+    invalidateTtfTextOverlayRecords();
+#endif
     gfxHiResActive = false;
     gfx_getState()->modeFlag = 1;
 }
@@ -480,6 +513,9 @@ void FAR CDECL gfx_setMode13(void) {
  * derives the virtual size from the surface), so this just flags hi-res; the
  * present picks up the 640x350 hi-res surface from gfx_presentHiRes. */
 bool video_setHiRes(void) {
+#ifdef F15_HAVE_FREETYPE
+    invalidateTtfTextOverlayRecords();
+#endif
     gfxHiResActive = true;
     return true;
 }
@@ -598,6 +634,7 @@ static uint8 *g_fontBitmapPtrs[8] = {
     (uint8 *)g_font0_bitmaps, (uint8 *)g_font1_bitmaps, NULL, (uint8 *)g_font3_bitmaps,
     (uint8 *)g_font4_bitmaps, (uint8 *)g_font5_bitmaps, NULL, NULL};
 static const uint8 g_fontBitmapRowSize[8] = {5, 8, 0, 6, 7, 6, 0, 0};
+static uint8 g_fontReplacementTried[8] = {0};
 /* Override one legacy bitmap font slot from editable BDF or PNG media when available. */
 static void tryLoadBitmapFontReplacement(uint16 fontIdx) {
     BitmapFontReplacement replacement{};
@@ -664,6 +701,11 @@ int gfx_testCopyBuiltinFont(uint16 fontIdx, uint8 *bitmapOut,
 }
 #endif
 
+/* Runtime font replacement is kept outside this legacy renderer body while
+ * remaining in the same translation unit, so it can use the original private
+ * font tables without widening the graphics API. */
+#include "gfx_font_replacement.inc"
+
 /* ---- Shared glyph engine (slots 0x01-0x06) ----
  * MGRAPHIC has one core blitter (0x04 @0x4ab) that the string slots fall into
  * after running 0-3 clip stages. The clip stages cut partial glyphs at the
@@ -706,6 +748,13 @@ static void drawStringCore(int16 *params, const char *string,
     rowSize = g_fontBitmapRowSize[fontIdx];
     bitmaps = g_fontBitmapPtrs[fontIdx];
     widthTab = g_fontWidthTables[fontIdx];
+
+#ifdef F15_HAVE_FREETYPE
+    if (fontIdx < 8 && g_fontReplacementTtfFaces[fontIdx]) {
+        (void)recordTtfTextOverlayAndAdvance(params, string, clipL, clipR, clipT, clipB);
+        return;
+    }
+#endif
 
     /* On a GL flight frame, submit each lit glyph pixel as a native point (drawn
      * over the composited frame at window resolution) instead of baking it into the
@@ -763,15 +812,6 @@ static void drawStringCore(int16 *params, const char *string,
     params[2] = (int16)color;
 }
 
-/* Rotated, sub-grid HUD label (GL native-res overlay only). Draws `string` in font
- * `fontIdx`/`color` with its glyph grid placed by two basis vectors: (exX,exY) is the
- * on-screen 320-space step per text column, (eyX,eyY) per row, both emanating from the
- * float anchor (ax,ay) = the string's top-left in absolute 320-space. Each lit font
- * texel becomes one rotated parallelogram cell submitted via r2d_submitQuadF, so the
- * label rotates with (and glides sub-grid along) the pitch-ladder lines instead of
- * snapping upright to the 320x200 grid. The software backend keeps the upright integer
- * glyph engine (drawStringCore); this is a no-op there. Scissored to the half-open
- * clip rect, matching the glyph slot's clip window. */
 void FAR gfx_drawGlyphStrRot(const char *string, int fontIdx, int color,
                              float ax, float ay, float exX, float exY,
                              float eyX, float eyY,
@@ -783,7 +823,6 @@ void FAR gfx_drawGlyphStrRot(const char *string, int fontIdx, int color,
     float penX = 0.0f; /* running text-column offset (in glyph texels) */
     if (!string) return;
     fontIdx &= 7;
-    tryLoadBitmapFontReplacement((uint16)fontIdx);
     height = g_fontHeightsArr[fontIdx];
     rowSize = g_fontBitmapRowSize[fontIdx];
     bitmaps = g_fontBitmapPtrs[fontIdx];
@@ -889,6 +928,11 @@ void FAR CDECL gfx_drawGlyphStr(int16 *desc, const char *str, int slot) {
 void FAR CDECL gfx_copyRect(int srcPage, uint16 srcX, uint16 srcY,
                             int dstPage, uint16 dstX, uint16 dstY,
                             int width, int height) {
+#ifdef F15_HAVE_FREETYPE
+    if (ttfOverlayRectIsScreenChange((int)dstX, (int)dstY, (int)dstX + width - 1, (int)dstY + height - 1)) {
+        invalidateTtfTextOverlayRecords();
+    }
+#endif
     r2d_blit(ensurePage(srcPage), (int)srcX, (int)srcY,
              ensurePage(dstPage), (int)dstX, (int)dstY,
              width, height, -1);
@@ -910,6 +954,11 @@ void gfx_captureToImage(struct R2DImage *img, int srcPage, int srcX, int srcY,
 
 void gfx_restoreFromImage(struct R2DImage *img, int dstPage, int srcX, int srcY,
                           int dstX, int dstY, int w, int h) {
+#ifdef F15_HAVE_FREETYPE
+    if (ttfOverlayRectIsScreenChange(dstX, dstY, dstX + w - 1, dstY + h - 1)) {
+        invalidateTtfTextOverlayRecords();
+    }
+#endif
     r2d_drawImage(img, srcX, srcY, w, h, ensurePage(dstPage), dstX, dstY, -1);
 }
 
@@ -930,6 +979,9 @@ void gfx_drawSpriteOpaque(int handle, int srcX, int srcY, int dstPage,
 /* ---- Slot 0x29: gfx_switchColor ---- */
 void FAR CDECL gfx_switchColor(int16 *pageDesc, int x1, int y1,
                                int x2, int y2, int oldColor, int newColor) {
+#ifdef F15_HAVE_FREETYPE
+    switchTtfTextOverlayColorRect(x1, y1, x2, y2, oldColor, newColor);
+#endif
     SDL_Surface *surf = gfx_getPageSurface((int)*pageDesc);
     uint8 *base;
     int pitch, row, col;
@@ -957,6 +1009,13 @@ void FAR CDECL gfx_switchColor(int16 *pageDesc, int x1, int y1,
  * colour. Writes straight into the page's backing SDL surface — the same buffer
  * the pic decoder and blitters target — so no DOS segment is involved. */
 void clearRect(int16 *pageNum, int16 x1, int16 y1, int16 x2, int16 y2) {
+#ifdef F15_HAVE_FREETYPE
+    if (ttfOverlayRectIsScreenChange(x1, y1, x2, y2)) {
+        invalidateTtfTextOverlayRecords();
+    } else {
+        invalidateTtfTextOverlayRect(x1, y1, x2, y2);
+    }
+#endif
     SDL_Surface *surf = gfx_getPageSurface((int)*pageNum);
     uint8 color = (uint8)pageNum[3];
     uint8 *base;
@@ -1269,21 +1328,64 @@ void FAR CDECL gfx_dirtyRect2(const int16 *spanMinBuf, uint16 yMin, uint16 yMax)
     }
 }
 
-int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx) {
-    /* Returns the pixel advance width of a single character. stringWidth()
-     * sums this over a string to centre text, so it MUST agree with the
-     * x-advance gfx_drawString uses (wt[ch-0x20]); otherwise centred text
-     * lands off-screen and drawString's clip test discards every glyph.
-     * The width tables are file-scope arrays reached directly as native
-     * pointers, exactly as drawStringCore reads them. */
+int gfx_getGlyphAdvance(uint32 codepoint, uint16 fontIdx) {
+    /* Returns the pixel advance width of one decoded character. stringWidth()
+     * and gfx_setFont both route here so centered/right-aligned UTF-8 text
+     * agrees with drawStringCore's glyph selection and x-advance behavior. */
     const uint8 *wt;
     if (fontIdx >= 8) return 8;
-    tryLoadBitmapFontReplacement(fontIdx);
-    /* Chars >= 0x80 are inline color escapes - no glyph, no width */
-    if (ch >= 0x80) return 0;
+    /* TTF/OTF takes precedence; bitmap fallback updates the original width
+     * table through bitmap_font_replacement.c. */
+    tryLoadReplacementFont(fontIdx);
+#ifdef F15_HAVE_FREETYPE
+    if (fontIdx < 8 && g_fontReplacementTtfFaces[fontIdx]) {
+        if (codepoint <= 0xff && codepoint >= 0x80) return 0;
+        return replacementTtfAdvance(fontIdx, codepoint);
+    }
+#endif
+    if (codepoint >= 0x80) {
+        /* Legacy single-byte chars >= 0x80 are inline color escapes. */
+        if (codepoint <= 0xff) return 0;
+        return 8;
+    }
     wt = g_fontWidthTables[fontIdx];
-    if (!wt || ch < 0x20) return 8;
-    return wt[ch - 0x20];
+    if (!wt || codepoint < 0x20) return 8;
+    return wt[codepoint - 0x20];
+}
+
+int gfx_getStringAdvanceUtf8(const char *text, uint16 fontIdx) {
+    int width = 0;
+    int charIdx;
+    int drawnChars;
+    if (!text) return 0;
+    if (fontIdx >= 8) return 0;
+    tryLoadReplacementFont(fontIdx);
+#ifdef F15_HAVE_FREETYPE
+    if (g_fontReplacementTtfFaces[fontIdx]) {
+        return replacementTtfStringAdvance(fontIdx, text);
+    }
+#endif
+    for (charIdx = 0, drawnChars = 0; text[charIdx] != 0 && drawnChars < 256;) {
+        uint32 codepoint;
+        uint8 ch = (uint8)text[charIdx];
+        int byteCount = 1;
+        if (!decodeUtf8Codepoint(&text[charIdx], &codepoint, &byteCount)) {
+            codepoint = ch;
+            byteCount = 1;
+        }
+        if (byteCount == 1 && (ch & 0x80)) {
+            charIdx++;
+            continue;
+        }
+        width += gfx_getGlyphAdvance(codepoint, fontIdx);
+        charIdx += byteCount;
+        drawnChars++;
+    }
+    return width;
+}
+
+int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx) {
+    return gfx_getGlyphAdvance((uint32)ch, fontIdx);
 }
 void FAR CDECL gfx_setFadeSteps(int steps) {
     (void)steps;

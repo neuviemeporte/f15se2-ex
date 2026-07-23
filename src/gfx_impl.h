@@ -77,6 +77,13 @@ int gfx_testCopyBuiltinFont(uint16 fontIdx, uint8 *bitmapOut,
  * software present's shake shift. */
 int gfx_getShakeOffset(void);
 
+/* Draw recorded runtime TTF/OTF text after the legacy page has been scaled to
+ * the window. This keeps text positions in original 320x200 coordinates while
+ * rasterizing glyphs at native/window resolution. */
+void gfx_renderTtfTextOverlayOpenGL(int virtW, int virtH, int winW, int winH);
+void gfx_clearTtfTextOverlay(void);
+void gfx_invalidateTtfTextOverlayRect(int x1, int y1, int x2, int y2);
+
 /*
  * Reference structures documenting how the overlay accesses caller data.
  * These CANNOT be used in the asm data segments (which must maintain exact
