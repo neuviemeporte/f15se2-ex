@@ -17,6 +17,7 @@
 
 namespace fs = std::filesystem;
 
+/* Derive the canonical PNG replacement name from a legacy image filename. */
 static bool replacementName(const char *legacyFilename, std::string *name) {
     if (!legacyFilename || !legacyFilename[0]) return false;
     fs::path path{legacyFilename};
@@ -26,6 +27,7 @@ static bool replacementName(const char *legacyFilename, std::string *name) {
     return true;
 }
 
+/* Scale indexed replacement pixels into legacy logical dimensions without changing indices. */
 static bool copyScaledIndices(SDL_Surface *source, SDL_Surface *destination) {
     if (source->w <= 0 || source->h <= 0
         || destination->w <= 0 || destination->h <= 0
@@ -58,6 +60,7 @@ static bool copyScaledIndices(SDL_Surface *source, SDL_Surface *destination) {
     return true;
 }
 
+/* Map an RGB replacement color to the nearest entry in the active game palette. */
 static uint8 nearestPaletteIndex(const SDL_Palette *palette, uint8 r, uint8 g, uint8 b) {
     int bestIndex = 0;
     unsigned int bestDistance = ~0U;
@@ -75,6 +78,7 @@ static uint8 nearestPaletteIndex(const SDL_Palette *palette, uint8 r, uint8 g, u
     return (uint8)bestIndex;
 }
 
+/* Scale truecolor replacement pixels and quantize them into the active game palette. */
 static bool copyScaledTruecolor(SDL_Surface *source, SDL_Surface *destination) {
     SDL_Palette *palette = gfx_getPalette();
     SDL_Surface *rgba = SDL_ConvertSurface(source, SDL_PIXELFORMAT_RGBA32);
@@ -116,6 +120,7 @@ static bool copyScaledTruecolor(SDL_Surface *source, SDL_Surface *destination) {
     return true;
 }
 
+/* Load a PNG replacement, preserving indexed pixels when possible and scaling to logical dimensions. */
 int loadReplacementPng(const char *legacyFilename, SDL_Surface *destination) {
     std::string relativeName;
     char replacementPath[1024];
@@ -164,16 +169,19 @@ int loadReplacementPng(const char *legacyFilename, SDL_Surface *destination) {
     return loaded;
 }
 
+/* Load a replacement PNG directly into a legacy full-page image buffer. */
 int loadReplacementPngToPage(const char *legacyFilename, int page) {
     (void)page; /* The port uses one page backbuffer. */
     return loadReplacementPng(legacyFilename, gfx_getCurPageSurface());
 }
 
+/* Load a replacement PNG into a sprite buffer while preserving the sprite header contract. */
 int loadReplacementPngToSprite(const char *legacyFilename, int segment) {
     SDL_Surface *destination = gfx_getSpriteSurface(segment);
     return destination ? loadReplacementPng(legacyFilename, destination) : 0;
 }
 
+/* Load and scale a replacement for the split-field high-resolution title image. */
 int loadReplacementPngToHiResTitle(const char *legacyFilename) {
     const int loaded = loadReplacementPng(legacyFilename, gfx_getHiResSurface());
     if (loaded) gfx_presentHiRes();
