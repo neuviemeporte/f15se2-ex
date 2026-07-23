@@ -47,6 +47,8 @@ typedef struct {
  * normal object. */
 typedef struct {
     R3DMesh mesh;
+    int shapeId;
+    const char *containerLegacyName;
     int yaw, pitch, roll;
     int posX, posY, posZ;
     int shadow;
