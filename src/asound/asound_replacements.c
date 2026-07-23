@@ -30,15 +30,18 @@ static CueSlot g_cues[] = {
     {0x6a1bu, 0x7d9du, "sounds/voice_cue_004_sample2_variant2.wav", NULL, 0, 0},
 };
 
+/* Read an unsigned 16-bit little-endian value from an unaligned byte buffer. */
 static uint16_t read16le(const AsoundU8 *data) {
     return (uint16_t)data[0] | ((uint16_t)data[1] << 8);
 }
 
+/* Read an unsigned 32-bit little-endian value from an unaligned byte buffer. */
 static uint32_t read32le(const AsoundU8 *data) {
     return (uint32_t)data[0] | ((uint32_t)data[1] << 8)
         | ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24);
 }
 
+/* Read an entire replacement file into an owned heap buffer. */
 static AsoundU8 *readFile(const char *path, size_t *size) {
     SDL_IOStream *stream = SDL_IOFromFile(path, "rb");
     if (size) *size = 0;
@@ -60,6 +63,7 @@ static AsoundU8 *readFile(const char *path, size_t *size) {
     return data;
 }
 
+/* Decode one unsigned 8-bit mono PCM WAV while rejecting unsupported layouts. */
 static int decodePcm8MonoWav(const AsoundU8 *wav, size_t wav_size,
                              AsoundU8 **samples, int *sample_rate) {
     bool format_valid = false;
@@ -101,6 +105,7 @@ static int decodePcm8MonoWav(const AsoundU8 *wav, size_t wav_size,
     return 0;
 }
 
+/* Load independently editable WAV cues and replace only slots that are present. */
 int asound_load_replacement_cues(void) {
     int loaded = 0;
     for (CueSlot &slot : g_cues) {
@@ -135,6 +140,7 @@ int asound_load_replacement_cues(void) {
     return loaded;
 }
 
+/* Return the replacement cue for a legacy sample pointer, or NULL when not overridden. */
 int asound_find_replacement_cue(AsoundU16 start, AsoundU16 end_inclusive,
                                 AsoundReplacementCue *cue) {
     if (cue) {
@@ -156,10 +162,12 @@ int asound_find_replacement_cue(AsoundU16 start, AsoundU16 end_inclusive,
     return 0;
 }
 
+/* Return the number of currently loaded replacement sound cues. */
 int asound_replacement_cue_count(void) {
     return (int)(sizeof(g_cues) / sizeof(g_cues[0]));
 }
 
+/* Return replacement cue metadata by stable enumeration index. */
 int asound_replacement_cue_at(int index, AsoundU16 *start,
                               AsoundU16 *end_inclusive,
                               AsoundReplacementCue *cue) {
