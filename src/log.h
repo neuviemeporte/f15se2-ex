@@ -5,6 +5,9 @@
  * Call once from each program's main(); harmless to omit (lines are untagged). */
 void log_set_app(const char *name);
 
+/* Raise the log threshold so LogVerbose/LogDebug output is shown (--verbose). */
+void log_set_verbose(void);
+
 void log_message(const char *fmt, ...);
 void log_verbose(const char *fmt, ...);
 void log_debug(const char *fmt, ...);
