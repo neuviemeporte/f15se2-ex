@@ -284,9 +284,17 @@
     }
 
     function candidates(name) {
+      const dirName = name.replace(/\.(json|glb|gltf)$/i, "");
+      const assetDirName = dirName.replace(/\.(3D3|WLD)$/i, "");
       return [
+        `../../converted_assets_all/${assetDirName}/${name}`,
+        `../../converted_assets_all/${dirName}/${name}`,
         `../../converted_assets_all/${name}`,
+        `/converted_assets_all/${assetDirName}/${name}`,
+        `/converted_assets_all/${dirName}/${name}`,
         `/converted_assets_all/${name}`,
+        `./${assetDirName}/${name}`,
+        `./${dirName}/${name}`,
         `./${name}`,
       ];
     }

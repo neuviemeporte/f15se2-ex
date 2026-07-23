@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import re
 import struct
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -37,6 +38,7 @@ _FLIGHT_DAY_COLOR_LUT = [
 
 
 def _face_material_color(color_index: int) -> Tuple[float, float, float, float]:
+    """Resolve the effective game palette color for one polygon."""
     global _FACE_PALETTE_RGB8
     if _FACE_PALETTE_RGB8 is None:
         _FACE_PALETTE_RGB8 = _default_palette(8)
@@ -69,6 +71,7 @@ def _decode_rle_primitive_order(
     # This follows the original renderer's traversal table rather than a normal
     # compression scheme. The stream describes primitive draw order through
     # edge-index links, with 0xFF acting as a return/sentinel marker.
+    """Decode rle primitive order while preserving legacy semantics."""
     if edge_count <= 0:
         return [0xFF]
     if not src:
@@ -158,14 +161,16 @@ def _decode_primitive_command_stream(
     List[Tuple[int, int, Optional[int]]],
     Dict[int, int],
 ]:
+    """Decode primitive command stream while preserving legacy semantics."""
     triangles: List[Tuple[int, int, int]] = []
     triangle_colors: List[int] = []
     lines: List[Tuple[int, int, Optional[int]]] = []
     face_edge_colors: Dict[int, int] = {}
-    if seen_faces is None:
-        seen_faces = set()
-    if seen_triangles is None:
-        seen_triangles = set()
+    # Do not suppress duplicate faces/triangles here. The game runtime decoder
+    # intentionally over-collects grouped 0xff/RLE primitive runs, and duplicate
+    # coplanar primitives are part of how the original painter/z-fighting behavior
+    # resolves for some shapes. The validation/runtime loader test compares this
+    # coverage directly, so the editable GLB must preserve it.
 
     cursor = 0
     while cursor < len(stream) and (command_budget is None or command_budget > 0):
@@ -203,14 +208,6 @@ def _decode_primitive_command_stream(
                     command_budget -= 1
                 continue
 
-            signature = _canonical_polygon_signature(polygon_vertices)
-            if signature and signature in seen_faces:
-                if command_budget is not None:
-                    command_budget -= 1
-                continue
-            if signature:
-                seen_faces.add(signature)
-
             a = polygon_vertices[0]
             for i in range(1, len(polygon_vertices) - 1):
                 b = polygon_vertices[i]
@@ -218,12 +215,8 @@ def _decode_primitive_command_stream(
                 if a < len(vertices) and b < len(vertices) and c < len(vertices):
                     if a != b and b != c and a != c:
                         tri = (a, b, c)
-                        tri_signature = tuple(sorted(tri))
-                        tri_key = (tri_signature, color)
-                        if tri_key not in seen_triangles:
-                            seen_triangles.add(tri_key)
-                            triangles.append(tri)
-                            triangle_colors.append(color)
+                        triangles.append(tri)
+                        triangle_colors.append(color)
         else:
             # Non-face commands are kept as line primitives. Some source shapes
             # are intentionally 2D/single-sided, so fabricating reverse faces
@@ -314,6 +307,7 @@ def _decode_fixed_edge_records(
     edge_count: int,
     wide_mask: bool,
 ) -> Tuple[List[Tuple[int, int]], int, Optional[str]]:
+    """Decode fixed edge records while preserving legacy semantics."""
     edges: List[Tuple[int, int]] = []
     cursor = 0
     for _ in range(edge_count):
@@ -347,6 +341,7 @@ def _decode_primitive_payload(
     Dict[int, int],
     Optional[str],
 ]:
+    """Decode primitive payload while preserving legacy semantics."""
     if cursor >= len(stream):
         return [], [], [], {}, "missing_primitive_payload"
 
@@ -453,10 +448,12 @@ def _decode_primitive_payload(
 
 
 def _skip_visibility_mask(data: bytes, offset: int, wide: bool) -> int:
+    """Perform the skip visibility mask asset-processing operation."""
     return offset + (4 if wide else 2)
 
 
 def _read_visibility_mask(data: bytes, offset: int, wide: bool) -> Tuple[int, int]:
+    """Read visibility mask."""
     end = _skip_visibility_mask(data, offset, wide)
     if end > len(data):
         raise ValueError("truncated visibility mask")
@@ -464,6 +461,7 @@ def _read_visibility_mask(data: bytes, offset: int, wide: bool) -> Tuple[int, in
 
 
 def _edge_loop_from_edges(edge_indices: Sequence[int], edges: Sequence[Tuple[int, int]]) -> List[int]:
+    """Recover a closed polygon loop from unordered edge references."""
     if len(edge_indices) < 3:
         return []
 
@@ -521,6 +519,7 @@ def _edge_loop_from_edges(edge_indices: Sequence[int], edges: Sequence[Tuple[int
 
 
 def _canonical_polygon_signature(vertices: Sequence[int]) -> Tuple[int, ...]:
+    """Build a winding-independent polygon signature for deduplication."""
     if len(vertices) < 3:
         return ()
 
@@ -558,6 +557,7 @@ def _canonical_polygon_signature(vertices: Sequence[int]) -> Tuple[int, ...]:
 def _decode_model_edges_and_primitives(
     stream: bytes, shared_pool: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
+    """Decode model edges and primitives while preserving legacy semantics."""
     if not stream:
         return {
             "render_mode": 0,
@@ -605,6 +605,80 @@ def _decode_model_edges_and_primitives(
             "triangles": [],
             "lines": [],
             "metadata": {"lod_records": lod_records, "transform_records": transform_records},
+        }
+
+    special_form = stream[cursor] & 0x3F
+    if special_form == 0x3F:
+        if cursor + 2 > len(stream):
+            raise ValueError("truncated 3D3 point record")
+        color = int(stream[cursor + 1])
+        return {
+            "render_mode": render_mode,
+            "vertices": [(0, 0, 0)],
+            "edges": [],
+            "triangles": [],
+            "triangle_colors": [],
+            "lines": [(0, 0, color)],
+            "metadata": {
+                "form": "point",
+                "point_color": color,
+                "lod_records": lod_records,
+                "transform_records": transform_records,
+            },
+        }
+
+    if special_form == 0x3E:
+        if cursor + 3 > len(stream):
+            raise ValueError("truncated 3D3 edgerun record")
+        count = int(stream[cursor + 2])
+        refs_start = cursor + 3
+        refs_end = refs_start + count
+        if refs_end > len(stream):
+            raise ValueError("truncated 3D3 edgerun refs")
+        vertices: List[Tuple[int, int, int]] = []
+        lines: List[Tuple[int, int, Optional[int]]] = []
+        unresolved_vertex_count = 0
+        refs = list(stream[refs_start:refs_end])
+        for ref in refs:
+            x = y = z = 0
+            if shared_pool:
+                x_indices = shared_pool.get("x_indices", [])
+                y_indices = shared_pool.get("y_indices", [])
+                z_indices = shared_pool.get("z_indices", [])
+                x_values = shared_pool.get("x_values", [])
+                y_values = shared_pool.get("y_values", [])
+                z_values = shared_pool.get("z_values", [])
+                if ref < len(x_indices) and ref < len(y_indices) and ref < len(z_indices):
+                    xi = x_indices[ref]
+                    yi = y_indices[ref]
+                    zi = z_indices[ref]
+                    x = x_values[xi] if xi < len(x_values) else 0
+                    y = y_values[yi] if yi < len(y_values) else 0
+                    z = z_values[zi] if zi < len(z_values) else 0
+                else:
+                    unresolved_vertex_count += 1
+            else:
+                unresolved_vertex_count += 1
+            vertices.append((x, y, z))
+            # The GL replacement bridge represents edgerun dots as point
+            # primitives. The current runtime comparison treats their source
+            # color as 0 because the legacy GL path shades edgeruns by distance
+            # instead of using a fixed face/line palette byte.
+            lines.append((len(vertices) - 1, len(vertices) - 1, 0))
+        return {
+            "render_mode": render_mode,
+            "vertices": vertices,
+            "edges": [],
+            "triangles": [],
+            "triangle_colors": [],
+            "lines": lines,
+            "metadata": {
+                "form": "edgerun",
+                "run_refs": refs,
+                "unresolved_vertex_count": unresolved_vertex_count,
+                "lod_records": lod_records,
+                "transform_records": transform_records,
+            },
         }
 
     face_info = stream[cursor]
@@ -840,14 +914,14 @@ def _decode_model_edges_and_primitives(
             edge_key = tuple(sorted((a, b)))
             if edge_key in colored_line_edges:
                 continue
+            color = face_edge_colors_by_index.get(edge_idx, face_edge_colors.get(edge_key))
+            if color is None:
+                continue
             lines.append(
                 (
                     a,
                     b,
-                    face_edge_colors_by_index.get(
-                        edge_idx,
-                        face_edge_colors.get(edge_key, dominant_face_color),
-                    ),
+                    color,
                 )
             )
 
@@ -874,10 +948,12 @@ def _decode_model_edges_and_primitives(
 
 
 def _align4(value: int) -> int:
+    """Return the next four-byte-aligned offset."""
     return (4 - (value % 4)) % 4
 
 
 def _emit_buffer_view(gltf: Dict[str, Any], raw: bytes, target: int) -> int:
+    """Perform the emit buffer view asset-processing operation."""
     uri = gltf["buffers"][0]["uri"]
     comma_pos = uri.index(",")
     raw_buffer = bytearray(from_base64(uri[comma_pos + 1:]))
@@ -908,6 +984,7 @@ def _emit_accessor(
     count: int,
     byte_offset: int = 0,
 ) -> int:
+    """Perform the emit accessor asset-processing operation."""
     accessor_index = len(gltf["accessors"])
     dims = 3 if type_name == "VEC3" else 1
     gltf["accessors"].append(
@@ -925,6 +1002,7 @@ def _emit_accessor(
 
 
 def _pack_indices(values: Sequence[int]) -> Tuple[bytes, int]:
+    """Pack indices."""
     max_value = max(values) if values else 0
     if max_value > 0xFFFF:
         return struct.pack("<" + "I" * len(values), *values), 5125
@@ -932,10 +1010,12 @@ def _pack_indices(values: Sequence[int]) -> Tuple[bytes, int]:
 
 
 def _pack_floats(values: Sequence[float]) -> bytes:
+    """Pack floats."""
     return struct.pack("<" + "f" * len(values), *values) if values else b""
 
 
 def _safe_shape_name(value: object) -> str:
+    """Return a portable filename component for a source shape name."""
     name = str(value or "").strip()
     name = re.sub(r"[^0-9A-Za-z_. -]+", "_", name)
     name = re.sub(r"\s+", "_", name)
@@ -943,6 +1023,7 @@ def _safe_shape_name(value: object) -> str:
 
 
 def _shape_label(shape_names: object, shape_index: int) -> str:
+    """Build the stable display label for a shape slot."""
     label = ""
     if isinstance(shape_names, dict):
         label = str(shape_names.get(str(shape_index), "") or shape_names.get(shape_index, "") or "")
@@ -954,7 +1035,21 @@ def _shape_label(shape_names: object, shape_index: int) -> str:
     return f"shape_{shape_index:03d}"
 
 
+def _color_key(color: object) -> str:
+    """Normalize a color for deterministic material reuse."""
+    if color is None:
+        return "none"
+    return f"0x{int(color) & 0xFF:02x}"
+
+
+def _bump_color_count(bucket: Dict[str, int], color: object, amount: int = 1) -> None:
+    """Increment a color-frequency table used by diagnostics."""
+    key = _color_key(color)
+    bucket[key] = bucket.get(key, 0) + int(amount)
+
+
 def parse_3d3(data: bytes) -> Dict[str, Any]:
+    """Parse 3d3."""
     if len(data) < 6:
         raise ValueError(".3D3 data too short")
 
@@ -1061,6 +1156,7 @@ def parse_3d3(data: bytes) -> Dict[str, Any]:
 
 
 def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Export 3d3 to gltf to an editable modern format."""
     if payload.get("format") != "3D3":
         raise ValueError("invalid payload format")
 
@@ -1098,15 +1194,34 @@ def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
             "has_shared_vertex_pool": bool(shared_pool),
             "shared_vertex_pool": shared_pool_summary,
             "skipped_shapes": [],
+            "raw_color_usage": {"faces": {}, "lines": {}, "points": {}},
         },
     }
 
     for shape_index, shape_offset in enumerate(shape_offsets):
         if shape_offset >= model_data_size:
+            gltf["extras"]["skipped_shapes"].append(
+                {
+                    "shape_index": shape_index,
+                    "shape_name": _shape_label(shape_names, shape_index),
+                    "shape_offset": shape_offset,
+                    "shape_end": model_data_size,
+                    "render_mode": None,
+                    "shape_payload": {
+                        "render_error": "shape_offset_outside_model_data",
+                        "model_data_size": model_data_size,
+                    },
+                }
+            )
             continue
         shape_end = model_data_size
         color_materials: Dict[int, int] = {}
         fallback_face_material = 1
+        shape_color_usage: Dict[str, Dict[str, int]] = {
+            "faces": {},
+            "lines": {},
+            "points": {},
+        }
         if shape_index + 1 < len(shape_offsets):
             shape_end = min(model_data_size, shape_offsets[shape_index + 1])
             if shape_end < shape_offset:
@@ -1175,7 +1290,13 @@ def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
             gltf["accessors"][pos_acc]["max"] = [float(x) for x in maxs]
 
             if triangles:
-                triangles_by_color: Dict[Optional[int], List[int]] = {}
+                # Do not batch triangles by material/color here. The original
+                # renderer's display-list order is part of the asset semantics:
+                # many aircraft/building details are coplanar or intentionally
+                # z-fighting, so reordering faces can visibly change which color
+                # wins. One glTF primitive per decoded triangle is larger than
+                # color batching but preserves source draw order for validation
+                # and for the runtime GLMESH cache.
                 for tri_index, tri in enumerate(triangles):
                     if len(tri) != 3:
                         continue
@@ -1184,9 +1305,10 @@ def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
                         if tri_index < len(triangle_colors)
                         else None
                     )
-                    triangles_by_color.setdefault(color, []).extend(int(v) for v in tri)
+                    _bump_color_count(shape_color_usage["faces"], color)
+                    _bump_color_count(gltf["extras"]["raw_color_usage"]["faces"], color)
 
-                for color, tri_indices in triangles_by_color.items():
+                    tri_indices = [int(v) for v in tri]
                     tri_bin, tri_type = _pack_indices(tri_indices)
                     tri_view = _emit_buffer_view(gltf, tri_bin, 34963)
                     tri_acc = _emit_accessor(
@@ -1226,11 +1348,20 @@ def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
                             "indices": tri_acc,
                             "mode": 4,
                             "material": material_index,
+                            "extras": {
+                                "source_primitive_kind": "triangle",
+                                "source_primitive_index": tri_index,
+                                "source_color": color,
+                                "source_order_sensitive": True,
+                            },
                         }
                     )
 
-            lines_by_color: Dict[Optional[int], set[Tuple[int, int]]] = {}
-            for line in lines:
+            # Lines and degenerate point features carry visible model detail
+            # (antennas, masts, deck markings). Emit one primitive per decoded
+            # source item so different-colored line/point features are not
+            # accidentally reordered by material batching.
+            for line_index, line in enumerate(lines):
                 if len(line) == 2:
                     a, b = int(line[0]), int(line[1])
                     color = None
@@ -1239,14 +1370,56 @@ def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
                     color = line[2]
                     color = None if color is None else int(color)
                 if a == b:
+                    if not (0 <= a < len(vertices)):
+                        continue
+                    point_bin, point_type = _pack_indices([a])
+                    point_view = _emit_buffer_view(gltf, point_bin, 34963)
+                    point_acc = _emit_accessor(
+                        gltf,
+                        point_view,
+                        component_type=point_type,
+                        type_name="SCALAR",
+                        count=1,
+                    )
+                    gltf["accessors"][point_acc]["min"] = [0]
+                    gltf["accessors"][point_acc]["max"] = [max(0, len(vertices) - 1)]
+                    if color is None:
+                        material_index = 0
+                    else:
+                        r, g, b, a_rgba = _face_material_color(color)
+                        material_index = len(gltf["materials"])
+                        gltf["materials"].append(
+                            {
+                                "name": f"points_color_0x{color:02x}_{line_index:03d}",
+                                "doubleSided": True,
+                                "pbrMetallicRoughness": {
+                                    "baseColorFactor": [r, g, b, a_rgba],
+                                    "metallicFactor": 0.0,
+                                    "roughnessFactor": 1.0,
+                                },
+                            }
+                        )
+                    _bump_color_count(shape_color_usage["points"], color)
+                    _bump_color_count(gltf["extras"]["raw_color_usage"]["points"], color)
+                    primitives.append(
+                        {
+                            "attributes": {"POSITION": pos_acc},
+                            "indices": point_acc,
+                            "mode": 0,
+                            "material": material_index,
+                            "extras": {
+                                "source_primitive_kind": "points",
+                                "source_primitive_index": line_index,
+                                "source_color": color,
+                                "source_order_sensitive": True,
+                            },
+                        }
+                    )
                     continue
-                lines_by_color.setdefault(color, set()).add(tuple(sorted((a, b))))
 
-            for color, line_set in sorted(lines_by_color.items(), key=lambda item: -1 if item[0] is None else item[0]):
-                uniq_lines = sorted(line_set)
-                if not uniq_lines:
+                if not (0 <= a < len(vertices) and 0 <= b < len(vertices)):
                     continue
-                line_indices = [int(v) for edge in uniq_lines for v in edge]
+                line_indices = [a, b]
                 line_bin, line_type = _pack_indices(line_indices)
                 line_view = _emit_buffer_view(gltf, line_bin, 34963)
                 line_acc = _emit_accessor(
@@ -1262,26 +1435,34 @@ def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
                 if color is None:
                     material_index = 0
                 else:
-                    r, g, b, a = _face_material_color(color)
+                    r, g, b_rgb, a_rgba = _face_material_color(color)
                     material_index = len(gltf["materials"])
                     gltf["materials"].append(
                         {
-                            "name": f"lines_color_0x{color:02x}",
+                            "name": f"lines_color_0x{color:02x}_{line_index:03d}",
                             "doubleSided": True,
                             "pbrMetallicRoughness": {
-                                "baseColorFactor": [r, g, b, a],
+                                "baseColorFactor": [r, g, b_rgb, a_rgba],
                                 "metallicFactor": 0.0,
                                 "roughnessFactor": 1.0,
                             },
                         }
                     )
 
+                _bump_color_count(shape_color_usage["lines"], color)
+                _bump_color_count(gltf["extras"]["raw_color_usage"]["lines"], color)
                 primitives.append(
                     {
                         "attributes": {"POSITION": pos_acc},
                         "indices": line_acc,
                         "mode": 1,
                         "material": material_index,
+                        "extras": {
+                            "source_primitive_kind": "lines",
+                            "source_primitive_index": line_index,
+                            "source_color": color,
+                            "source_order_sensitive": True,
+                        },
                     }
                 )
 
@@ -1314,6 +1495,7 @@ def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
                 "shape_offset": shape_offset,
                 "shape_end": shape_end,
                 "shape_payload": shape_parse["metadata"],
+                "raw_color_usage": shape_color_usage,
             },
         }
         gltf["meshes"].append(mesh)
@@ -1336,6 +1518,120 @@ def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
 def export_3d3_to_glb(payload: Dict[str, Any]) -> bytes:
     """Export a ``3D3`` payload as a binary glTF (`.glb`) blob."""
     gltf = export_3d3_to_gltf(payload)
+    return export_3d3_gltf_to_glb(gltf)
+
+
+def _minimized_single_mesh_gltf(gltf: Dict[str, Any], mesh: Dict[str, Any], shape_index: int, shape_name: str) -> Dict[str, Any]:
+    """Build a self-contained glTF containing one mesh and only referenced data."""
+    buffer_uri = gltf["buffers"][0].get("uri", "")
+    if not buffer_uri.startswith("data:application/octet-stream;base64,"):
+        raise ValueError("expected embedded binary buffer URI in glTF payload")
+    src_buffer = from_base64(buffer_uri.split(",", 1)[1])
+
+    accessor_map: Dict[int, int] = {}
+    buffer_view_map: Dict[int, int] = {}
+    material_map: Dict[int, int] = {}
+    out_buffer = bytearray()
+    out: Dict[str, Any] = {
+        "asset": copy.deepcopy(gltf.get("asset", {"version": "2.0"})),
+        "scene": 0,
+        "scenes": [{"name": "default", "nodes": [0]}],
+        "nodes": [{"name": shape_name, "mesh": 0}],
+        "meshes": [],
+        "accessors": [],
+        "bufferViews": [],
+        "buffers": [{"byteLength": 0, "uri": "data:application/octet-stream;base64,"}],
+        "materials": [],
+        "extras": copy.deepcopy(gltf.get("extras", {})),
+    }
+    out["extras"]["source_shape_index"] = shape_index
+    out["extras"]["source_shape_name"] = shape_name
+    out["extras"]["minimized_per_shape_glb"] = True
+
+    def remap_buffer_view(old_view_index: int) -> int:
+        """Remap buffer view."""
+        if old_view_index in buffer_view_map:
+            return buffer_view_map[old_view_index]
+        old_view = gltf["bufferViews"][old_view_index]
+        src_offset = int(old_view.get("byteOffset", 0))
+        src_length = int(old_view.get("byteLength", 0))
+        out_buffer.extend(b"\x00" * _align4(len(out_buffer)))
+        dst_offset = len(out_buffer)
+        out_buffer.extend(src_buffer[src_offset : src_offset + src_length])
+        new_view = copy.deepcopy(old_view)
+        new_view["buffer"] = 0
+        new_view["byteOffset"] = dst_offset
+        new_view["byteLength"] = src_length
+        new_index = len(out["bufferViews"])
+        out["bufferViews"].append(new_view)
+        buffer_view_map[old_view_index] = new_index
+        return new_index
+
+    def remap_accessor(old_accessor_index: int) -> int:
+        """Remap accessor."""
+        if old_accessor_index in accessor_map:
+            return accessor_map[old_accessor_index]
+        old_accessor = gltf["accessors"][old_accessor_index]
+        new_accessor = copy.deepcopy(old_accessor)
+        if "bufferView" in new_accessor:
+            new_accessor["bufferView"] = remap_buffer_view(int(new_accessor["bufferView"]))
+        new_index = len(out["accessors"])
+        out["accessors"].append(new_accessor)
+        accessor_map[old_accessor_index] = new_index
+        return new_index
+
+    def remap_material(old_material_index: int) -> int:
+        """Remap material."""
+        if old_material_index in material_map:
+            return material_map[old_material_index]
+        new_index = len(out["materials"])
+        out["materials"].append(copy.deepcopy(gltf["materials"][old_material_index]))
+        material_map[old_material_index] = new_index
+        return new_index
+
+    new_mesh = copy.deepcopy(mesh)
+    for prim in new_mesh.get("primitives", []):
+        attrs = prim.get("attributes", {})
+        if isinstance(attrs, dict):
+            for attr_name, accessor_index in list(attrs.items()):
+                attrs[attr_name] = remap_accessor(int(accessor_index))
+        if "indices" in prim:
+            prim["indices"] = remap_accessor(int(prim["indices"]))
+        if "material" in prim:
+            prim["material"] = remap_material(int(prim["material"]))
+
+    out["meshes"] = [new_mesh]
+    out["buffers"][0]["uri"] = "data:application/octet-stream;base64," + to_base64(bytes(out_buffer))
+    out["buffers"][0]["byteLength"] = len(out_buffer)
+    return out
+
+
+def export_3d3_shape_gltfs(payload: Dict[str, Any]) -> List[Tuple[int, str, Dict[str, Any]]]:
+    """Export renderable 3D3 shapes as individual self-contained glTF documents.
+
+    Each returned document keeps only the accessors, bufferViews, materials, and
+    embedded binary buffer ranges referenced by the one exported mesh.
+    """
+    gltf = export_3d3_to_gltf(payload)
+    out: List[Tuple[int, str, Dict[str, Any]]] = []
+    for mesh in gltf.get("meshes", []):
+        if not isinstance(mesh, dict):
+            continue
+        extras = mesh.get("extras", {})
+        if not isinstance(extras, dict):
+            extras = {}
+        try:
+            shape_index = int(extras.get("shape_index", len(out)))
+        except (TypeError, ValueError):
+            shape_index = len(out)
+        shape_name = str(extras.get("shape_name") or mesh.get("name") or f"shape_{shape_index:03d}")
+        shape_doc = _minimized_single_mesh_gltf(gltf, mesh, shape_index, shape_name)
+        out.append((shape_index, shape_name, shape_doc))
+    return out
+
+
+def export_3d3_gltf_to_glb(gltf: Dict[str, Any]) -> bytes:
+    """Pack a generated 3D3 glTF document as a binary glTF (`.glb`) blob."""
     buffer_uri = gltf["buffers"][0].get("uri", "")
     if not buffer_uri.startswith("data:application/octet-stream;base64,"):
         raise ValueError("expected embedded binary buffer URI in glTF payload")
@@ -1367,6 +1663,7 @@ def export_3d3_to_glb(payload: Dict[str, Any]) -> bytes:
 
 
 def build_3d3(payload: Dict[str, Any]) -> bytes:
+    """Build 3d3 from normalized asset data."""
     if payload.get("format") != "3D3":
         raise ValueError("invalid payload format")
 
