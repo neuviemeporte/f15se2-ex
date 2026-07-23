@@ -1831,8 +1831,8 @@ struct SortRec {
 };
 static struct SortRec g_sortRecs[35];
 static int g_sortList[35];
-static R3DReplacementMesh *g_activeReplacementMesh;
-static R3DReplacementMesh *g_pendingReplacementMesh;
+static R3DReplacementMesh *g_activeReplacementMesh{};
+static R3DReplacementMesh *g_pendingReplacementMesh{};
 
 /* Depth-sorted 3D line segments (cannon tracers, explosion sparks), kept in their
  * own list so they never evict scene objects from the 35-entry object queue;
@@ -2226,7 +2226,7 @@ static int replacementNearestPaletteIndex(float r, float g, float b) {
 
 /* Resolve a replacement primitive color through the legacy palette and shade rules. */
 static int replacementPrimitiveColor(const R3DReplacementPrim *prim) {
-    int i;
+    int i{};
     int base = replacementNearestPaletteIndex(prim->rgba[0], prim->rgba[1], prim->rgba[2]);
 
     /* Drawing is intentionally material-first: sourceColor is proof metadata for
@@ -2275,9 +2275,9 @@ static int projectReplacementCameraVertex(const ReplacementCameraVertex *v, int 
 /* Intersect a replacement edge with the legacy near clipping plane. */
 static ReplacementCameraVertex replacementNearIntersection(const ReplacementCameraVertex *behind,
                                                           const ReplacementCameraVertex *front) {
-    ReplacementCameraVertex out;
+    ReplacementCameraVertex out{};
     int div = HI16(front->depth) - HI16(behind->depth);
-    int cx;
+    int cx{};
     long delta, prod;
 
     if (div <= 0) {
@@ -2324,7 +2324,7 @@ static int clipReplacementLineNear(ReplacementCameraVertex *a, ReplacementCamera
 /* Clip one replacement polygon against the legacy near plane without reordering vertices. */
 static int clipReplacementPolygonNear(const ReplacementCameraVertex *in, int inCount,
                                       ReplacementCameraVertex *out) {
-    ReplacementCameraVertex cur[5];
+    ReplacementCameraVertex cur[5]{};
     int curCount = inCount;
     int i, outCount = 0;
     for (i = 0; i < inCount; i++) cur[i] = in[i];
@@ -2347,7 +2347,7 @@ static int clipReplacementPolygonNear(const ReplacementCameraVertex *in, int inC
 
 /* Project a clipped replacement polygon into the software rasterizer point buffer. */
 static int projectReplacementPolygon(const ReplacementCameraVertex *poly, int n, int *points) {
-    int i;
+    int i{};
     if (n < 3 || n > 4) return 0;
     for (i = 0; i < n; i++) {
         if (!projectReplacementCameraVertex(&poly[i], i * 4)) return 0;
@@ -2359,9 +2359,9 @@ static int projectReplacementPolygon(const ReplacementCameraVertex *poly, int n,
 
 /* Rasterize replacement polygons and lines through the original software drawing paths. */
 static void drawReplacementMesh(R3DReplacementMesh *mesh) {
-    int16 combined[9];
+    int16 combined[9]{};
     long camBase, camX, camY;
-    int i;
+    int i{};
 
     if (!mesh) return;
     /* projectReplacementSceneObject follows the same cull/LOD/sort path as
@@ -2388,12 +2388,12 @@ static void drawReplacementMesh(R3DReplacementMesh *mesh) {
     for (i = 0; i < mesh->nPrims; i++) {
         R3DReplacementPrim *prim = &mesh->prims[i];
         int color = replacementPrimitiveColor(prim);
-        int v;
+        int v{};
         if (prim->mode == 4) {
             for (v = 0; v + 2 < prim->nVerts; v += 3) {
-                ReplacementCameraVertex tri[3], clipped[5];
-                int points[8];
-                int n;
+                ReplacementCameraVertex tri[3], clipped[5]{};
+                int points[8]{};
+                int n{};
                 transformReplacementVertex(prim, v, combined, camBase, camX, camY, &tri[0]);
                 transformReplacementVertex(prim, v + 1, combined, camBase, camX, camY, &tri[1]);
                 transformReplacementVertex(prim, v + 2, combined, camBase, camX, camY, &tri[2]);
@@ -2419,7 +2419,7 @@ static void drawReplacementMesh(R3DReplacementMesh *mesh) {
         } else if (prim->mode == 0) {
             gfx_setColor((unsigned char)color);
             for (v = 0; v < prim->nVerts; v++) {
-                ReplacementCameraVertex point;
+                ReplacementCameraVertex point{};
                 transformReplacementVertex(prim, v, combined, camBase, camX, camY, &point);
                 if (!projectReplacementCameraVertex(&point, 0)) continue;
                 g_lineX1 = g_lineX2 = (int16)vtxScratch.vproj.x.v[0];
@@ -2448,7 +2448,7 @@ static void processSceneObject(void) {
 
     if (g_activeReplacementMesh) {
         drawReplacementMesh(g_activeReplacementMesh);
-        return;
+        return{};
     }
 
     op = (*p) & MODEL_OPCODE_MASK;
@@ -2569,14 +2569,14 @@ static void projectSceneObjectImpl(char far *model, R3DReplacementMesh *replacem
 
     if (transformAndCullObject(g_objRelY, g_objTransform[0], g_objRelX)) {
         g_pendingReplacementMesh = 0;
-        return;
+        return{};
     }
 
     skipDisplayListByLod(&p);
     opcode = *p;
     if (*(unsigned *)&p == 1 && g_detailLevel != 2) {
         g_pendingReplacementMesh = 0;
-        return;
+        return{};
     }
     cl = opcode;
     if ((opcode & MODEL_STORE_TRANSFORM_MASK) == MODEL_STORE_TRANSFORM_MASK) {
@@ -2611,7 +2611,7 @@ void far projectReplacementSceneObject(char far *model, R3DReplacementMesh *repl
 
 #ifdef DEBUG
 int eg3drast_testReplacementColorFromMaterial(float r, float g, float b, int sourceColor) {
-    R3DReplacementPrim prim;
+    R3DReplacementPrim prim{};
     prim.rgba[0] = r;
     prim.rgba[1] = g;
     prim.rgba[2] = b;

@@ -275,7 +275,7 @@ int gfx_nearestPaletteIndexRgb8(uint8 r, uint8 g, uint8 b) {
     SDL_Palette *palette = gfx_getPalette();
     int bestIndex = DEFAULT_PALETTE_MATCH;
     int bestDistance = 0x7fffffff;
-    int i;
+    int i{};
 
     if (!palette) return bestIndex;
     for (i = 0; i < palette->ncolors && i < 256; i++) {

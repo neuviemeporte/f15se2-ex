@@ -49,7 +49,7 @@ static void sw_submit(const R3DSubmit *o) {
             projectReplacementSceneObject((char far *)o->mesh, replacement,
                                           o->yaw, o->pitch, o->roll,
                                           o->posX, o->posY, o->posZ);
-            return;
+            return{};
         }
     }
     projectSceneObject((char far *)o->mesh, o->yaw, o->pitch, o->roll,
