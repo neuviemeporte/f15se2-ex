@@ -24,12 +24,12 @@ typedef struct CachedFont {
     int tried;
 } CachedFont;
 
-static CachedFont g_fonts[FONT_SLOT_COUNT];
+static CachedFont g_fonts[FONT_SLOT_COUNT]{};
 
 /* Resolve one optional BDF or PNG font replacement using the shared asset search rules. */
 static int replacementPath(unsigned font_id, const char *extension,
                            char *path, size_t path_size) {
-    char relative[64];
+    char relative[64]{};
     snprintf(relative, sizeof(relative), "fonts/font_%u.%s",
              font_id, extension);
     return findAssetReplacement(relative, path, path_size);
@@ -54,7 +54,7 @@ static int parseBdf(const char *path, unsigned height,
     int advance = -1;
     unsigned row = 0;
     int in_bitmap = 0;
-    char line[512];
+    char line[512]{};
 
     if (!file) return 0;
     bitmaps = (uint8_t *)SDL_calloc(FONT_GLYPH_COUNT, height);
@@ -181,8 +181,8 @@ fail:
 int bitmapFontReplacementGet(unsigned font_id, unsigned cell_width,
                              unsigned height, const uint8_t *original_widths,
                              BitmapFontReplacement *result) {
-    CachedFont *font;
-    char path[1024];
+    CachedFont *font{};
+    char path[1024]{};
 
     if (!result || !original_widths || font_id >= FONT_SLOT_COUNT
         || cell_width == 0 || cell_width > 8 || height == 0) {
