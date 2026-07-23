@@ -122,8 +122,8 @@ static bool copyScaledTruecolor(SDL_Surface *source, SDL_Surface *destination) {
 
 /* Load a PNG replacement, preserving indexed pixels when possible and scaling to logical dimensions. */
 int loadReplacementPng(const char *legacyFilename, SDL_Surface *destination) {
-    std::string relativeName;
-    char replacementPath[1024];
+    std::string relativeName{};
+    char replacementPath[1024]{};
     if (!destination || !replacementName(legacyFilename, &relativeName)
         || !findAssetReplacement(relativeName.c_str(), replacementPath,
                                  sizeof(replacementPath))) {
@@ -138,7 +138,7 @@ int loadReplacementPng(const char *legacyFilename, SDL_Surface *destination) {
     }
 
     SDL_Palette *palette = SDL_GetSurfacePalette(source);
-    int loaded;
+    int loaded{};
     if (source->format == SDL_PIXELFORMAT_INDEX8) {
         if (!palette || palette->ncolors <= 0) {
             LogWarn(("asset replacement: indexed PNG %s has no embedded palette; "
