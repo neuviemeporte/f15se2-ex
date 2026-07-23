@@ -269,6 +269,7 @@ SDL_Palette *gfx_getPalette(void) {
     return gfxPalette;
 }
 
+/* Return the nearest active palette entry for an eight-bit RGB replacement color. */
 int gfx_nearestPaletteIndexRgb8(uint8 r, uint8 g, uint8 b) {
     enum { DEFAULT_PALETTE_MATCH = 15 }; /* VGA bright white. */
     SDL_Palette *palette = gfx_getPalette();

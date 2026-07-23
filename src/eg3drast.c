@@ -2213,6 +2213,7 @@ typedef struct ReplacementCameraVertex {
     long depth;
 } ReplacementCameraVertex;
 
+/* Map a replacement RGB color to the nearest active software palette entry. */
 static int replacementNearestPaletteIndex(float r, float g, float b) {
     int rr = (int)(r * 255.0f + 0.5f);
     int gg = (int)(g * 255.0f + 0.5f);
@@ -2223,6 +2224,7 @@ static int replacementNearestPaletteIndex(float r, float g, float b) {
     return gfx_nearestPaletteIndexRgb8((uint8)rr, (uint8)gg, (uint8)bb);
 }
 
+/* Resolve a replacement primitive color through the legacy palette and shade rules. */
 static int replacementPrimitiveColor(const R3DReplacementPrim *prim) {
     int i;
     int base = replacementNearestPaletteIndex(prim->rgba[0], prim->rgba[1], prim->rgba[2]);
@@ -2241,6 +2243,7 @@ static int replacementPrimitiveColor(const R3DReplacementPrim *prim) {
     return base;
 }
 
+/* Transform one replacement vertex into legacy camera-space fixed-point coordinates. */
 static void transformReplacementVertex(const R3DReplacementPrim *prim, int srcVert,
                                        const int16 *combined, long camBase, long camX, long camY,
                                        ReplacementCameraVertex *out) {
@@ -2259,6 +2262,7 @@ static void transformReplacementVertex(const R3DReplacementPrim *prim, int srcVe
     }
 }
 
+/* Project one camera-space replacement vertex into the legacy viewport. */
 static int projectReplacementCameraVertex(const ReplacementCameraVertex *v, int slot) {
     VCAMX(slot) = v->x;
     VCAMY(slot) = v->y;
@@ -2268,6 +2272,7 @@ static int projectReplacementCameraVertex(const ReplacementCameraVertex *v, int 
     return 1;
 }
 
+/* Intersect a replacement edge with the legacy near clipping plane. */
 static ReplacementCameraVertex replacementNearIntersection(const ReplacementCameraVertex *behind,
                                                           const ReplacementCameraVertex *front) {
     ReplacementCameraVertex out;
@@ -2301,10 +2306,12 @@ static ReplacementCameraVertex replacementNearIntersection(const ReplacementCame
     return out;
 }
 
+/* Return whether a replacement camera-space vertex is in front of the near plane. */
 static int replacementVertexInFront(const ReplacementCameraVertex *v) {
     return HI16(v->depth) >= 1;
 }
 
+/* Clip one replacement line segment against the legacy near plane. */
 static int clipReplacementLineNear(ReplacementCameraVertex *a, ReplacementCameraVertex *b) {
     int aIn = replacementVertexInFront(a);
     int bIn = replacementVertexInFront(b);
@@ -2314,6 +2321,7 @@ static int clipReplacementLineNear(ReplacementCameraVertex *a, ReplacementCamera
     return 1;
 }
 
+/* Clip one replacement polygon against the legacy near plane without reordering vertices. */
 static int clipReplacementPolygonNear(const ReplacementCameraVertex *in, int inCount,
                                       ReplacementCameraVertex *out) {
     ReplacementCameraVertex cur[5];
@@ -2337,6 +2345,7 @@ static int clipReplacementPolygonNear(const ReplacementCameraVertex *in, int inC
     return outCount;
 }
 
+/* Project a clipped replacement polygon into the software rasterizer point buffer. */
 static int projectReplacementPolygon(const ReplacementCameraVertex *poly, int n, int *points) {
     int i;
     if (n < 3 || n > 4) return 0;
@@ -2348,6 +2357,7 @@ static int projectReplacementPolygon(const ReplacementCameraVertex *poly, int n,
     return 1;
 }
 
+/* Rasterize replacement polygons and lines through the original software drawing paths. */
 static void drawReplacementMesh(R3DReplacementMesh *mesh) {
     int16 combined[9];
     long camBase, camX, camY;
@@ -2539,6 +2549,7 @@ static void insertSortedObject(unsigned char far *p) {
 /* seg001 0x0BE7 thunk path — projectSceneObject: entry from the scene walk.
  * Transforms+culls the object origin, then either renders it immediately (when
  * coplanar with the viewer Z) or queues it into the depth-sorted list. */
+/* Project one legacy scene object while optionally substituting a replacement mesh. */
 static void projectSceneObjectImpl(char far *model, R3DReplacementMesh *replacement,
                                    int yaw, int pitch, int roll,
                                    int posX, int posY, int posZ) {
@@ -2591,6 +2602,7 @@ void far projectSceneObject(char far *model, int yaw, int pitch, int roll,
     projectSceneObjectImpl(model, 0, yaw, pitch, roll, posX, posY, posZ);
 }
 
+/* Project one scene object from a per-shape replacement mesh when present. */
 void far projectReplacementSceneObject(char far *model, R3DReplacementMesh *replacement,
                                        int yaw, int pitch, int roll,
                                        int posX, int posY, int posZ) {
