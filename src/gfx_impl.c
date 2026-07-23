@@ -15,6 +15,7 @@
 #include <stdio.h>
 
 #include "fontdata.h"
+#include "shared/bitmap_font_replacement.h"
 
 /* The SDL window and renderer are owned here: the graphics layer brings up the
  * video output and every gfx_* function presents through it. The original game
@@ -136,6 +137,7 @@ void gfx_videoShutdown(void) {
         SDL_DestroyPalette(gfxPalette);
         gfxPalette = NULL;
     }
+    bitmapFontReplacementShutdown();
     if (sdlRenderer) SDL_DestroyRenderer(sdlRenderer);
     if (sdlWindow) SDL_DestroyWindow(sdlWindow);
     SDL_Quit();
@@ -585,7 +587,7 @@ static const uint8 g_font0_widths[96] = {
     4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
     4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
     4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4};
-static const uint8 *const g_fontWidthTables[8] = {
+static const uint8 *g_fontWidthTables[8] = {
     g_font0_widths, g_font1_widths, NULL, g_font3_widths,
     g_font4_widths, g_font5_widths, NULL, NULL};
 static const uint8 g_fontHeightsArr[8] = {5, 8, 7, 6, 7, 6, 4, 0};
@@ -596,6 +598,19 @@ static uint8 *g_fontBitmapPtrs[8] = {
     (uint8 *)g_font0_bitmaps, (uint8 *)g_font1_bitmaps, NULL, (uint8 *)g_font3_bitmaps,
     (uint8 *)g_font4_bitmaps, (uint8 *)g_font5_bitmaps, NULL, NULL};
 static const uint8 g_fontBitmapRowSize[8] = {5, 8, 0, 6, 7, 6, 0, 0};
+static void tryLoadBitmapFontReplacement(uint16 fontIdx) {
+    BitmapFontReplacement replacement;
+    if (fontIdx >= 8 || !g_fontWidthTables[fontIdx]
+        || !g_fontBitmapPtrs[fontIdx]) {
+        return;
+    }
+    if (bitmapFontReplacementGet(fontIdx, g_fontMaxWidths[fontIdx],
+                                 g_fontHeightsArr[fontIdx],
+                                 g_fontWidthTables[fontIdx], &replacement)) {
+        g_fontBitmapPtrs[fontIdx] = (uint8 *)replacement.bitmaps;
+        g_fontWidthTables[fontIdx] = (const uint8 *)replacement.widths;
+    }
+}
 
 /* ---- Shared glyph engine (slots 0x01-0x06) ----
  * MGRAPHIC has one core blitter (0x04 @0x4ab) that the string slots fall into
@@ -634,6 +649,7 @@ static void drawStringCore(int16 *params, const char *string,
     y = (int)params[5];
     color = (int)params[2];
     fontIdx = (uint16)params[6] & 7;
+    tryLoadBitmapFontReplacement(fontIdx);
     height = g_fontHeightsArr[fontIdx];
     rowSize = g_fontBitmapRowSize[fontIdx];
     bitmaps = g_fontBitmapPtrs[fontIdx];
@@ -715,6 +731,7 @@ void FAR gfx_drawGlyphStrRot(const char *string, int fontIdx, int color,
     float penX = 0.0f; /* running text-column offset (in glyph texels) */
     if (!string) return;
     fontIdx &= 7;
+    tryLoadBitmapFontReplacement((uint16)fontIdx);
     height = g_fontHeightsArr[fontIdx];
     rowSize = g_fontBitmapRowSize[fontIdx];
     bitmaps = g_fontBitmapPtrs[fontIdx];
@@ -1209,6 +1226,7 @@ int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx) {
      * pointers, exactly as drawStringCore reads them. */
     const uint8 *wt;
     if (fontIdx >= 8) return 8;
+    tryLoadBitmapFontReplacement(fontIdx);
     /* Chars >= 0x80 are inline color escapes - no glyph, no width */
     if (ch >= 0x80) return 0;
     wt = g_fontWidthTables[fontIdx];
