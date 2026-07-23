@@ -25,6 +25,7 @@ typedef struct ReplacementMusic {
 
 static ReplacementMusic g_music;
 
+/* Release all parsed replacement music streams and reset their descriptors. */
 static void freeStreams(void) {
     for (int voice = 0; voice < ASOUND_STREAM_COUNT; ++voice) {
         SDL_free(g_music.intro[voice]);
@@ -37,6 +38,7 @@ static void freeStreams(void) {
     g_music.loaded = 0;
 }
 
+/* Read a complete replacement metadata file as a NUL-terminated owned string. */
 static char *readTextFile(const char *path) {
     SDL_IOStream *stream = SDL_IOFromFile(path, "rb");
     if (!stream) return NULL;
@@ -56,6 +58,7 @@ static char *readTextFile(const char *path) {
     return text;
 }
 
+/* Locate a named stream object in the constrained converter-generated JSON document. */
 static const char *findStreamObject(const char *json, const char *symbol,
                                     const char **object_end) {
     const char *key = json;
@@ -112,6 +115,7 @@ static const char *findStreamObject(const char *json, const char *symbol,
     return NULL;
 }
 
+/* Parse one timed AdLib register stream from converter-generated JSON. */
 static AsoundU8 *parseStream(const char *json, const char *symbol,
                              size_t *stream_size) {
     const char *object_end = NULL;
@@ -157,6 +161,7 @@ static AsoundU8 *parseStream(const char *json, const char *symbol,
     return bytes;
 }
 
+/* Reload optional intro and release music streams from the replacement root. */
 int asound_reload_replacement_music(void) {
     char path[1024];
     /*
@@ -200,6 +205,7 @@ int asound_reload_replacement_music(void) {
     return 1;
 }
 
+/* Start a replacement music stream when available and report whether it took ownership. */
 int asound_start_replacement_music(AsoundDriver *driver, int release_phase) {
     if (!driver) return 0;
     if (!g_music.tried) asound_reload_replacement_music();
@@ -212,6 +218,7 @@ int asound_start_replacement_music(AsoundDriver *driver, int release_phase) {
     return 1;
 }
 
+/* Return parsed replacement events for one named music stream. */
 int asound_replacement_music_stream(int release_phase, int voice,
                                     const AsoundU8 **data, size_t *size) {
     if (data) *data = NULL;
