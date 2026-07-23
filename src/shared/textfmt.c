@@ -7,6 +7,7 @@
 #include <dos.h>
 
 extern int FAR gfx_setFont(uint16 ch, uint16 font);
+extern int gfx_getStringAdvanceUtf8(const char *text, uint16 fontIdx);
 
 void drawStringCentered(int16 *page, const char *str, int16 startx, int16 y, int16 endx) {
     int16 width;
@@ -15,16 +16,7 @@ void drawStringCentered(int16 *page, const char *str, int16 startx, int16 y, int
 }
 
 int16 stringWidth(int16 *page, const char *str) {
-    int16 n;
-    const char *l;
-    int16 j;
-    l = str;
-    j = page[6];
-    n = 0;
-    while (*l != '\0') {
-        n += gfx_setFont(*(l++), j);
-    }
-    return n;
+    return (int16)gfx_getStringAdvanceUtf8(str, (uint16)page[6]);
 }
 
 void my_ltoa(int32 value, char *buf) {
