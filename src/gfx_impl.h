@@ -59,6 +59,7 @@ struct SDL_Surface *gfx_getSpriteSurface(int handle);
 struct SDL_Palette;
 struct SDL_Palette *gfx_getPalette(void);
 void gfx_paletteRGB(int idx, uint8 *r, uint8 *g, uint8 *b);
+int gfx_nearestPaletteIndexRgb8(uint8 r, uint8 g, uint8 b);
 int gfx_paletteGeneration(void);
 
 /* Current explosion screen-shake (0-3 virtual px, set by gfx_dacCycle). The GL

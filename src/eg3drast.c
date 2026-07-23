@@ -31,6 +31,7 @@
 #include "gfx_impl.h"
 #include "gfx.h"
 #include "r2d.h"
+#include "r3d_replacement.h"
 #include "inttype.h"
 
 /* Packed model display-list byte fields. Keep these hexadecimal because they
@@ -1820,6 +1821,7 @@ static long g_camBaseX;              /* word_3424C / word_3424E */
 struct SortRec {
     int16 depthLo, depthHi;
     char far *model;
+    R3DReplacementMesh *replacement;
     int16 relX, relY;
     int16 transform[4];
     long baseX;
@@ -1829,6 +1831,8 @@ struct SortRec {
 };
 static struct SortRec g_sortRecs[35];
 static int g_sortList[35];
+static R3DReplacementMesh *g_activeReplacementMesh;
+static R3DReplacementMesh *g_pendingReplacementMesh;
 
 /* Depth-sorted 3D line segments (cannon tracers, explosion sparks), kept in their
  * own list so they never evict scene objects from the 35-entry object queue;
@@ -2203,6 +2207,219 @@ static void sceneObjEdgeRun(unsigned char far *p) {
     }
 }
 
+typedef struct ReplacementCameraVertex {
+    long x;
+    long y;
+    long depth;
+} ReplacementCameraVertex;
+
+static int replacementNearestPaletteIndex(float r, float g, float b) {
+    int rr = (int)(r * 255.0f + 0.5f);
+    int gg = (int)(g * 255.0f + 0.5f);
+    int bb = (int)(b * 255.0f + 0.5f);
+    if (rr < 0) rr = 0; else if (rr > 255) rr = 255;
+    if (gg < 0) gg = 0; else if (gg > 255) gg = 255;
+    if (bb < 0) bb = 0; else if (bb > 255) bb = 255;
+    return gfx_nearestPaletteIndexRgb8((uint8)rr, (uint8)gg, (uint8)bb);
+}
+
+static int replacementPrimitiveColor(const R3DReplacementPrim *prim) {
+    int i;
+    int base = replacementNearestPaletteIndex(prim->rgba[0], prim->rgba[1], prim->rgba[2]);
+
+    /* Drawing is intentionally material-first: sourceColor is proof metadata for
+     * converter validation, not runtime rendering data. Converted legacy GLBs set
+     * source_order_sensitive in the generated GLMESH cache; that flag opts into
+     * the original distance-shade idea while the GLB material RGB still chooses
+     * the base palette color. Third-party GLBs without converter proof metadata
+     * render exactly from their material colour mapping, so palette-like custom
+     * colors are not accidentally hazed. */
+    if ((prim->sourceFlags & 1u) == 0u) return base;
+    for (i = 0; i < 16; i++) {
+        if (base == colorLut[i]) return colorLut[i] + g_objShade;
+    }
+    return base;
+}
+
+static void transformReplacementVertex(const R3DReplacementPrim *prim, int srcVert,
+                                       const int16 *combined, long camBase, long camX, long camY,
+                                       ReplacementCameraVertex *out) {
+    int shift = 8 - 2 * g_curLod;
+    long scaleDiv = (shift > 0) ? (1L << shift) : 1L;
+    float x = prim->xyz[srcVert * 3];
+    float y = prim->xyz[srcVert * 3 + 1];
+    float z = prim->xyz[srcVert * 3 + 2];
+    out->x = (long)(2.0f * ((float)combined[0] * x + (float)combined[3] * z + (float)combined[6] * y) + (float)camBase);
+    out->y = (long)(2.0f * ((float)combined[1] * x + (float)combined[4] * z + (float)combined[7] * y) + (float)camX);
+    out->depth = (long)(2.0f * ((float)combined[2] * x + (float)combined[5] * z + (float)combined[8] * y) + (float)camY);
+    if (scaleDiv != 1) {
+        out->x /= scaleDiv;
+        out->y /= scaleDiv;
+        out->depth /= scaleDiv;
+    }
+}
+
+static int projectReplacementCameraVertex(const ReplacementCameraVertex *v, int slot) {
+    VCAMX(slot) = v->x;
+    VCAMY(slot) = v->y;
+    setVtxDepth(slot >> 2, v->depth);
+    if (HI16(v->depth) < 1) return 0;
+    projectVertexToScreen(slot >> 2);
+    return 1;
+}
+
+static ReplacementCameraVertex replacementNearIntersection(const ReplacementCameraVertex *behind,
+                                                          const ReplacementCameraVertex *front) {
+    ReplacementCameraVertex out;
+    int div = HI16(front->depth) - HI16(behind->depth);
+    int cx;
+    long delta, prod;
+
+    if (div <= 0) {
+        out = *front;
+        out.depth = 65536L;
+        return out;
+    }
+
+    /* Match clipEdgeNearPlane's fixed-point interpolation instead of using a
+     * separate high-precision path. This keeps software replacement GLB clipping
+     * behavior aligned with legacy .3D3 edge clipping and avoids compiler helper
+     * calls for floating point or 64-bit arithmetic in this rasterizer TU. */
+    /* The formula needs front's low depth word. Cast through int16 to mirror the
+     * legacy vproj.in[].num low word without aliasing ReplacementCameraVertex. */
+    cx = (int)(udiv32by16_full((((unsigned long)(HI16(front->depth) - 1)) << 16) |
+                                   (uint16)(int16)front->depth,
+                               (unsigned)div) >> 1);
+
+    delta = front->x - behind->x;
+    prod = imul16(HI16(delta) + LOCARRY(delta), cx) << 1;
+    out.x = front->x - prod;
+    delta = front->y - behind->y;
+    prod = imul16(HI16(delta) + LOCARRY(delta), cx) << 1;
+    out.y = front->y - prod;
+    out.depth = 65536L;
+    return out;
+}
+
+static int replacementVertexInFront(const ReplacementCameraVertex *v) {
+    return HI16(v->depth) >= 1;
+}
+
+static int clipReplacementLineNear(ReplacementCameraVertex *a, ReplacementCameraVertex *b) {
+    int aIn = replacementVertexInFront(a);
+    int bIn = replacementVertexInFront(b);
+    if (!aIn && !bIn) return 0;
+    if (!aIn) *a = replacementNearIntersection(a, b);
+    else if (!bIn) *b = replacementNearIntersection(b, a);
+    return 1;
+}
+
+static int clipReplacementPolygonNear(const ReplacementCameraVertex *in, int inCount,
+                                      ReplacementCameraVertex *out) {
+    ReplacementCameraVertex cur[5];
+    int curCount = inCount;
+    int i, outCount = 0;
+    for (i = 0; i < inCount; i++) cur[i] = in[i];
+    for (i = 0; i < curCount; i++) {
+        ReplacementCameraVertex a = cur[i];
+        ReplacementCameraVertex b = cur[(i + 1) % curCount];
+        int aIn = replacementVertexInFront(&a);
+        int bIn = replacementVertexInFront(&b);
+        if (aIn && bIn) {
+            out[outCount++] = b;
+        } else if (aIn && !bIn) {
+            out[outCount++] = replacementNearIntersection(&b, &a);
+        } else if (!aIn && bIn) {
+            out[outCount++] = replacementNearIntersection(&a, &b);
+            out[outCount++] = b;
+        }
+    }
+    return outCount;
+}
+
+static int projectReplacementPolygon(const ReplacementCameraVertex *poly, int n, int *points) {
+    int i;
+    if (n < 3 || n > 4) return 0;
+    for (i = 0; i < n; i++) {
+        if (!projectReplacementCameraVertex(&poly[i], i * 4)) return 0;
+        points[i * 2] = (int16)vtxScratch.vproj.x.v[i];
+        points[i * 2 + 1] = (int16)vtxScratch.vproj.y.v[i];
+    }
+    return 1;
+}
+
+static void drawReplacementMesh(R3DReplacementMesh *mesh) {
+    int16 combined[9];
+    long camBase, camX, camY;
+    int i;
+
+    if (!mesh) return;
+    /* projectReplacementSceneObject follows the same cull/LOD/sort path as
+     * projectSceneObject. At this point immediate and sorted objects have the
+     * exact object-origin camera state the legacy software renderer would use.
+     * Build only the orientation*view matrix here, then draw GLB/GLMESH
+     * primitives through the existing software span/line rasterizers. */
+    {
+        int orv = g_objTransform[1] | g_objTransform[2] | g_objTransform[3];
+        int al = (orv | (orv >> 8)) & 0xff;
+        g_objHasRotation = (uint8)al;
+        if (al == 0) {
+            for (i = 0; i < 9; i++) combined[i] = g_viewRotMatrix[i];
+        } else {
+            buildInverseRotationMatrix(g_objOrientMatrix,
+                                       g_objTransform[1], g_objTransform[2], g_objTransform[3]);
+            multiplyMatrix3x3(g_objOrientMatrix, g_viewRotMatrix, combined);
+        }
+    }
+    camBase = g_camBaseX;
+    camX = JOIN32(g_camTransXLo, g_camTransXHi);
+    camY = JOIN32(g_camTransYLo, g_camTransYHi);
+
+    for (i = 0; i < mesh->nPrims; i++) {
+        R3DReplacementPrim *prim = &mesh->prims[i];
+        int color = replacementPrimitiveColor(prim);
+        int v;
+        if (prim->mode == 4) {
+            for (v = 0; v + 2 < prim->nVerts; v += 3) {
+                ReplacementCameraVertex tri[3], clipped[5];
+                int points[8];
+                int n;
+                transformReplacementVertex(prim, v, combined, camBase, camX, camY, &tri[0]);
+                transformReplacementVertex(prim, v + 1, combined, camBase, camX, camY, &tri[1]);
+                transformReplacementVertex(prim, v + 2, combined, camBase, camX, camY, &tri[2]);
+                n = clipReplacementPolygonNear(tri, 3, clipped);
+                if (!projectReplacementPolygon(clipped, n, points)) continue;
+                drawPolygonOutline(color, n, points, color);
+            }
+        } else if (prim->mode == 1) {
+            gfx_setColor((unsigned char)color);
+            for (v = 0; v + 1 < prim->nVerts; v += 2) {
+                ReplacementCameraVertex a, b;
+                transformReplacementVertex(prim, v, combined, camBase, camX, camY, &a);
+                transformReplacementVertex(prim, v + 1, combined, camBase, camX, camY, &b);
+                if (!clipReplacementLineNear(&a, &b)) continue;
+                if (!projectReplacementCameraVertex(&a, 0)) continue;
+                if (!projectReplacementCameraVertex(&b, 4)) continue;
+                g_lineX1 = (int16)vtxScratch.vproj.x.v[0];
+                g_lineY1 = (int16)vtxScratch.vproj.y.v[0];
+                g_lineX2 = (int16)vtxScratch.vproj.x.v[1];
+                g_lineY2 = (int16)vtxScratch.vproj.y.v[1];
+                drawClipLineGlobal();
+            }
+        } else if (prim->mode == 0) {
+            gfx_setColor((unsigned char)color);
+            for (v = 0; v < prim->nVerts; v++) {
+                ReplacementCameraVertex point;
+                transformReplacementVertex(prim, v, combined, camBase, camX, camY, &point);
+                if (!projectReplacementCameraVertex(&point, 0)) continue;
+                g_lineX1 = g_lineX2 = (int16)vtxScratch.vproj.x.v[0];
+                g_lineY1 = g_lineY2 = (int16)vtxScratch.vproj.y.v[0];
+                drawClipLineGlobal();
+            }
+        }
+    }
+}
+
 /* seg001 0x0BE7 — processSceneObject: render one (depth-sorted) object: compute
  * its shade, build its combined orientation*view matrix, rotate+cull its faces,
  * project its vertices and draw its display list. */
@@ -2217,6 +2434,11 @@ static void processSceneObject(void) {
         int v = (h & 0x80) ? 0 : (h >> 1);
         if (v > 7) v = 7;
         g_objShade = (uint8)((v << 4) + 0x80);
+    }
+
+    if (g_activeReplacementMesh) {
+        drawReplacementMesh(g_activeReplacementMesh);
+        return;
     }
 
     op = (*p) & MODEL_OPCODE_MASK;
@@ -2281,6 +2503,7 @@ static void insertSortedObject(unsigned char far *p) {
     r->depthLo = dLo;
     r->depthHi = dHi;
     r->model = g_modelStreamPtr;
+    r->replacement = g_pendingReplacementMesh;
     r->relX = g_objRelX;
     r->relY = g_objRelY;
     r->transform[0] = g_objTransform[0];
@@ -2316,10 +2539,12 @@ static void insertSortedObject(unsigned char far *p) {
 /* seg001 0x0BE7 thunk path — projectSceneObject: entry from the scene walk.
  * Transforms+culls the object origin, then either renders it immediately (when
  * coplanar with the viewer Z) or queues it into the depth-sorted list. */
-void far projectSceneObject(char far *model, int yaw, int pitch, int roll,
-                            int posX, int posY, int posZ) {
+static void projectSceneObjectImpl(char far *model, R3DReplacementMesh *replacement,
+                                   int yaw, int pitch, int roll,
+                                   int posX, int posY, int posZ) {
     unsigned char far *p;
     int opcode, cl;
+    g_pendingReplacementMesh = replacement;
 
     g_objTransform[1] = yaw;
     g_objTransform[2] = pitch;
@@ -2331,11 +2556,17 @@ void far projectSceneObject(char far *model, int yaw, int pitch, int roll,
     g_objTransform[0] = posZ - g_viewPosZ;
     g_objRelX = posX - g_viewPosX;
 
-    if (transformAndCullObject(g_objRelY, g_objTransform[0], g_objRelX)) return;
+    if (transformAndCullObject(g_objRelY, g_objTransform[0], g_objRelX)) {
+        g_pendingReplacementMesh = 0;
+        return;
+    }
 
     skipDisplayListByLod(&p);
     opcode = *p;
-    if (*(unsigned *)&p == 1 && g_detailLevel != 2) return;
+    if (*(unsigned *)&p == 1 && g_detailLevel != 2) {
+        g_pendingReplacementMesh = 0;
+        return;
+    }
     cl = opcode;
     if ((opcode & MODEL_STORE_TRANSFORM_MASK) == MODEL_STORE_TRANSFORM_MASK) {
         int idx = (*p) & MODEL_TRANSFORM_SLOT_MASK;
@@ -2346,11 +2577,49 @@ void far projectSceneObject(char far *model, int yaw, int pitch, int roll,
     if (cl & 0x40) {
         insertSortedObject(p);
     } else if (-g_viewPosZ == g_objTransform[0]) {
+        g_activeReplacementMesh = replacement;
         processSceneObject();
+        g_activeReplacementMesh = 0;
     } else {
         insertSortedObject(p);
     }
+    g_pendingReplacementMesh = 0;
 }
+
+void far projectSceneObject(char far *model, int yaw, int pitch, int roll,
+                            int posX, int posY, int posZ) {
+    projectSceneObjectImpl(model, 0, yaw, pitch, roll, posX, posY, posZ);
+}
+
+void far projectReplacementSceneObject(char far *model, R3DReplacementMesh *replacement,
+                                       int yaw, int pitch, int roll,
+                                       int posX, int posY, int posZ) {
+    projectSceneObjectImpl(model, replacement, yaw, pitch, roll, posX, posY, posZ);
+}
+
+#ifdef DEBUG
+int eg3drast_testReplacementColorFromMaterial(float r, float g, float b, int sourceColor) {
+    R3DReplacementPrim prim;
+    prim.rgba[0] = r;
+    prim.rgba[1] = g;
+    prim.rgba[2] = b;
+    prim.rgba[3] = 1.0f;
+    prim.sourceColor = sourceColor;
+    prim.sourceFlags = 0;
+    return replacementPrimitiveColor(&prim);
+}
+
+int eg3drast_testReplacementLineNearClip(long aDepth, long bDepth) {
+    ReplacementCameraVertex a, b;
+    a.x = 0;
+    a.y = 0;
+    a.depth = aDepth;
+    b.x = 65536L;
+    b.y = 0;
+    b.depth = bDepth;
+    return clipReplacementLineNear(&a, &b);
+}
+#endif
 
 /* Project an aircraft ground shadow: the plane's own model drawn level (the
  * software backend does not project onto the ground) and filled flat black. The
@@ -2476,6 +2745,7 @@ int far multiplyMatrix3x3Far(const int16 *matA, const int16 *matB, int16 *result
  * factored so the object list and the 3D line list can be merge-walked). */
 static void drawSortedObject(struct SortRec *r) {
     g_modelStreamPtr = r->model;
+    g_activeReplacementMesh = r->replacement;
     g_objRelX = r->relX;
     g_objRelY = r->relY;
     g_objTransform[0] = r->transform[0];
@@ -2489,6 +2759,7 @@ static void drawSortedObject(struct SortRec *r) {
     g_camTransYHi = r->camYHi;
     g_shadowDraw = r->shadow;
     processSceneObject();
+    g_activeReplacementMesh = 0;
     g_shadowDraw = 0;
 }
 
