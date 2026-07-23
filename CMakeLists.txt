@@ -21,6 +21,8 @@ option(UBSAN "Build with UndefinedBehaviorSanitizer" OFF)
 # `ctest` produces .gcda data that gcovr turns into a report (see the `coverage`
 # target). Used by CI to upload to Codecov.
 option(COVERAGE "Build with gcov code-coverage instrumentation" OFF)
+option(BLACKBOX_AUTO_RECORD
+    "Record to _blackbox.rec by default when no blackbox mode is selected" OFF)
 
 # When ON, skip the interactive menus and drop straight into a hardcoded
 # mission (egame). Handy for iterating on the flight code without clicking
@@ -283,8 +285,12 @@ target_link_libraries(f15se2_core PUBLIC SDL3::SDL3 OpenGL::GL)
 add_executable(f15se2 ${SRC_DIR}/f15.c)
 set_target_properties(f15se2 PROPERTIES OUTPUT_NAME "f15se2-ex")
 target_link_libraries(f15se2 PRIVATE f15se2_core)
-target_compile_definitions(f15se2 PRIVATE
-    $<$<CONFIG:Debug>:F15_BLACKBOX_AUTO_RECORD>)
+if(BLACKBOX_AUTO_RECORD)
+    target_compile_definitions(f15se2 PRIVATE F15_BLACKBOX_AUTO_RECORD)
+else()
+    target_compile_definitions(f15se2 PRIVATE
+        $<$<CONFIG:Debug>:F15_BLACKBOX_AUTO_RECORD>)
+endif()
 
 # Autogenerate header file with version string
 add_custom_target(GenerateVersionHeader ALL

@@ -55,6 +55,19 @@ directory on Linux, macOS, and Windows. Preserve or rename the file before the
 next run when collecting multiple reports. Release builds do not record
 implicitly.
 
+The Windows CI job also produces the distributable
+`f15se2-ex-windows-blackbox` artifact. It is a `RelWithDebInfo` build with
+automatic recording enabled and includes `f15se2-ex.exe`, `SDL3.dll`, debug
+symbols, and these instructions. Unlike an MSVC Debug executable, it does not
+depend on Microsoft's non-redistributable Debug C runtime.
+
+To build the same configuration locally on Windows:
+
+```powershell
+cmake -S . -B build -A x64 -DBLACKBOX_AUTO_RECORD=ON
+cmake --build build --config RelWithDebInfo --parallel
+```
+
 ## Record a run
 
 Use the original game asset directory with `--game`.
