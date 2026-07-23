@@ -36,13 +36,9 @@ static bool isSafeRelativePath(const fs::path &path) {
 static bool resolveComponent(const fs::path &directory, const fs::path &component,
                              fs::path *resolved) {
     std::error_code error{};
-    const fs::path exact = directory / component;
-    if (fs::exists(exact, error) && !error) {
-        *resolved = exact;
-        return true;
-    }
-
-    error.clear();
+    /* Enumerate even when the requested spelling opens directly. On case-insensitive
+     * filesystems, exists(directory / component) succeeds without revealing the
+     * directory entry's actual spelling, which callers use in diagnostics. */
     for (fs::directory_iterator item(directory, error), end; !error && item != end;
          item.increment(error)) {
         if (namesEqualIgnoringCase(item->path().filename().string(), component.string())) {
