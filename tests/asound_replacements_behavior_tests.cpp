@@ -87,7 +87,7 @@ int main() {
             "unknown sample range remains a legacy fallback");
 
     require(setGamePath(root.string().c_str()), "modern-only game path is valid");
-    require(loadF15DgtlBin() == 0x7d9e,
+    require(loadF15DgtlBin() == 0x31f4,
             "replacement cues enable digitized sound without F15DGTL.BIN");
 
     setReplacementRoot("");
