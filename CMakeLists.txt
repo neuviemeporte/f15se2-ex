@@ -170,6 +170,7 @@ set(EGAME_SOURCES
 
     # audio: ported ASOUND AdLib driver on SDL3
     ${SRC_DIR}/asound/asound_model.c
+    ${SRC_DIR}/asound/asound_replacements.c
     ${SRC_DIR}/asound/asopl.c
     ${SRC_DIR}/asound/asound_sdl.c
 )
@@ -463,6 +464,7 @@ add_behavior_test(end_runtime_behavior_tests LINK_CORE)
 add_behavior_test(geometry_behavior_tests LINK_CORE)
 add_behavior_test(file_io_behavior_tests LINK_CORE)
 add_behavior_test(asset_path_behavior_tests LINK_CORE)
+add_behavior_test(asound_replacements_behavior_tests LINK_CORE)
 add_behavior_test(gameplay_behavior_tests LINK_CORE)
 add_behavior_test(input_behavior_tests LINK_CORE)
 add_behavior_test(gfx_render_behavior_tests LINK_CORE)

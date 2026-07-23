@@ -15,6 +15,7 @@
 #include <SDL3/SDL.h>
 
 #include "asound_model.h"
+#include "asound_replacements.h"
 #include "asopl.h"
 /* opl3.h has no extern "C" guard of its own; this TU compiles as C++ but opl3.c
  * is built as C, so the declarations must use C linkage to match. */
@@ -33,7 +34,7 @@ extern "C" {
 
 #define ASND_OUT_RATE 44100 /* SDL output sample rate (Hz) */
 #define ASND_TICK_HZ 60     /* sequencer tick = game tick rate */
-#define ASND_SAMPLE_HZ 7231 /* F15DGTL.BIN playback rate (PIT ch2 1193182/165) */
+#define ASND_SAMPLE_HZ 7850 /* Recovered F15DGTL.BIN cue playback rate. */
 #define ASND_CHUNK 512      /* max frames generated per inner loop pass */
 
 static AsoplState g_opl; /* OPL register shadow (event -> regs) */
@@ -47,9 +48,10 @@ static bool g_ready;                              /* device opened */
 static AsoundU8 *g_blob;
 static int g_blobSize;
 static bool g_smpActive;
+static const AsoundU8 *g_smpData;
 static double g_smpPos; /* fractional read position (bytes) */
-static int g_smpEnd;
-static const double g_smpStep = (double)ASND_SAMPLE_HZ / (double)ASND_OUT_RATE;
+static int g_smpSize;
+static double g_smpStep = (double)ASND_SAMPLE_HZ / (double)ASND_OUT_RATE;
 
 /* Fractional countdown (in output frames) to the next sequencer tick. */
 static double g_tickAccum;
@@ -74,12 +76,23 @@ static void asnd_syncChip(void) {
 /* ---- sequencer tick (audio thread, under g_lock) -------------------------- */
 
 static void asnd_startSample(AsoundU16 start, AsoundU16 end) {
+    AsoundReplacementCue cue;
+    if (asound_find_replacement_cue(start, end, &cue)) {
+        g_smpData = cue.samples;
+        g_smpSize = cue.sample_count;
+        g_smpPos = 0;
+        g_smpStep = (double)cue.sample_rate / (double)ASND_OUT_RATE;
+        g_smpActive = true;
+        return;
+    }
     if (!g_blob || g_blobSize <= 0) return;
-    int s = start, e = end;
+    int s = start, e = (int)end + 1;
     if (e > g_blobSize) e = g_blobSize;
     if (s < 0 || s >= e) return;
-    g_smpPos = s;
-    g_smpEnd = e;
+    g_smpData = g_blob + s;
+    g_smpSize = e - s;
+    g_smpPos = 0;
+    g_smpStep = (double)ASND_SAMPLE_HZ / (double)ASND_OUT_RATE;
     g_smpActive = true;
 }
 
@@ -108,12 +121,12 @@ static void asnd_mixSample(Sint16 *buf, int frames) {
     if (!g_smpActive) return;
     for (int i = 0; i < frames; i++) {
         int idx = (int)g_smpPos;
-        if (idx >= g_smpEnd) {
+        if (idx >= g_smpSize) {
             g_smpActive = false;
             break;
         }
         /* 8-bit unsigned -> signed, scaled below full-scale to leave OPL headroom */
-        int s = ((int)g_blob[idx] - 128) * 200;
+        int s = ((int)g_smpData[idx] - 128) * 200;
         int l = buf[2 * i] + s;
         int r = buf[2 * i + 1] + s;
         if (l > 32767)
@@ -339,27 +352,30 @@ int FAR CDECL audio_noiseTick(void) { return 0; }
  * the game stores in f15DgtlResult and passes to audio_setup as the sample-
  * variant selector (and uses to gate voice cues). 0 on failure -> cues disabled. */
 int loadF15DgtlBin(void) {
+    const int replacementCount = asound_load_replacement_cues();
+    const int replacementSpan = replacementCount > 0 ? 0x7d9e : 0;
     SDL_IOStream *io = openFile("F15DGTL.BIN", 0);
     if (!io) {
-        LogError(("asound: cannot open F15DGTL.BIN"));
+        if (replacementSpan) return replacementSpan;
+        LogError(("asound: cannot open F15DGTL.BIN or replacement cue WAVs"));
         return 0;
     }
     Sint64 size = SDL_GetIOSize(io);
     if (size <= 0) {
         SDL_CloseIO(io);
-        return 0;
+        return replacementSpan;
     }
 
     AsoundU8 *data = (AsoundU8 *)SDL_malloc((size_t)size);
     if (!data) {
         SDL_CloseIO(io);
-        return 0;
+        return replacementSpan;
     }
     size_t got = SDL_ReadIO(io, data, (size_t)size);
     SDL_CloseIO(io);
     if (got != (size_t)size) {
         SDL_free(data);
-        return 0;
+        return replacementSpan;
     }
 
     if (g_lock) SDL_LockMutex(g_lock);
