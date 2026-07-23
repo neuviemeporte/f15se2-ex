@@ -74,6 +74,7 @@ static void ringPush(uint16 word) {
     ringTail = next;
 }
 
+/* Append one UTF-8 text-input event to the bounded menu input ring. */
 static void textRingPushUtf8(const char *text, int len) {
     int next;
     if (!text || len <= 0 || len >= (int)sizeof(textRing[0])) return;
@@ -108,6 +109,7 @@ uint16 input_readKey(void) {
     return word;
 }
 
+/* Read one complete UTF-8 menu text event into the caller buffer. */
 int input_readMenuTextUtf8(char *out, int outSize) {
     int len;
     input_pumpEvents();
@@ -120,10 +122,12 @@ int input_readMenuTextUtf8(char *out, int outSize) {
     return len;
 }
 
+/* Return whether an unconsumed UTF-8 menu text event is queued. */
 bool input_menuTextWaiting(void) {
     return textRingHead != textRingTail;
 }
 
+/* Suppress the legacy ASCII key event paired with an SDL text-input event. */
 void input_discardNextAsciiKey(uint8 ascii) {
     if (ringHead != ringTail && (keyRing[ringHead] & 0xff) == ascii) {
         ringHead = (ringHead + 1) % KEY_RING;

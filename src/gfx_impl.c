@@ -1328,6 +1328,7 @@ void FAR CDECL gfx_dirtyRect2(const int16 *spanMinBuf, uint16 yMin, uint16 yMax)
     }
 }
 
+/* Return the logical advance of one glyph for the active bitmap or vector font. */
 int gfx_getGlyphAdvance(uint32 codepoint, uint16 fontIdx) {
     /* Returns the pixel advance width of one decoded character. stringWidth()
      * and gfx_setFont both route here so centered/right-aligned UTF-8 text
@@ -1353,6 +1354,7 @@ int gfx_getGlyphAdvance(uint32 codepoint, uint16 fontIdx) {
     return wt[codepoint - 0x20];
 }
 
+/* Measure a complete UTF-8 string using the active replacement font layout. */
 int gfx_getStringAdvanceUtf8(const char *text, uint16 fontIdx) {
     int width = 0;
     int charIdx;

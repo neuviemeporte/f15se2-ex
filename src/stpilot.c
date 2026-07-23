@@ -33,6 +33,7 @@ void saveHallfame();
 int getJoyKey();
 int readInputKey();
 
+/* Restore the pilot-selection prompt after transient name editing. */
 static void redrawPilotSelectorPrompt(int16 *page) {
     int oldBg = page[3];
     int oldColor = page[2];
@@ -48,6 +49,7 @@ static void redrawPilotSelectorPrompt(int16 *page) {
     page[3] = oldBg;
 }
 
+/* Redraw the name-entry prompt and current UTF-8 pilot name without stale overlays. */
 static void redrawPilotNamePrompt(int16 *page) {
     int oldBg = page[3];
     int oldColor = page[2];

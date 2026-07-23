@@ -14,6 +14,7 @@ static void clearTtfTextOverlayRecords(void);
 #endif
 
 
+/* Release one FreeType face and clear its replacement-font cache entry. */
 static void freeReplacementFont(uint16 fontIdx) {
     if (fontIdx >= 8) return;
 #ifdef F15_HAVE_FREETYPE
@@ -26,6 +27,7 @@ static void freeReplacementFont(uint16 fontIdx) {
 #endif
 }
 
+/* Release all vector-font faces and the shared FreeType library. */
 static void cleanupReplacementFonts(void) {
 #ifdef F15_HAVE_FREETYPE
     int i;
@@ -37,6 +39,7 @@ static void cleanupReplacementFonts(void) {
     }
 #endif
 }
+/* Decode one UTF-8 codepoint and advance the caller cursor safely. */
 static int decodeUtf8Codepoint(const char *text, uint32 *codepointOut, int *byteCountOut) {
     uint32_t codepoint;
     size_t byteCount;
@@ -47,6 +50,7 @@ static int decodeUtf8Codepoint(const char *text, uint32 *codepointOut, int *byte
 }
 
 #ifdef F15_HAVE_FREETYPE
+/* Discard every retained vector-text overlay record for a new screen. */
 static void clearTtfTextOverlayRecords(void) {
     int i;
     for (i = 0; i < g_ttfTextOverlayCount; i++) {
@@ -56,10 +60,12 @@ static void clearTtfTextOverlayRecords(void) {
     g_ttfTextOverlayCount = 0;
 }
 
+/* Mark all retained vector-text overlays dirty after underlying pixels change. */
 static void invalidateTtfTextOverlayRecords(void) {
     if (g_ttfTextOverlayCount > 0) clearTtfTextOverlayRecords();
 }
 
+/* Detect broad framebuffer changes that invalidate the complete retained overlay. */
 static int ttfOverlayRectIsScreenChange(int x1, int y1, int x2, int y2) {
     int w, h;
     if (x2 < x1) {
@@ -77,11 +83,13 @@ static int ttfOverlayRectIsScreenChange(int x1, int y1, int x2, int y2) {
     return w > 0 && h > 0 && w * h >= 12000;
 }
 
+/* Return the logical width occupied by one retained vector-text record. */
 static int ttfTextOverlayRecordWidth(const TtfTextOverlayRecord *record) {
     if (!record || !record->text) return 0;
     return replacementTtfStringAdvance(record->fontIdx, record->text);
 }
 
+/* Return whether two retained text records cover overlapping logical rectangles. */
 static int ttfTextOverlayRecordsOverlap(const TtfTextOverlayRecord *a,
                                         int x, int y, int width, int height,
                                         int margin) {
@@ -99,6 +107,7 @@ static int ttfTextOverlayRecordsOverlap(const TtfTextOverlayRecord *a,
     return ax2 >= bx1 && ax1 <= bx2 && ay2 >= by1 && ay1 <= by2;
 }
 
+/* Recognize changing numeric HUD text that should replace an older row record. */
 static int ttfTextOverlaySameDynamicRow(const TtfTextOverlayRecord *a,
                                         int x, int y, int width, int height) {
     int dy;
@@ -111,6 +120,7 @@ static int ttfTextOverlaySameDynamicRow(const TtfTextOverlayRecord *a,
     return dy <= 1 && ttfTextOverlayRecordsOverlap(a, x, y, width, height, 1);
 }
 
+/* Remove one retained overlay record while keeping the array densely packed. */
 static void removeTtfTextOverlayRecord(int index) {
     if (index < 0 || index >= g_ttfTextOverlayCount) return;
     SDL_free(g_ttfTextOverlayRecords[index].text);
@@ -125,6 +135,7 @@ static void removeTtfTextOverlayRecord(int index) {
     memset(&g_ttfTextOverlayRecords[g_ttfTextOverlayCount], 0, sizeof(g_ttfTextOverlayRecords[0]));
 }
 
+/* Invalidate retained text touched by a legacy framebuffer update. */
 static void invalidateTtfTextOverlayRect(int x1, int y1, int x2, int y2) {
     int i;
     if (x2 < x1) {
@@ -149,6 +160,7 @@ static void invalidateTtfTextOverlayRect(int x1, int y1, int x2, int y2) {
     }
 }
 
+/* Recolor retained text records affected by a legacy palette animation. */
 static void switchTtfTextOverlayColorRect(int x1, int y1, int x2, int y2, int oldColor, int newColor) {
     int i;
     if (x2 < x1) {
@@ -176,6 +188,7 @@ static void switchTtfTextOverlayColorRect(int x1, int y1, int x2, int y2, int ol
 #endif
 
 #ifdef F15_HAVE_FREETYPE
+/* Initialize the shared FreeType library exactly once. */
 static int ensureFreetypeLibrary(void) {
     if (g_freetypeLibrary) return 1;
     if (FT_Init_FreeType(&g_freetypeLibrary) != 0) {
@@ -186,6 +199,7 @@ static int ensureFreetypeLibrary(void) {
     return 1;
 }
 
+/* Sample either monochrome or antialiased FreeType bitmap coverage. */
 static uint8 freetypeBitmapPixel(const FT_Bitmap *bitmap, int x, int y) {
     const uint8 *row;
     int pitch;
@@ -201,6 +215,7 @@ static uint8 freetypeBitmapPixel(const FT_Bitmap *bitmap, int x, int y) {
     return 0;
 }
 
+/* Choose a vector-font pixel size that matches the legacy font slot metrics. */
 static int replacementTtfPixelSize(uint16 fontIdx) {
     int h;
     if (fontIdx >= 8) return 8;
@@ -211,6 +226,7 @@ static int replacementTtfPixelSize(uint16 fontIdx) {
     return h;
 }
 
+/* Return the FreeType advance for one Unicode codepoint at the active size. */
 static int replacementTtfUnicodeAdvance(uint16 fontIdx) {
     const uint8 *widths;
     int idx;
@@ -223,6 +239,7 @@ static int replacementTtfUnicodeAdvance(uint16 fontIdx) {
     return g_fontMaxWidths[fontIdx] > 0 ? g_fontMaxWidths[fontIdx] : 8;
 }
 
+/* Return the logical advance for one legacy byte through its UTF-8-compatible mapping. */
 static int replacementTtfAdvance(uint16 fontIdx, uint32 codepoint) {
     FT_Face face;
     int advance;
@@ -238,6 +255,7 @@ static int replacementTtfAdvance(uint16 fontIdx, uint32 codepoint) {
     return advance > 0 ? advance : 1;
 }
 
+/* Choose one consistent line scale that fits the original game text rectangle. */
 static void replacementTtfLayoutScale(uint16 fontIdx, int pixelSize,
                                       float targetScaleX, float targetScaleY,
                                       float *layoutScaleX, float *layoutScaleY) {
@@ -277,6 +295,7 @@ static void replacementTtfLayoutScale(uint16 fontIdx, int pixelSize,
     }
 }
 
+/* Measure a complete UTF-8 string using the same layout rules as rendering. */
 static int replacementTtfStringAdvance(uint16 fontIdx, const char *text) {
     FT_Face face;
     FT_UInt previousGlyphIndex = 0;
@@ -344,6 +363,7 @@ static int replacementTtfStringAdvance(uint16 fontIdx, const char *text) {
     return (int)(x + 0.5f);
 }
 
+/* Load and cache an optional TTF or OTF face for one legacy font slot. */
 static int loadReplacementFontTtf(uint16 fontIdx, const char *replacementPath) {
     FT_Face face = NULL;
     int fontWidth;
@@ -371,6 +391,7 @@ static int loadReplacementFontTtf(uint16 fontIdx, const char *replacementPath) {
     return 1;
 }
 
+/* Retain one UTF-8 line for vector rendering and return its logical advance. */
 static int recordTtfTextOverlayAndAdvance(int16 *params, const char *string,
                                           int clipL, int clipR, int clipT, int clipB) {
     TtfTextOverlayRecord *record;
@@ -411,6 +432,7 @@ static int recordTtfTextOverlayAndAdvance(int16 *params, const char *string,
         if (candidate->fontIdx == fontIdx &&
             candidate->clipL == clipL && candidate->clipR == clipR &&
             candidate->clipT == clipT && candidate->clipB == clipB &&
+/* Recognize changing numeric HUD text that should replace an older row record. */
             ttfTextOverlaySameDynamicRow(candidate, newX, newY, newWidth, newHeight)) {
             removeTtfTextOverlayRecord(i);
             if (recordIndex > i) recordIndex--;
@@ -475,6 +497,7 @@ static int recordTtfTextOverlayAndAdvance(int16 *params, const char *string,
     return 1;
 }
 
+/* Render one FreeType glyph through the SDL framebuffer backend. */
 static void renderTtfTextOverlayGlyphSDL(SDL_Renderer *renderer, FT_Bitmap *bitmap, float x, float y,
                                          float pixelScaleX, float pixelScaleY, uint8 r, uint8 g, uint8 b, SDL_FRect clip) {
     int row, col;
@@ -495,6 +518,7 @@ static void renderTtfTextOverlayGlyphSDL(SDL_Renderer *renderer, FT_Bitmap *bitm
     }
 }
 
+/* Render one FreeType glyph through the OpenGL overlay backend. */
 static void renderTtfTextOverlayGlyphGL(FT_Bitmap *bitmap, float x, float y, float pixelScaleX, float pixelScaleY,
                                         uint8 r, uint8 g, uint8 b, SDL_FRect clip) {
     int row, col;
@@ -522,6 +546,7 @@ static void renderTtfTextOverlayGlyphGL(FT_Bitmap *bitmap, float x, float y, flo
     glDisable(GL_BLEND);
 }
 
+/* Lay out and render one retained UTF-8 text record as a coherent line. */
 static void renderTtfTextOverlayRecord(const TtfTextOverlayRecord *record, R2DMapping *m,
                                        SDL_Renderer *renderer, int useGL) {
     SDL_Color c;
@@ -640,6 +665,7 @@ static void renderTtfTextOverlayRecord(const TtfTextOverlayRecord *record, R2DMa
     }
 }
 
+/* Render all retained vector-text records for the current frame. */
 static void renderTtfTextOverlay(R2DMapping *m, SDL_Renderer *renderer, int useGL) {
     int i;
     if (!m || g_ttfTextOverlayCount <= 0) return;
@@ -648,6 +674,7 @@ static void renderTtfTextOverlay(R2DMapping *m, SDL_Renderer *renderer, int useG
     }
 }
 
+/* Render retained vector text into the active OpenGL presentation mapping. */
 void gfx_renderTtfTextOverlayOpenGL(int virtW, int virtH, int winW, int winH) {
     R2DMapping m;
     r2d_computeMapping(virtW, virtH, winW, winH, 0, &m);
@@ -660,21 +687,26 @@ void gfx_renderTtfTextOverlayOpenGL(int virtW, int virtH, int winW, int winH) {
     renderTtfTextOverlay(&m, NULL, 1);
 }
 
+/* Clear retained vector text when the legacy screen contents are replaced. */
 void gfx_clearTtfTextOverlay(void) {
     clearTtfTextOverlayRecords();
 }
 
+/* Invalidate retained vector text intersecting a changed logical rectangle. */
 void gfx_invalidateTtfTextOverlayRect(int x1, int y1, int x2, int y2) {
     invalidateTtfTextOverlayRect(x1, y1, x2, y2);
 }
 #else
+/* Render retained vector text into the active OpenGL presentation mapping. */
 void gfx_renderTtfTextOverlayOpenGL(int virtW, int virtH, int winW, int winH) {
     (void)virtW;
     (void)virtH;
     (void)winW;
     (void)winH;
 }
+/* Clear retained vector text when the legacy screen contents are replaced. */
 void gfx_clearTtfTextOverlay(void) {}
+/* Invalidate retained vector text intersecting a changed logical rectangle. */
 void gfx_invalidateTtfTextOverlayRect(int x1, int y1, int x2, int y2) {
     (void)x1;
     (void)y1;
@@ -684,6 +716,7 @@ void gfx_invalidateTtfTextOverlayRect(int x1, int y1, int x2, int y2) {
 #endif
 
 
+/* Find a TTF or OTF replacement using stable per-slot filenames. */
 static int findReplacementVectorFont(uint16 fontIdx, const char *extension,
                                      char *path, size_t pathSize) {
     char relative[64];
@@ -692,6 +725,7 @@ static int findReplacementVectorFont(uint16 fontIdx, const char *extension,
     return findAssetReplacement(relative, path, pathSize);
 }
 
+/* Activate a vector-font replacement for one legacy font slot when available. */
 static void tryLoadReplacementFont(uint16 fontIdx) {
     char path[512];
     int vectorFontPresent = 0;
