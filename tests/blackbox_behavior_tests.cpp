@@ -68,9 +68,38 @@ int main() {
         blackbox_cliInit(&options);
         require(options.seed == BLACKBOX_DEFAULT_SEED,
                 "blackbox CLI uses the documented default seed");
+        blackbox_cliApplyDebugDefaults(&options);
+        require(options.recordPath != nullptr &&
+                    std::strcmp(options.recordPath, BLACKBOX_DEFAULT_RECORD_PATH) == 0,
+                "debug defaults record to the local blackbox file");
+
+        blackbox_cliInit(&options);
         require(blackbox_cliParseOption(&options, 3, recordArgv, &index) == 1 &&
                     options.recordPath == recordPath && index == 2,
                 "blackbox CLI parses and consumes a record path");
+        blackbox_cliApplyDebugDefaults(&options);
+        require(options.recordPath == recordPath,
+                "an explicit recording path overrides the debug default");
+
+        BlackboxCliOptions replayOptions;
+        char replayOption[] = "--blackbox-replay";
+        char replayPath[] = "/tmp/replay.bb";
+        char *replayArgv[] = {program, replayOption, replayPath};
+        index = 1;
+        blackbox_cliInit(&replayOptions);
+        require(blackbox_cliParseOption(&replayOptions, 3, replayArgv, &index) == 1,
+                "blackbox CLI parses an explicit replay path");
+        blackbox_cliApplyDebugDefaults(&replayOptions);
+        require(replayOptions.recordPath == nullptr &&
+                    replayOptions.replayPath == replayPath,
+                "an explicit replay disables automatic debug recording");
+
+        BlackboxCliOptions debugOptions;
+        blackbox_cliInit(&debugOptions);
+        debugOptions.debug = 1;
+        blackbox_cliApplyDebugDefaults(&debugOptions);
+        require(debugOptions.recordPath == nullptr,
+                "explicit deterministic debug mode disables automatic recording");
 
         char seedOption[] = "--blackbox-seed";
         char invalidSeed[] = "not-a-number";

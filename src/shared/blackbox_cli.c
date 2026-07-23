@@ -62,6 +62,12 @@ void blackbox_cliInit(BlackboxCliOptions *options) {
     options->dumpTick = 0xffffffffu;
 }
 
+void blackbox_cliApplyDebugDefaults(BlackboxCliOptions *options) {
+    if (!options || options->debug || options->recordPath || options->replayPath)
+        return;
+    options->recordPath = BLACKBOX_DEFAULT_RECORD_PATH;
+}
+
 void blackbox_cliPrintUsage(void) {
     printf("                  [--blackbox-debug] [--blackbox-seed n]\n"
            "                  [--blackbox-record path | --blackbox-replay path]\n"

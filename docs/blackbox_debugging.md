@@ -36,9 +36,24 @@ Use the overlay number directly. A colon form such as `205:45` is not accepted.
 ## Build
 
 ```bash
-cmake -S . -B build -DDOWNLOAD_DEPENDENCIES=ON
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DDOWNLOAD_DEPENDENCIES=ON
 cmake --build build -j2
 ```
+
+For a multi-configuration generator such as Visual Studio, select Debug while
+building:
+
+```powershell
+cmake -S . -B build -A x64
+cmake --build build --config Debug --parallel
+```
+
+Debug builds automatically start a recording at `_blackbox.rec` when no
+`--blackbox-debug`, `--blackbox-record`, or `--blackbox-replay` option was
+specified. The relative path means the file is written to the process working
+directory on Linux, macOS, and Windows. Preserve or rename the file before the
+next run when collecting multiple reports. Release builds do not record
+implicitly.
 
 ## Record a run
 
@@ -54,6 +69,7 @@ Use the original game asset directory with `--game`.
 Notes:
 
 - `--blackbox-seed` selects the deterministic seed; it defaults to `1`.
+- An explicit `--blackbox-record` path replaces the Debug-build default.
 - The output log is text and can be opened in an editor.
 - The top-left overlay uses the displayed-time notation described above.
 

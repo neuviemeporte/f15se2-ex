@@ -162,6 +162,9 @@ Use it when a gameplay bug needs to be reproduced or inspected later.
 
 Full guide: [docs/blackbox_debugging.md](docs/blackbox_debugging.md)
 
+Debug builds record to `_blackbox.rec` in the current working directory by
+default. Explicit debug, record, or replay options override that behavior.
+
 Record a run:
 
 ```bash

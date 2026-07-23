@@ -27,6 +27,12 @@ jobs:
             build: cmake --build build --config Release --parallel
             test: ctest --test-dir build -C Release --output-on-failure
 
+          - name: Windows MSVC x64 Debug
+            os: windows-latest
+            configure: cmake -S . -B build -G "Visual Studio 18 2026" -A x64
+            build: cmake --build build --config Debug --parallel
+            test: ctest --test-dir build -C Debug --output-on-failure
+
           - name: macOS Clang
             os: macos-latest
             configure: cmake -S . -B build
@@ -55,6 +61,13 @@ jobs:
 
       - name: Test
         run: ${{ matrix.test }}
+
+      - name: Upload Windows debug build
+        if: matrix.name == 'Windows MSVC x64 Debug'
+        uses: actions/upload-artifact@v4
+        with:
+          name: f15se2-ex-windows-debug
+          path: build/Debug/f15se2-ex.exe
 
   coverage:
     name: Coverage

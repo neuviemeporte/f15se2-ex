@@ -109,6 +109,11 @@ int main(int argc, char *argv[]) {
             usage(1);
         }
     }
+#ifdef F15_BLACKBOX_AUTO_RECORD
+    /* Debug builds collect a reproducible report by default. Explicit blackbox
+     * modes parsed above always take precedence over this local fallback. */
+    blackbox_cliApplyDebugDefaults(&blackboxOptions);
+#endif
     if (!blackbox_cliStart(&blackboxOptions)) goto shutdown;
 
     if (!verifyGameAssets()) goto shutdown;

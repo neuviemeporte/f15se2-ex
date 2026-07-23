@@ -19,7 +19,11 @@ typedef struct BlackboxCliOptions {
     int captureRender;
 } BlackboxCliOptions;
 
+#define BLACKBOX_DEFAULT_RECORD_PATH "_blackbox.rec"
+
 void blackbox_cliInit(BlackboxCliOptions *options);
+/* Enable the implicit debug-build recording only when no blackbox mode was selected. */
+void blackbox_cliApplyDebugDefaults(BlackboxCliOptions *options);
 void blackbox_cliPrintUsage(void);
 /* Returns 1 when recognized, 0 when not a blackbox option, and -1 on error. */
 int blackbox_cliParseOption(BlackboxCliOptions *options, int argc,
