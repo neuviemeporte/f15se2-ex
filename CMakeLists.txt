@@ -482,6 +482,21 @@ else()
         "F15SE2_CONVERTED_ASSETS to existing directories")
 endif()
 add_behavior_test(asound_music_replacement_behavior_tests LINK_CORE)
+if(F15SE2_ORIGINAL_ASSETS AND F15SE2_CONVERTED_ASSETS
+   AND IS_DIRECTORY "${F15SE2_ORIGINAL_ASSETS}"
+   AND IS_DIRECTORY "${F15SE2_CONVERTED_ASSETS}")
+    add_behavior_test(asound_asset_full_validation_tests LINK_CORE
+        DEFS
+            F15_ORIGINAL_ASSETS="${F15SE2_ORIGINAL_ASSETS}"
+            F15_CONVERTED_ASSETS="${F15SE2_CONVERTED_ASSETS}")
+    set_tests_properties(asound_asset_full_validation_tests PROPERTIES
+        LABELS "assets;integration"
+        TIMEOUT 120)
+else()
+    message(STATUS
+        "Skipping sound full validation: set F15SE2_ORIGINAL_ASSETS and "
+        "F15SE2_CONVERTED_ASSETS to existing directories")
+endif()
 add_behavior_test(gameplay_behavior_tests LINK_CORE)
 add_behavior_test(input_behavior_tests LINK_CORE)
 add_behavior_test(gfx_render_behavior_tests LINK_CORE)

@@ -23,6 +23,10 @@ int asound_reload_replacement_music(void);
  */
 int asound_start_replacement_music(AsoundDriver *driver, int release_phase);
 
+/* Return one loaded stream and its exact byte length for diagnostics/tools. */
+int asound_replacement_music_stream(int release_phase, int voice,
+                                    const AsoundU8 **data, size_t *size);
+
 #ifdef __cplusplus
 }
 #endif

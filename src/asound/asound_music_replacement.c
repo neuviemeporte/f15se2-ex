@@ -17,6 +17,8 @@
 typedef struct ReplacementMusic {
     AsoundU8 *intro[ASOUND_STREAM_COUNT];
     AsoundU8 *release[ASOUND_STREAM_COUNT];
+    size_t intro_size[ASOUND_STREAM_COUNT];
+    size_t release_size[ASOUND_STREAM_COUNT];
     int loaded;
     int tried;
 } ReplacementMusic;
@@ -29,6 +31,8 @@ static void freeStreams(void) {
         SDL_free(g_music.release[voice]);
         g_music.intro[voice] = NULL;
         g_music.release[voice] = NULL;
+        g_music.intro_size[voice] = 0;
+        g_music.release_size[voice] = 0;
     }
     g_music.loaded = 0;
 }
@@ -54,39 +58,62 @@ static char *readTextFile(const char *path) {
 
 static const char *findStreamObject(const char *json, const char *symbol,
                                     const char **object_end) {
-    const char *object = json;
+    const char *key = json;
     const size_t symbol_length = strlen(symbol);
 
     /*
-     * Match source_symbol inside one flat stream object. Keeping the search
-     * within its closing brace prevents malformed JSON from borrowing the
-     * stream_bytes array from the following voice.
+     * Converter output includes nested event objects before source_symbol.
+     * Locate the exact symbol first, then recover its nearest still-open
+     * object and matching close. This keeps stream_bytes bounded to one voice
+     * without assuming that voice objects are flat.
      */
-    while ((object = strchr(object, '{')) != NULL) {
-        const char *end = strchr(object, '}');
-        const char *key = strstr(object, "\"source_symbol\"");
-        if (!end) return NULL;
-        if (key && key < end) {
-            const char *value = strchr(key, ':');
-            if (value && value < end) {
-                do {
-                    ++value;
-                } while (value < end && isspace((unsigned char)*value));
-                if (value < end && *value++ == '"'
-                    && (size_t)(end - value) > symbol_length
-                    && memcmp(value, symbol, symbol_length) == 0
-                    && value[symbol_length] == '"') {
+    while ((key = strstr(key, "\"source_symbol\"")) != NULL) {
+        const char *value = strchr(key, ':');
+        if (!value) return NULL;
+        do {
+            ++value;
+        } while (*value && isspace((unsigned char)*value));
+        if (*value++ == '"' && !memcmp(value, symbol, symbol_length)
+            && value[symbol_length] == '"') {
+            const char *object = key;
+            int reverse_depth = 0;
+            while (object > json) {
+                --object;
+                if (*object == '}') {
+                    ++reverse_depth;
+                } else if (*object == '{') {
+                    if (reverse_depth == 0) break;
+                    --reverse_depth;
+                }
+            }
+            if (*object != '{') return NULL;
+
+            int depth = 0;
+            int quoted = 0;
+            int escaped = 0;
+            for (const char *end = object; *end; ++end) {
+                if (quoted) {
+                    if (escaped) escaped = 0;
+                    else if (*end == '\\') escaped = 1;
+                    else if (*end == '"') quoted = 0;
+                    continue;
+                }
+                if (*end == '"') quoted = 1;
+                else if (*end == '{') ++depth;
+                else if (*end == '}' && --depth == 0) {
                     *object_end = end;
                     return object;
                 }
             }
+            return NULL;
         }
-        object = end + 1;
+        ++key;
     }
     return NULL;
 }
 
-static AsoundU8 *parseStream(const char *json, const char *symbol) {
+static AsoundU8 *parseStream(const char *json, const char *symbol,
+                             size_t *stream_size) {
     const char *object_end = NULL;
     const char *position = findStreamObject(json, symbol, &object_end);
     if (!position) return NULL;
@@ -126,6 +153,7 @@ static AsoundU8 *parseStream(const char *json, const char *symbol) {
         SDL_free(bytes);
         return NULL;
     }
+    if (stream_size) *stream_size = count;
     return bytes;
 }
 
@@ -153,9 +181,11 @@ int asound_reload_replacement_music(void) {
     for (int voice = 0; voice < ASOUND_STREAM_COUNT; ++voice) {
         char symbol[64];
         snprintf(symbol, sizeof(symbol), "asound_intro_voice%d", voice);
-        g_music.intro[voice] = parseStream(json, symbol);
+        g_music.intro[voice] =
+            parseStream(json, symbol, &g_music.intro_size[voice]);
         snprintf(symbol, sizeof(symbol), "asound_release_voice%d", voice);
-        g_music.release[voice] = parseStream(json, symbol);
+        g_music.release[voice] =
+            parseStream(json, symbol, &g_music.release_size[voice]);
         if (!g_music.intro[voice] || !g_music.release[voice]) {
             SDL_free(json);
             freeStreams();
@@ -178,6 +208,21 @@ int asound_start_replacement_music(AsoundDriver *driver, int release_phase) {
     AsoundU8 **streams = release_phase ? g_music.release : g_music.intro;
     for (int voice = 0; voice < ASOUND_STREAM_COUNT; ++voice) {
         asound_stream_init(&driver->streams[voice], streams[voice]);
+    }
+    return 1;
+}
+
+int asound_replacement_music_stream(int release_phase, int voice,
+                                    const AsoundU8 **data, size_t *size) {
+    if (data) *data = NULL;
+    if (size) *size = 0;
+    if (!g_music.loaded || voice < 0 || voice >= ASOUND_STREAM_COUNT) return 0;
+    if (data) {
+        *data = release_phase ? g_music.release[voice] : g_music.intro[voice];
+    }
+    if (size) {
+        *size = release_phase
+            ? g_music.release_size[voice] : g_music.intro_size[voice];
     }
     return 1;
 }
