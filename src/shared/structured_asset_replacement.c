@@ -35,12 +35,14 @@ namespace {
 constexpr size_t MAX_JSON_BYTES = 1024 * 1024;
 constexpr size_t MAX_REBUILT_BYTES = 1024 * 1024;
 
+/* Fold one ASCII byte to uppercase for format and extension matching. */
 std::string upper(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(),
                    [](unsigned char c) { return (char)std::toupper(c); });
     return value;
 }
 
+/* Quote one path safely for the explicitly configured external asset-tool command. */
 std::string shellQuote(const std::string &value) {
 #if defined(_WIN32)
     std::string quoted = "\"";
@@ -59,6 +61,7 @@ std::string shellQuote(const std::string &value) {
 #endif
 }
 
+/* Return the converter format identifier for a supported structured legacy extension. */
 const char *formatFor(const fs::path &legacy) {
     const std::string extension = upper(legacy.extension().string());
     if (extension == ".WLD") return "WLD";
@@ -68,6 +71,7 @@ const char *formatFor(const fs::path &legacy) {
     return nullptr;
 }
 
+/* Resolve the replacement directory associated with a structured legacy asset. */
 std::string replacementDirectory(const fs::path &legacy) {
     const std::string stem = upper(legacy.stem().string());
     if (stem == "LB") return "LIBYA";
@@ -75,6 +79,7 @@ std::string replacementDirectory(const fs::path &legacy) {
     return stem;
 }
 
+/* Find the canonical editable JSON replacement for a structured asset. */
 bool findStructuredJson(const fs::path &legacy, char *path, size_t pathSize) {
     const std::string filename = upper(legacy.filename().string()) + ".json";
     const std::string directory = replacementDirectory(legacy);
@@ -96,6 +101,7 @@ bool findStructuredJson(const fs::path &legacy, char *path, size_t pathSize) {
     return false;
 }
 
+/* Check whether a constrained converter-generated JSON file contains a required property. */
 bool fileContainsProperty(const char *path, const char *property) {
     FILE *file;
     std::vector<char> bytes;
@@ -132,6 +138,7 @@ bool fileContainsProperty(const char *path, const char *property) {
     return false;
 }
 
+/* Build the default converter command path relative to the running executable. */
 std::string defaultToolCommand(const fs::path &jsonPath) {
     const char *configured = std::getenv("F15_ASSET_TOOL");
     if (configured && configured[0]) return configured;
@@ -158,6 +165,7 @@ std::string defaultToolCommand(const fs::path &jsonPath) {
     return "python3 -m tools.f15assets.cli";
 }
 
+/* Expose rebuilt structured bytes as a rewindable temporary FILE stream. */
 SDL_IOStream *streamFromBytes(const std::vector<unsigned char> &bytes) {
     SDL_IOStream *stream = SDL_IOFromDynamicMem();
     if (!stream) return nullptr;
@@ -171,6 +179,7 @@ SDL_IOStream *streamFromBytes(const std::vector<unsigned char> &bytes) {
 
 } // namespace
 
+/* Open an editable structured replacement, rebuilding legacy bytes only for the existing loader. */
 SDL_IOStream *openStructuredAssetReplacement(const char *legacyFilename) {
     fs::path legacy;
     const char *format;
@@ -188,6 +197,7 @@ SDL_IOStream *openStructuredAssetReplacement(const char *legacyFilename) {
     legacy = fs::path(legacyFilename);
     format = formatFor(legacy);
     if (!format ||
+/* Find the canonical editable JSON replacement for a structured asset. */
         !findStructuredJson(legacy, jsonPath, sizeof(jsonPath))) {
         return nullptr;
     }
@@ -196,6 +206,7 @@ SDL_IOStream *openStructuredAssetReplacement(const char *legacyFilename) {
      * replacements. Only an explicitly exported model_data field can replace
      * the legacy 3D3 table stream. */
     if (std::strcmp(format, "3D3") == 0 &&
+/* Check whether a constrained converter-generated JSON file contains a required property. */
         !fileContainsProperty(jsonPath, "\"model_data\"")) {
         return nullptr;
     }
