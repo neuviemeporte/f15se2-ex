@@ -269,6 +269,29 @@ SDL_Palette *gfx_getPalette(void) {
     return gfxPalette;
 }
 
+/* Return the nearest active palette entry for an eight-bit RGB replacement color. */
+int gfx_nearestPaletteIndexRgb8(uint8 r, uint8 g, uint8 b) {
+    enum { DEFAULT_PALETTE_MATCH = 15 }; /* VGA bright white. */
+    SDL_Palette *palette = gfx_getPalette();
+    int bestIndex = DEFAULT_PALETTE_MATCH;
+    int bestDistance = 0x7fffffff;
+    int i{};
+
+    if (!palette) return bestIndex;
+    for (i = 0; i < palette->ncolors && i < 256; i++) {
+        int dr = (int)r - palette->colors[i].r;
+        int dg = (int)g - palette->colors[i].g;
+        int db = (int)b - palette->colors[i].b;
+        int distance = dr * dr + dg * dg + db * db;
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = i;
+            if (distance == 0) break;
+        }
+    }
+    return bestIndex;
+}
+
 /* Monotonic counter bumped whenever a palette entry changes (gfx_setDacRange /
  * gfx_dacCycle / rebuild). The GL backend keys its per-image RGBA texture cache on
  * it so a static sprite sheet re-uploads only when the palette actually moved. */
