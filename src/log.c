@@ -11,23 +11,35 @@ void log_set_app(const char *name) {
     app_tag = name ? name : "";
 }
 
+/* Raise every log category to VERBOSE (--verbose), so the LogVerbose/LogDebug
+ * trace macros — below SDL's default INFO threshold — become visible. */
+void log_set_verbose(void) {
+    SDL_SetLogPriorities(SDL_LOG_PRIORITY_VERBOSE);
+}
+
 #ifdef __DJGPP__
 #include <stdio.h>
+#define DOS_LOG_FILE "F15.LOG"
 /* SDL's default log sink is stderr, which real DOS's COMMAND.COM can't redirect
  * to a file (no 2>/2>&1 support, unlike DOSBox's host shell or bash) and which
- * is invisible anyway once mode 13h is active. Log to a flushed file instead so
- * a hang/hard-reset on real hardware still leaves a trail. */
+ * is invisible anyway once mode 13h is active. Log to a file instead so a
+ * hang/hard-reset on real hardware still leaves a trail. Each line is written
+ * with its own open+close so a partial log survives even a hard lockup. */
 static void dosFileLogOutput(void *userdata, int category, SDL_LogPriority priority, const char *message) {
     (void)userdata;
     (void)category;
     (void)priority;
-    FILE *f = fopen("F15.LOG", "a");
+    FILE *f = fopen(DOS_LOG_FILE, "a");
     if (!f) return;
     fprintf(f, "%s\n", message);
-    fclose(f); /* reopen+close per line so partial logs survive a hard hang */
+    fclose(f);
 }
 
 __attribute__((constructor)) static void installDosFileLog(void) {
+    /* Truncate once per run so the file doesn't grow unbounded across launches
+     * and each run's log stands alone; per-line writes below then append. */
+    FILE *f = fopen(DOS_LOG_FILE, "w");
+    if (f) fclose(f);
     SDL_SetLogOutputFunction(dosFileLogOutput, NULL);
 }
 #endif
