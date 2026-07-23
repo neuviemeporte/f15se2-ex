@@ -1181,7 +1181,7 @@ static void drawSub(const GlSub *r) {
 
     if (replacement) {
         drawReplacementSub(r, replacement);
-        return{};
+        return;
     }
 
     fillPools(&pools);
