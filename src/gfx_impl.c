@@ -640,7 +640,7 @@ static void tryLoadBitmapFontReplacement(uint16 fontIdx) {
     BitmapFontReplacement replacement{};
     if (fontIdx >= 8 || !g_fontWidthTables[fontIdx]
         || !g_fontBitmapPtrs[fontIdx]) {
-        return{};
+        return;
     }
     if (bitmapFontReplacementGet(fontIdx, g_fontMaxWidths[fontIdx],
                                  g_fontHeightsArr[fontIdx],
@@ -752,7 +752,7 @@ static void drawStringCore(int16 *params, const char *string,
 #ifdef F15_HAVE_FREETYPE
     if (fontIdx < 8 && g_fontReplacementTtfFaces[fontIdx]) {
         (void)recordTtfTextOverlayAndAdvance(params, string, clipL, clipR, clipT, clipB);
-        return{};
+        return;
     }
 #endif
 
