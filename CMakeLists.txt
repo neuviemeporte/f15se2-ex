@@ -105,6 +105,7 @@ set(F15SE2_SOURCES
     ${SRC_DIR}/shared/cleanup.c
     ${SRC_DIR}/shared/drawstr.c
     ${SRC_DIR}/shared/textfmt.c
+    ${SRC_DIR}/shared/structured_asset_replacement.c
     ${SRC_DIR}/shared/filepic.c
 
     # f15 launcher
@@ -463,6 +464,7 @@ add_behavior_test(end_runtime_behavior_tests LINK_CORE)
 add_behavior_test(geometry_behavior_tests LINK_CORE)
 add_behavior_test(file_io_behavior_tests LINK_CORE)
 add_behavior_test(asset_path_behavior_tests LINK_CORE)
+add_behavior_test(structured_asset_replacement_behavior_tests LINK_CORE)
 add_behavior_test(gameplay_behavior_tests LINK_CORE)
 add_behavior_test(input_behavior_tests LINK_CORE)
 add_behavior_test(gfx_render_behavior_tests LINK_CORE)
