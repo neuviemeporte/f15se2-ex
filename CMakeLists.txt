@@ -101,6 +101,8 @@ set(F15SE2_SOURCES
 
     # Shared file + string helpers
     ${SRC_DIR}/shared/file_io.c
+    ${SRC_DIR}/shared/asset_path.c
+    ${SRC_DIR}/shared/png_asset.c
     ${SRC_DIR}/shared/cleanup.c
     ${SRC_DIR}/shared/drawstr.c
     ${SRC_DIR}/shared/textfmt.c
@@ -461,6 +463,23 @@ add_behavior_test(utility_behavior_tests LINK_CORE)
 add_behavior_test(end_runtime_behavior_tests LINK_CORE)
 add_behavior_test(geometry_behavior_tests LINK_CORE)
 add_behavior_test(file_io_behavior_tests LINK_CORE)
+add_behavior_test(asset_path_behavior_tests LINK_CORE)
+add_behavior_test(png_asset_behavior_tests LINK_CORE)
+if(F15SE2_ORIGINAL_ASSETS AND F15SE2_CONVERTED_ASSETS
+   AND IS_DIRECTORY "${F15SE2_ORIGINAL_ASSETS}"
+   AND IS_DIRECTORY "${F15SE2_CONVERTED_ASSETS}")
+    add_behavior_test(png_asset_full_validation_tests LINK_CORE
+        DEFS
+            F15_ORIGINAL_ASSETS="${F15SE2_ORIGINAL_ASSETS}"
+            F15_CONVERTED_ASSETS="${F15SE2_CONVERTED_ASSETS}")
+    set_tests_properties(png_asset_full_validation_tests PROPERTIES
+        LABELS "assets;integration"
+        TIMEOUT 120)
+else()
+    message(STATUS
+        "Skipping PNG full validation: set F15SE2_ORIGINAL_ASSETS and "
+        "F15SE2_CONVERTED_ASSETS to existing directories")
+endif()
 add_behavior_test(gameplay_behavior_tests LINK_CORE)
 add_behavior_test(input_behavior_tests LINK_CORE)
 add_behavior_test(gfx_render_behavior_tests LINK_CORE)

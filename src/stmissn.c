@@ -2,6 +2,7 @@
 #include "offsets.h"
 #include "comm.h"
 #include "shared/common.h"
+#include "shared/png_asset.h"
 #include "gfx.h"
 #include "slot.h"
 #include "const.h"
@@ -179,6 +180,7 @@ void showPic640(const char *filename) {
     intRegs[0] = MODE_640_350;
     intDispatch(IRQ_VIDEO, intRegs, intRegs);
     gfx_setDac(0);
+    if (loadReplacementPngToHiResTitle(filename)) return;
     fileHandle = openFileWrapper(filename, 0);
     picBlit(fileHandle, 0);
     closeFileWrapper(fileHandle);
