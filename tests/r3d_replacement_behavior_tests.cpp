@@ -60,6 +60,15 @@ void setRoot(const std::string &root) {
 #endif
 }
 
+void setTool(const std::string &tool) {
+#if defined(_WIN32)
+    _putenv_s("F15_ASSET_TOOL", tool.c_str());
+#else
+    if (tool.empty()) unsetenv("F15_ASSET_TOOL");
+    else setenv("F15_ASSET_TOOL", tool.c_str(), 1);
+#endif
+}
+
 } // namespace
 
 int main() {
@@ -82,6 +91,23 @@ int main() {
     writeMesh(models / "shape_006_Broken.glmesh", false);
     require(!r3dReplacementMesh("TEST.3D3", 6),
             "invalid primitive cardinality falls back atomically");
+
+#if !defined(_WIN32)
+    const auto oversized = root / "oversized.glmesh";
+    {
+        std::ofstream output(oversized, std::ios::binary);
+        std::vector<char> block(1024 * 1024, '\0');
+        for (int i = 0; i < 17; ++i) {
+            output.write(block.data(), (std::streamsize)block.size());
+        }
+    }
+    std::ofstream(models / "shape_007_Oversized.glb", std::ios::binary)
+        << "not a GLB";
+    setTool("cat '" + oversized.string() + "' #");
+    require(!r3dReplacementMesh("TEST.3D3", 7),
+            "oversized converter output is drained and rejected");
+    setTool("");
+#endif
 
     r3dReplacementShutdown();
     setRoot("");

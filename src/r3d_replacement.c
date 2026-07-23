@@ -247,6 +247,7 @@ static std::string assetTool(void) {
 
 static std::vector<uint8> buildCache(const fs::path &glb_path) {
     std::vector<uint8> bytes;
+    bool too_large = false;
     const std::string tool = assetTool();
     if (tool.empty()) return bytes;
     const std::string command =
@@ -260,18 +261,25 @@ static std::vector<uint8> buildCache(const fs::path &glb_path) {
     uint8 chunk[4096];
     size_t count;
     while ((count = std::fread(chunk, 1, sizeof(chunk), pipe)) != 0) {
-        if (bytes.size() + count > 16 * 1024 * 1024) {
+        if (!too_large && count > 16 * 1024 * 1024 - bytes.size()) {
+            /*
+             * Keep draining the child after crossing the limit. Calling pclose
+             * with unread pipe data can deadlock while the converter is blocked
+             * writing the remainder.
+             */
+            too_large = true;
             bytes.clear();
-            break;
+        } else if (!too_large) {
+            bytes.insert(bytes.end(), chunk, chunk + count);
         }
-        bytes.insert(bytes.end(), chunk, chunk + count);
     }
+    const int read_failed = std::ferror(pipe) != 0;
 #if defined(_WIN32)
     const int status = _pclose(pipe);
 #else
     const int status = pclose(pipe);
 #endif
-    if (status != 0) bytes.clear();
+    if (status != 0 || read_failed || too_large) bytes.clear();
     return bytes;
 }
 
