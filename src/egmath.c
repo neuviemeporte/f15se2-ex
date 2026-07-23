@@ -21,15 +21,18 @@
 
 // ==== seg000:0xc8de ====
 
+/* Return whether a requested slot belongs to the separately loaded PHOTO shape table. */
 static int isPhotoShapeSlot(int shapeId) {
     return (shapeId & 0x100) && (shapeId & 0x7f) >= (int)size3d3;
 }
 
+/* Translate a legacy shape pointer into its stable replacement slot index. */
 static int replacementShapeSlot(int shapeId) {
     const int slot = shapeId & 0x7f;
     return isPhotoShapeSlot(shapeId) ? slot - (int)size3d3 : slot;
 }
 
+/* Return the legacy container name that owns a replacement shape pointer. */
 static const char *replacementShapeContainer(int shapeId) {
     if (isPhotoShapeSlot(shapeId)) return "PHOTO.3D3";
     return (shapeId & 0x100) ? regnStr : a15flt_xxx;

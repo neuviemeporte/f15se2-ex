@@ -1047,6 +1047,7 @@ static void drawDepthPoint(float x, float y, long depth32, int colorIdx) {
 static const float GL_SHADOW_ALPHA = 0.4f;
 static const float GL_SHADOW_RAISE_FRAC = 0.25f;
 
+/* Submit one replacement mesh with the same transform and primitive order as the legacy shape. */
 static void drawReplacementSub(const GlSub *submission,
                                const R3DReplacementMesh *mesh) {
     const int lod_shift = 8 - 2 * submission->curLod;

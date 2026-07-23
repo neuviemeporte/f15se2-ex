@@ -32,12 +32,14 @@ typedef struct CachedMesh {
 
 static std::vector<CachedMesh *> g_cache;
 
+/* Fold one ASCII byte for DOS-compatible case-insensitive filename comparison. */
 static std::string lower(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(),
                    [](unsigned char c) { return (char)std::tolower(c); });
     return value;
 }
 
+/* Find one child entry case-insensitively beneath a replacement directory. */
 static fs::path findChildCaseInsensitive(const fs::path &parent,
                                          const std::string &name) {
     std::error_code error;
@@ -52,6 +54,7 @@ static fs::path findChildCaseInsensitive(const fs::path &parent,
     return {};
 }
 
+/* Return the configured replacement root, or NULL when replacements are disabled. */
 static fs::path replacementRoot(void) {
     const char *root = std::getenv("F15_REPLACEMENT_ROOT");
     if (!root || !root[0]) return {};
@@ -60,6 +63,7 @@ static fs::path replacementRoot(void) {
     return fs::is_directory(path, error) ? path : fs::path();
 }
 
+/* Resolve the self-contained directory that owns a legacy 3D shape table. */
 static fs::path shapeDirectory(const char *container_name) {
     fs::path root = replacementRoot();
     if (root.empty() || !container_name || !container_name[0]) return {};
@@ -79,6 +83,7 @@ static fs::path shapeDirectory(const char *container_name) {
     return {};
 }
 
+/* Find a per-shape GLB replacement by stable slot prefix and optional descriptive suffix. */
 static fs::path findShapeFile(const fs::path &directory, int shape_id,
                               const char *extension) {
     char exact[64];
@@ -98,6 +103,7 @@ static fs::path findShapeFile(const fs::path &directory, int shape_id,
         const std::string filename = lower(entry.path().filename().string());
         if (filename == exact_lower) return entry.path();
         if (filename.rfind(prefix_lower, 0) == 0
+/* Fold one ASCII byte for DOS-compatible case-insensitive filename comparison. */
             && lower(entry.path().extension().string()) == extension_lower) {
             matches.push_back(entry.path());
         }
@@ -111,21 +117,25 @@ static fs::path findShapeFile(const fs::path &directory, int shape_id,
     return matches.empty() ? fs::path() : matches.front();
 }
 
+/* Read an unsigned 32-bit little-endian cache value. */
 static uint32 readU32(const uint8 *bytes) {
     return (uint32)bytes[0] | ((uint32)bytes[1] << 8)
          | ((uint32)bytes[2] << 16) | ((uint32)bytes[3] << 24);
 }
 
+/* Read a signed 32-bit little-endian cache value. */
 static int32 readS32(const uint8 *bytes) {
     return (int32)readU32(bytes);
 }
 
+/* Read a little-endian IEEE-754 cache value. */
 static float readF32(const uint8 *bytes) {
     float value;
     std::memcpy(&value, bytes, sizeof(value));
     return value;
 }
 
+/* Release all allocations owned by one decoded replacement mesh. */
 static void freeMesh(R3DReplacementMesh *mesh) {
     if (!mesh) return;
     for (int index = 0; index < mesh->nPrims; ++index) {
@@ -136,6 +146,7 @@ static void freeMesh(R3DReplacementMesh *mesh) {
     mesh->nPrims = 0;
 }
 
+/* Decode a validated runtime mesh cache while preserving primitive order and colors. */
 static int parseGlmesh(R3DReplacementMesh *mesh, const uint8 *data,
                        size_t size) {
     size_t position = 44;
@@ -192,6 +203,7 @@ fail:
     return 0;
 }
 
+/* Read a complete file into an owned byte buffer. */
 static std::vector<uint8> readBytes(const fs::path &path) {
     std::vector<uint8> bytes;
     std::error_code error;
@@ -207,6 +219,7 @@ static std::vector<uint8> readBytes(const fs::path &path) {
     return bytes;
 }
 
+/* Write a complete byte buffer atomically enough for the disposable cache contract. */
 static int writeBytes(const fs::path &path, const std::vector<uint8> &bytes) {
     std::error_code error;
     fs::create_directories(path.parent_path(), error);
@@ -217,6 +230,7 @@ static int writeBytes(const fs::path &path, const std::vector<uint8> &bytes) {
     return std::fclose(file) == 0 && written;
 }
 
+/* Quote one path safely for the explicitly configured external asset-tool command. */
 static std::string shellQuote(const std::string &value) {
 #if defined(_WIN32)
     std::string quoted = "\"";
@@ -229,6 +243,7 @@ static std::string shellQuote(const std::string &value) {
 #endif
 }
 
+/* Return the configured converter command used to compile GLB cache files. */
 static std::string assetTool(void) {
     const char *configured = std::getenv("F15_ASSET_TOOL");
     if (configured && configured[0]) return configured;
@@ -245,6 +260,7 @@ static std::string assetTool(void) {
     return {};
 }
 
+/* Compile an edited GLB into a disposable runtime mesh cache. */
 static std::vector<uint8> buildCache(const fs::path &glb_path) {
     std::vector<uint8> bytes;
     bool too_large = false;
@@ -283,6 +299,7 @@ static std::vector<uint8> buildCache(const fs::path &glb_path) {
     return bytes;
 }
 
+/* Verify that cache identity metadata matches the current editable GLB. */
 static int cacheMatchesGlb(const std::vector<uint8> &bytes,
                            const fs::path &glb) {
     if (bytes.size() < 44 || std::memcmp(bytes.data(), "F15GLM3", 7) != 0) {
@@ -292,6 +309,7 @@ static int cacheMatchesGlb(const std::vector<uint8> &bytes,
     return expected == QuickDigest5::fileToHash(glb.string());
 }
 
+/* Return whether an existing runtime cache is current and structurally loadable. */
 static int cacheIsUsable(const std::vector<uint8> &bytes,
                          const fs::path &glb) {
     R3DReplacementMesh parsed = {};
@@ -302,6 +320,7 @@ static int cacheIsUsable(const std::vector<uint8> &bytes,
     return usable;
 }
 
+/* Load one per-shape replacement, rebuilding its cache only when required. */
 static R3DReplacementMesh *loadShape(const char *container_name,
                                      int shape_id,
                                      const std::string &request_key) {
@@ -353,6 +372,7 @@ static R3DReplacementMesh *loadShape(const char *container_name,
     return &entry->mesh;
 }
 
+/* Return the lazily loaded replacement mesh for a legacy container and slot. */
 R3DReplacementMesh *r3dReplacementMesh(const char *container_name,
                                        int shape_id) {
     if (!container_name || shape_id < 0 || shape_id > 999) return NULL;
@@ -374,6 +394,7 @@ R3DReplacementMesh *r3dReplacementMesh(const char *container_name,
     return NULL;
 }
 
+/* Release every cached replacement mesh at renderer shutdown. */
 void r3dReplacementShutdown(void) {
     for (CachedMesh *entry : g_cache) {
         freeMesh(&entry->mesh);
