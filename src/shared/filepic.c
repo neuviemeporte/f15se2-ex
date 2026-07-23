@@ -4,6 +4,7 @@
  */
 
 #include "common.h"
+#include "png_asset.h"
 #include "../log.h"
 #include <SDL3/SDL.h>
 
@@ -29,6 +30,7 @@ void closeFileWrapper(SDL_IOStream *handle) /* Original: CloseFile(fh). */
 void openShowPic(const char *filename, int page) /* Original chain: OpenFile + show/decode + CloseFile. Open, draw PIC to page, then close. */
 {
     SDL_IOStream *fileHandle;
+    if (loadReplacementPngToPage(filename, page)) return;
     fileHandle = openFileWrapper(filename, 0);
     showPicFile(fileHandle, page);
     closeFileWrapper(fileHandle);
@@ -36,6 +38,7 @@ void openShowPic(const char *filename, int page) /* Original chain: OpenFile + s
 
 void loadPic(const char *filename, int segment) { /* Original chain: OpenFile + DecodePic(InSeg, OutSeg) + CloseFile. Load PIC into segment. */
     SDL_IOStream *handle;
+    if (loadReplacementPngToSprite(filename, segment)) return;
     handle = openFileWrapper(filename, 0);
     decodePic(handle, segment);
     closeFileWrapper(handle);
