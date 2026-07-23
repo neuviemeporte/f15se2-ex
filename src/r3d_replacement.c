@@ -30,7 +30,7 @@ typedef struct CachedMesh {
     int loaded;
 } CachedMesh;
 
-static std::vector<CachedMesh *> g_cache;
+static std::vector<CachedMesh *> g_cache{};
 
 /* Fold one ASCII byte for DOS-compatible case-insensitive filename comparison. */
 static std::string lower(std::string value) {
@@ -42,7 +42,7 @@ static std::string lower(std::string value) {
 /* Find one child entry case-insensitively beneath a replacement directory. */
 static fs::path findChildCaseInsensitive(const fs::path &parent,
                                          const std::string &name) {
-    std::error_code error;
+    std::error_code error{};
     if (!fs::is_directory(parent, error)) return {};
     const std::string wanted = lower(name);
     for (const fs::directory_entry &entry : fs::directory_iterator(parent, error)) {
@@ -58,7 +58,7 @@ static fs::path findChildCaseInsensitive(const fs::path &parent,
 static fs::path replacementRoot(void) {
     const char *root = std::getenv("F15_REPLACEMENT_ROOT");
     if (!root || !root[0]) return {};
-    std::error_code error;
+    std::error_code error{};
     fs::path path(root);
     return fs::is_directory(path, error) ? path : fs::path();
 }
@@ -86,10 +86,10 @@ static fs::path shapeDirectory(const char *container_name) {
 /* Find a per-shape GLB replacement by stable slot prefix and optional descriptive suffix. */
 static fs::path findShapeFile(const fs::path &directory, int shape_id,
                               const char *extension) {
-    char exact[64];
-    char prefix[64];
-    std::vector<fs::path> matches;
-    std::error_code error;
+    char exact[64]{};
+    char prefix[64]{};
+    std::vector<fs::path> matches{};
+    std::error_code error{};
     std::snprintf(exact, sizeof(exact), "shape_%03d%s", shape_id, extension);
     std::snprintf(prefix, sizeof(prefix), "shape_%03d_", shape_id);
     const std::string exact_lower = lower(exact);
@@ -130,7 +130,7 @@ static int32 readS32(const uint8 *bytes) {
 
 /* Read a little-endian IEEE-754 cache value. */
 static float readF32(const uint8 *bytes) {
-    float value;
+    float value{};
     std::memcpy(&value, bytes, sizeof(value));
     return value;
 }
@@ -205,8 +205,8 @@ fail:
 
 /* Read a complete file into an owned byte buffer. */
 static std::vector<uint8> readBytes(const fs::path &path) {
-    std::vector<uint8> bytes;
-    std::error_code error;
+    std::vector<uint8> bytes{};
+    std::error_code error{};
     const uintmax_t length = fs::file_size(path, error);
     if (error || length == 0 || length > 16 * 1024 * 1024) return bytes;
     FILE *file = std::fopen(path.string().c_str(), "rb");
@@ -221,7 +221,7 @@ static std::vector<uint8> readBytes(const fs::path &path) {
 
 /* Write a complete byte buffer atomically enough for the disposable cache contract. */
 static int writeBytes(const fs::path &path, const std::vector<uint8> &bytes) {
-    std::error_code error;
+    std::error_code error{};
     fs::create_directories(path.parent_path(), error);
     FILE *file = std::fopen(path.string().c_str(), "wb");
     if (!file) return 0;
@@ -262,7 +262,7 @@ static std::string assetTool(void) {
 
 /* Compile an edited GLB into a disposable runtime mesh cache. */
 static std::vector<uint8> buildCache(const fs::path &glb_path) {
-    std::vector<uint8> bytes;
+    std::vector<uint8> bytes{};
     bool too_large = false;
     const std::string tool = assetTool();
     if (tool.empty()) return bytes;
@@ -274,8 +274,8 @@ static std::vector<uint8> buildCache(const fs::path &glb_path) {
     FILE *pipe = popen(command.c_str(), "r");
 #endif
     if (!pipe) return bytes;
-    uint8 chunk[4096];
-    size_t count;
+    uint8 chunk[4096]{};
+    size_t count{};
     while ((count = std::fread(chunk, 1, sizeof(chunk), pipe)) != 0) {
         if (!too_large && count > 16 * 1024 * 1024 - bytes.size()) {
             /*
@@ -327,7 +327,7 @@ static R3DReplacementMesh *loadShape(const char *container_name,
     const fs::path directory = shapeDirectory(container_name);
     if (directory.empty()) return NULL;
     const fs::path glb = findShapeFile(directory, shape_id, ".glb");
-    fs::path cache;
+    fs::path cache{};
     if (!glb.empty()) {
         cache = glb.parent_path() / "cache" / glb.filename();
         cache.replace_extension(".glmesh");
@@ -338,7 +338,7 @@ static R3DReplacementMesh *loadShape(const char *container_name,
         }
     }
     if (cache.empty()) return NULL;
-    std::vector<uint8> bytes;
+    std::vector<uint8> bytes{};
     if (!glb.empty()) {
         bytes = readBytes(cache);
         if (!cacheIsUsable(bytes, glb)) {

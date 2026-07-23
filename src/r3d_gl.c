@@ -143,9 +143,9 @@ static void fillPools(MeshVtxPools *pools) {
 int r3dgl_testLegacyShapeStats(const unsigned char *legacyModel,
                                size_t legacyModelSize,
                                R3DLegacyShapeStats *stats) {
-    MeshVtxPools pools;
-    Mesh decoded;
-    MeshLod *lod;
+    MeshVtxPools pools{};
+    Mesh decoded{};
+    MeshLod *lod{};
 
     if (!legacyModel || !stats || legacyModelSize == 0 ||
         legacyModelSize > WORLD3D_DATA_SIZE) {
@@ -1053,7 +1053,7 @@ static void drawReplacementSub(const GlSub *submission,
     const int lod_shift = 8 - 2 * submission->curLod;
     const int shift = lod_shift > 0 ? lod_shift : 0;
     const float scale = (float)(1 << shift);
-    float matrix[9];
+    float matrix[9]{};
     float shadow_nx = 0.0f, shadow_ny = 0.0f, shadow_nz = 0.0f;
     float shadow_ox = 0.0f, shadow_oy = 0.0f, shadow_oz = 0.0f;
     float shadow_lift_x = 0.0f, shadow_lift_y = 0.0f;
@@ -1181,7 +1181,7 @@ static void drawSub(const GlSub *r) {
 
     if (replacement) {
         drawReplacementSub(r, replacement);
-        return;
+        return{};
     }
 
     fillPools(&pools);
