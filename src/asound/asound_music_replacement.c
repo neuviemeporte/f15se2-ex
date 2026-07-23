@@ -23,7 +23,7 @@ typedef struct ReplacementMusic {
     int tried;
 } ReplacementMusic;
 
-static ReplacementMusic g_music;
+static ReplacementMusic g_music{};
 
 /* Release all parsed replacement music streams and reset their descriptors. */
 static void freeStreams(void) {
@@ -163,7 +163,7 @@ static AsoundU8 *parseStream(const char *json, const char *symbol,
 
 /* Reload optional intro and release music streams from the replacement root. */
 int asound_reload_replacement_music(void) {
-    char path[1024];
+    char path[1024]{};
     /*
      * Playback stream pointers refer directly to these allocations. Runtime
      * code loads once before playback; explicit reload exists for tests and
@@ -184,7 +184,7 @@ int asound_reload_replacement_music(void) {
     }
 
     for (int voice = 0; voice < ASOUND_STREAM_COUNT; ++voice) {
-        char symbol[64];
+        char symbol[64]{};
         snprintf(symbol, sizeof(symbol), "asound_intro_voice%d", voice);
         g_music.intro[voice] =
             parseStream(json, symbol, &g_music.intro_size[voice]);
