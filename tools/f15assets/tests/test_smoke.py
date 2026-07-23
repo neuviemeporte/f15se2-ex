@@ -7,7 +7,7 @@ import struct
 import tempfile
 import unittest
 
-from f15assets import decode_pic_asset, encode_pic_asset, export_3d3_to_gltf, export_3d3_to_glb
+from f15assets import decode_pic_asset, encode_pic_asset, export_3d3_to_gltf, export_3d3_to_glb, export_3d3_shape_gltfs, export_3d3_gltf_to_glb
 from f15assets import parse_3d3, build_3d3, parse_3dg, build_3dg, parse_3dt, build_3dt, parse_wld, build_wld
 from tools.f15assets import cli as cli_module
 
@@ -414,7 +414,41 @@ class SmokeConvertersTest(unittest.TestCase):
         self.assertEqual(glb[16:20], b"JSON")
         self.assertGreaterEqual(len(glb), 20 + json_chunk_length)
 
-    def test_3d3_to_gltf_tolerates_truncated_shape_payload(self):
+    def test_3d3_shape_glmesh_cache_matches_glb_source(self):
+        render_mode = bytes([0x00])
+        face_info = bytes([0x04] + [0x00] * 32)
+        vertices = bytes(
+            [0x03,
+             0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+             0xFF, 0xFF, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+             0xFF, 0xFF, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]
+        )
+        edges = bytes([0x03, 0xFF, 0xFF, 0x00, 0x01, 0xFF, 0xFF, 0x01, 0x02, 0xFF, 0xFF, 0x02, 0x00])
+        primitive = bytes([0x01, 0x05, 0x03, 0x00, 0x01, 0x02, 0x01])
+        shape_data = render_mode + face_info + vertices + edges + primitive
+
+        blob = bytearray()
+        blob.extend((0x33, 0x33))
+        blob.extend((1, 0))
+        blob.extend((0, 0))
+        blob.extend((len(shape_data) & 0xFF, (len(shape_data) >> 8) & 0xFF))
+        blob.extend(shape_data)
+
+        payload = parse_3d3(bytes(blob))
+        shapes = export_3d3_shape_gltfs(payload)
+        self.assertEqual(len(shapes), 1)
+
+        with tempfile.TemporaryDirectory() as workdir:
+            glb_path = pathlib.Path(workdir) / "shape_000.glb"
+            glmesh_path = pathlib.Path(workdir) / "shape_000.glmesh"
+            glb_path.write_bytes(export_3d3_gltf_to_glb(shapes[0][2]))
+            glmesh_path.write_bytes(cli_module._glb_to_glmesh_bytes(glb_path))
+            glmesh = glmesh_path.read_bytes()
+            self.assertEqual(glmesh, cli_module._glb_to_glmesh_bytes(glb_path))
+            self.assertEqual(glmesh[:8], b"F15GLM3\x00")
+            self.assertGreater(len(glmesh), 12)
+
+    def test_3d3_to_gltf_exports_edge_run_shape_payload(self):
         payload = {
             "format": "3D3",
             "shape_offsets": [0],
@@ -425,146 +459,10 @@ class SmokeConvertersTest(unittest.TestCase):
         }
 
         gltf = export_3d3_to_gltf(payload)
-        self.assertEqual(len(gltf["meshes"]), 0)
-        self.assertEqual(
-            gltf["extras"]["skipped_shapes"][0]["shape_payload"]["render_error"],
-            "truncated 3D3 face-normal block",
-        )
-
-    def test_yaml_sidecar_export_and_roundtrip(self):
-        try:
-            import yaml
-        except Exception:
-            self.skipTest("PyYAML unavailable")
-
-        payload = {
-            "format": "3DT",
-            "version": 1,
-            "levels": [
-                {
-                    "level": 0,
-                    "objects": [
-                        {
-                            "tile_index": 0,
-                            "objects": [
-                                {"x": 1, "y": 2, "z": 3, "shape_word": 0x00FE},
-                            ],
-                        }
-                    ],
-                },
-                {"level": 1, "objects": []},
-                {"level": 2, "objects": []},
-                {"level": 3, "objects": []},
-                {"level": 4, "objects": []},
-            ],
-        }
-
-        source = build_3dt(payload)
-        decoded = parse_3dt(source)
-        with tempfile.TemporaryDirectory() as workdir:
-            base = pathlib.Path(workdir)
-            yaml_path = base / "shape.yaml"
-            json_path = base / "shape.json"
-
-            json_path.write_text(json.dumps(decoded, indent=2, sort_keys=True), encoding="utf-8")
-            yaml_path.write_text(yaml.safe_dump(decoded, sort_keys=True), encoding="utf-8")
-
-            from_yaml = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
-            self.assertEqual(from_yaml["format"], "3DT")
-            self.assertEqual(from_yaml["tile_counts"], decoded["tile_counts"])
-
-            restored = json.loads(json_path.read_text(encoding="utf-8"))
-            self.assertEqual(build_3dt(from_yaml), build_3dt(restored))
-
-    def test_yaml_encode_input_supported(self):
-        try:
-            import yaml
-        except Exception:
-            self.skipTest("PyYAML unavailable")
-
-        payload = {
-            "format": "3DT",
-            "version": 1,
-            "levels": [
-                {
-                    "level": 0,
-                    "objects": [
-                        {
-                            "tile_index": 0,
-                            "objects": [{"x": 9, "y": 8, "z": 7, "shape_word": 0x00AB}],
-                        }
-                    ],
-                },
-                {"level": 1, "objects": []},
-                {"level": 2, "objects": []},
-                {"level": 3, "objects": []},
-                {"level": 4, "objects": []},
-            ],
-        }
-
-        source = build_3dt(payload)
-        parsed = parse_3dt(source)
-
-        with tempfile.TemporaryDirectory() as workdir:
-            yaml_path = pathlib.Path(workdir) / "shape.yaml"
-            with yaml_path.open("w", encoding="utf-8") as f:
-                yaml.safe_dump(parsed, f, sort_keys=True)
-            decoded_yaml = cli_module._read_yaml(yaml_path)
-            self.assertEqual(decoded_yaml["format"], "3DT")
-            self.assertEqual(build_3dt(decoded_yaml), source)
-
-    def test_yaml_sidecar_for_3dg_and_wld(self):
-        try:
-            import yaml
-        except Exception:
-            self.skipTest("PyYAML unavailable")
-
-        grid_payload = {
-            "format": "3DG",
-            "version": 1,
-            "level4_top_grid": [1] * 16,
-            "level3_grid": [2] * 256,
-            "level2_subgrid": [3] * 512,
-            "level1_subgrid": [4] * 512,
-            "level0_subgrid": [5] * 512,
-        }
-        wld_payload = {
-            "format": "WLD",
-            "terrain_target_ids": {"land": 0x11, "water": 0x11},
-            "read_item_size": 0,
-            "ground_unit_count": 0,
-            "world_object_count": 0,
-            "world_objects": [],
-            "flight_unit_count": 0,
-            "flight_units": [],
-            "shape_target_category_table": base64.b64encode(bytes([7] * 100)).decode("ascii"),
-            "kill_tally_or_unit_flags": base64.b64encode(bytes([8] * 100)).decode("ascii"),
-            "mission_object_type_table": base64.b64encode(bytes([9] * 100)).decode("ascii"),
-            "terrain_grid": base64.b64encode(bytes(range(256))).decode("ascii"),
-            "name_table": base64.b64encode(b"ALPHA\x00BRAVO\x00").decode("ascii"),
-            "trailing_bytes": "",
-        }
-
-        grid_bytes = build_3dg(grid_payload)
-        wld_bytes = build_wld(wld_payload)
-        grid_parsed = parse_3dg(grid_bytes)
-        wld_parsed = parse_wld(wld_bytes)
-
-        with tempfile.TemporaryDirectory() as workdir:
-            base = pathlib.Path(workdir)
-            grid_yaml = base / "grid.yaml"
-            wld_yaml = base / "wld.yaml"
-            grid_yaml.write_text(yaml.safe_dump(grid_parsed, sort_keys=True), encoding="utf-8")
-            wld_yaml.write_text(yaml.safe_dump(wld_parsed, sort_keys=True), encoding="utf-8")
-
-            self.assertEqual(
-                build_3dg(cli_module._read_yaml(grid_yaml)),
-                grid_bytes,
-            )
-            self.assertEqual(
-                build_wld(cli_module._read_yaml(wld_yaml)),
-                wld_bytes,
-            )
+        self.assertEqual(len(gltf["meshes"]), 1)
+        self.assertEqual(gltf["meshes"][0]["extras"]["shape_payload"]["form"], "edgerun")
+        self.assertEqual(len(gltf["meshes"][0]["primitives"]), 7)
+        self.assertEqual(gltf["extras"]["skipped_shapes"], [])
 
     def test_cli_decode_writes_stable_sidecars(self):
         asset_root = pathlib.Path("/home/xor/games/f15")
@@ -591,12 +489,10 @@ class SmokeConvertersTest(unittest.TestCase):
             base = pathlib.Path(workdir)
 
             json_3d3 = base / "asset_3d3.json"
-            yaml_3d3 = base / "asset_3d3.yaml"
             gltf = base / "asset_3d3.gltf"
 
             if sample_pic is not None:
                 json_pic = base / "asset_pic.json"
-                yaml_pic = base / "asset_pic.yaml"
                 png_pic = base / "asset_pic.png"
                 rc = cli_module.main(
                     [
@@ -605,13 +501,10 @@ class SmokeConvertersTest(unittest.TestCase):
                         str(json_pic),
                         "--png",
                         str(png_pic),
-                        "--yaml",
-                        str(yaml_pic),
                     ]
                 )
                 self.assertEqual(rc, 0)
                 self.assertTrue(json_pic.exists())
-                self.assertTrue(yaml_pic.exists())
                 self.assertTrue(png_pic.exists())
                 payload_pic = json.loads(json_pic.read_text(encoding="utf-8"))
                 self.assertEqual(payload_pic["format"], "PIC")
@@ -623,31 +516,24 @@ class SmokeConvertersTest(unittest.TestCase):
                     str(json_3d3),
                     "--gltf",
                     str(gltf),
-                    "--yaml",
-                    str(yaml_3d3),
                 ]
             )
             self.assertEqual(rc, 0)
             self.assertTrue(json_3d3.exists())
-            self.assertTrue(yaml_3d3.exists())
             self.assertTrue(gltf.exists())
             payload = json.loads(json_3d3.read_text(encoding="utf-8"))
             self.assertEqual(payload["format"], "3D3")
 
             json_3dt = base / "asset_3dt.json"
-            yaml_3dt = base / "asset_3dt.yaml"
             rc = cli_module.main(
                 [
                     "decode",
                     str(sample_3dt),
                     str(json_3dt),
-                    "--yaml",
-                    str(yaml_3dt),
                 ]
             )
             self.assertEqual(rc, 0)
             self.assertTrue(json_3dt.exists())
-            self.assertTrue(yaml_3dt.exists())
             payload = json.loads(json_3dt.read_text(encoding="utf-8"))
             self.assertEqual(payload["format"], "3DT")
 
@@ -658,19 +544,15 @@ class SmokeConvertersTest(unittest.TestCase):
                 self.skipTest("missing .3DG sample")
 
             json_3dg = base / "asset_3dg.json"
-            yaml_3dg = base / "asset_3dg.yaml"
             rc = cli_module.main(
                 [
                     "decode",
                     str(sample_3dg),
                     str(json_3dg),
-                    "--yaml",
-                    str(yaml_3dg),
                 ]
             )
             self.assertEqual(rc, 0)
             self.assertTrue(json_3dg.exists())
-            self.assertTrue(yaml_3dg.exists())
             payload = json.loads(json_3dg.read_text(encoding="utf-8"))
             self.assertEqual(payload["format"], "3DG")
 
@@ -681,19 +563,15 @@ class SmokeConvertersTest(unittest.TestCase):
                 self.skipTest("missing .WLD sample")
 
             json_wld = base / "asset_wld.json"
-            yaml_wld = base / "asset_wld.yaml"
             rc = cli_module.main(
                 [
                     "decode",
                     str(sample_wld),
                     str(json_wld),
-                    "--yaml",
-                    str(yaml_wld),
                 ]
             )
             self.assertEqual(rc, 0)
             self.assertTrue(json_wld.exists())
-            self.assertTrue(yaml_wld.exists())
             payload = json.loads(json_wld.read_text(encoding="utf-8"))
             self.assertEqual(payload["format"], "WLD")
 
@@ -781,29 +659,24 @@ class SmokeConvertersTest(unittest.TestCase):
                     str(source_root),
                     str(output_root),
                     "--recursive",
-                    "--yaml",
                     "--models",
                     "glb",
                 ]
             )
             self.assertEqual(rc, 0)
 
-            self.assertTrue((output_root / "TITLE.json").exists())
-            self.assertTrue((output_root / "TITLE.yaml").exists())
+            self.assertFalse((output_root / "TITLE.json").exists())
             self.assertTrue((output_root / "TITLE.png").exists())
 
-            self.assertTrue((output_root / "SCENERY.3D3.json").exists())
-            self.assertTrue((output_root / "SCENERY.3D3.yaml").exists())
-            self.assertTrue((output_root / "SCENERY.3D3.glb").exists())
+            self.assertTrue((output_root / "SCENERY" / "SCENERY.3D3.json").exists())
+            self.assertTrue((output_root / "SCENERY" / "SCENERY.3D3.glb").exists())
+            self.assertFalse((output_root / "SCENERY" / "shape_000.glb").exists())
 
-            self.assertTrue((output_root / "nested" / "TACTICS.json").exists())
-            self.assertTrue((output_root / "nested" / "TACTICS.yaml").exists())
+            self.assertTrue((output_root / "nested" / "TACTICS" / "TACTICS.3DT.json").exists())
 
-            self.assertTrue((output_root / "nested" / "LANDS.json").exists())
-            self.assertTrue((output_root / "nested" / "LANDS.yaml").exists())
+            self.assertTrue((output_root / "nested" / "LANDS" / "LANDS.3DG.json").exists())
 
-            self.assertTrue((output_root / "WORLD.json").exists())
-            self.assertTrue((output_root / "WORLD.yaml").exists())
+            self.assertTrue((output_root / "WORLD" / "WORLD.WLD.json").exists())
 
 
 if __name__ == "__main__":

@@ -530,12 +530,35 @@ DEFAULT_EGA16_PALETTE_6BIT = [
     0x3F,
 ]
 
+WALL_PIC_PALETTE1_EGA16_6BIT = [
+    0x00, 0x00, 0x00,
+    0x00, 0x00, 0x2A,
+    0x00, 0x2A, 0x00,
+    0x00, 0x2A, 0x2A,
+    0x2A, 0x00, 0x00,
+    0x00, 0x00, 0x00,
+    0x2A, 0x15, 0x00,
+    0x2A, 0x2A, 0x2A,
+    0x15, 0x15, 0x15,
+    0x15, 0x15, 0x3F,
+    0x15, 0x3F, 0x15,
+    0x15, 0x3F, 0x3F,
+    0x3F, 0x15, 0x15,
+    0x3F, 0x15, 0x3F,
+    0x3F, 0x3F, 0x15,
+    0x3F, 0x3F, 0x3F,
+]
+
 _DEFAULT_VGA256_PALETTE_CACHE: Optional[List[int]] = None
 
 
 def _to_png_color_rgb8(value_6bit: int) -> int:
     value_8bit = int(value_6bit) & 0x3F
     return max(0, min(255, (value_8bit << 2) | (value_8bit >> 4)))
+
+
+def _dac6_palette_to_rgb8(values_6bit: List[int]) -> List[int]:
+    return [_to_png_color_rgb8(value) for value in values_6bit]
 
 
 def _extract_u8_array_from_source(name: str) -> Optional[List[int]]:
@@ -650,6 +673,97 @@ def _fallback_vga_palette(index_bit_depth: int) -> List[int]:
 
 def _default_palette(index_bit_depth: int) -> List[int]:
     return _fallback_vga_palette(index_bit_depth)
+
+
+RUNTIME_DAC_PALETTE1_FILES = {
+    "WALL.PIC",
+    "HISCORE.PIC",
+    "DESK.PIC",
+    "DEATH.PIC",
+    "PROMO.PIC",
+    "MEDAL.PIC",
+}
+
+RUNTIME_DAC_PALETTE4_FILES = {
+    "TITLE16.PIC",
+}
+
+
+def known_runtime_pic_palette(source_name: str | None, index_bit_depth: int) -> Optional[Dict[str, Any]]:
+    if not source_name:
+        return None
+    source_file = Path(source_name).name.upper()
+    if source_file in RUNTIME_DAC_PALETTE1_FILES:
+        dac_values = WALL_PIC_PALETTE1_EGA16_6BIT
+        palette_id = 1
+    elif source_file in RUNTIME_DAC_PALETTE4_FILES:
+        dac_values = [
+            0x00, 0x00, 0x00,
+            0x00, 0x00, 0x2A,
+            0x00, 0x00, 0x00,
+            0x00, 0x2A, 0x2A,
+            0x2A, 0x00, 0x00,
+            0x2A, 0x00, 0x2A,
+            0x2A, 0x15, 0x00,
+            0x2A, 0x2A, 0x2A,
+            0x15, 0x15, 0x15,
+            0x15, 0x15, 0x3F,
+            0x00, 0x00, 0x00,
+            0x15, 0x3F, 0x3F,
+            0x3F, 0x15, 0x15,
+            0x3F, 0x15, 0x3F,
+            0x3F, 0x3F, 0x15,
+            0x3F, 0x3F, 0x3F,
+        ]
+        palette_id = 4
+    else:
+        return None
+
+    # PIC streams carry indices only. These files are known to be displayed under
+    # a non-default gfx_setDac() state, so the self-contained PNG must embed that
+    # active DAC state rather than the generic VGA/EGA palette.
+    palette = list(_default_palette(index_bit_depth))
+    palette[:48] = _dac6_palette_to_rgb8(dac_values)
+    return {
+        "palette_rgb8": palette[:768],
+        "palette_dac6": dac_values[:],
+        "profile": {
+            "source": f"known_runtime_gfx_setDac_{palette_id}",
+            "status": "known_external_runtime_palette",
+            "source_file": source_file,
+            "index_mode": "indexed",
+            "index_bit_depth": index_bit_depth,
+            "color_mode": "palette_index",
+            "palette_format": "vga_dac_6bit_rgb_triples_first_16",
+            "notes": f"Runtime sets DAC palette {palette_id} around this screen; PNG embeds that active palette.",
+        },
+    }
+
+
+def expected_runtime_pic_palette(source_name: str | None, index_bit_depth: int) -> Dict[str, Any]:
+    known = known_runtime_pic_palette(source_name, index_bit_depth)
+    if known is not None:
+        return known
+
+    # Most static PIC/SPR files are decoded under the default low 16 DAC plus
+    # the generated VGA 256-color table. Returning this for every source makes
+    # validation compare palette bytes for all indexed PNG replacements instead
+    # of silently skipping files whose original PIC stream has no embedded DAC.
+    palette = list(_default_palette(index_bit_depth))
+    return {
+        "palette_rgb8": palette[:768],
+        "palette_dac6": [],
+        "profile": {
+            "source": "default_runtime_vga_dac",
+            "status": "expected_default_runtime_palette",
+            "source_file": Path(source_name).name if source_name else None,
+            "index_mode": "indexed",
+            "index_bit_depth": index_bit_depth,
+            "color_mode": "palette_index",
+            "palette_format": "rgb8_256_entries",
+            "notes": "Default runtime DAC palette used when no source-specific gfx_setDac context is known.",
+        },
+    }
 
 
 def to_png_data(

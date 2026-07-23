@@ -62,34 +62,45 @@ The converter prioritizes forward conversion only:
 - The modern baseline used for authoring is:
   - `glTF 2.0` (`.glb` by default, `.gltf` optional) for models.
   - Indexed `PNG` (with embedded palette chunk) for image assets.
-  - `JSON` (with optional `YAML`) for structured world/terrain/table data.
+  - Ordered `JSON` for structured world/terrain/table data.
 - The default developer workflow is stable-then-edit: export to modern formats
   first, then modify only the exported modern format plus metadata sidecars.
+- If a modern media file and JSON sidecar contain overlapping information, the
+  modern media file is authoritative. PNG overrides image JSON for pixels,
+  dimensions, and palette; GLB overrides `.3D3.json` for model geometry and
+  GLB extras; WAV overrides sound JSON for sample data and audio format; BDF
+  overrides font JSON for glyph data and metrics, while PNG overrides font JSON
+  for atlas pixels only.
+- Validation invariant: loading an unmodified converted asset should produce
+  the same in-memory game data as loading the original asset. Float or lossy
+  modern encodings may be numerically equivalent within a documented tolerance
+  instead of byte-identical. This comparison belongs in importer
+  validation/tests or explicit diagnostics, not in normal runtime loading.
 - Modern reliable authoring targets:
   - `glTF 2.0` (`.glb` by default, `.gltf` optional) for geometry and model editing (Blender-first).
   - Indexed `PNG` for image art.
-  - `JSON`/`YAML` for structured world/terrain/table data.
+  - Ordered `JSON` for structured world/terrain/table data.
 - For stable pipelines, the modern editable target for 3D is **glTF 2.0**
   (`.glb`) because it is reproducible, self-contained, widely supported, and easy to
   move into Blender.
 - Lossy/editor formats like PNG and glTF should be accompanied by canonical
   structured metadata for any real edit pipeline.
 
-| Game format | Best editable format | Canonical export source | Export from game | Import back to game | Notes |
+| Game format | Best editable format | Canonical export source | Export from game | Runtime modern load | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `*.PIC` | Indexed PNG | PNG + JSON sidecar + original header/compression metadata | Yes | No | Best for full-screen images and cockpit/title art. JSON keeps palette, image mode, max code width, output layout, and original compression metadata. |
-| `*.SPR` | Indexed PNG sprite sheet + JSON atlas | PNG + JSON sidecar + original header/compression metadata | Yes | No | Same compressed image stream as PIC. The atlas is not embedded in SPR; generate/maintain JSON from code sprite descriptors and hand-assigned names. |
-| `*.3D3` theater models | **glTF (`.glb` default)** + `3D3` JSON sidecar | Parsed `.3D3` JSON plus raw display-list chunks and vertex-pool data | Yes | No | glTF is the stable modern mesh target for Blender, tools, and web pipelines. Keep a canonical `3D3` sidecar for traceable edits. |
-| `15FLT.3D3` aircraft models | **glTF (`.glb` default)** + `3D3` JSON sidecar | Parsed `.3D3` JSON plus raw aircraft display-list chunks | Yes | No | Same model-stream issue as theater `.3D3`; preserve shape ids and aircraft table mapping in JSON metadata. |
-| `PHOTO.3D3` target-photo models | **glTF (`.glb` default)** + `3D3` JSON sidecar | Parsed `.3D3` JSON plus raw chunks and append metadata | Yes | No | Treat like `.3D3`; preserve append/slot metadata because runtime appends selected chunks. |
-| `*.3DT` tile placements | YAML or JSON, optional CSV view | Canonical YAML/JSON with every 16-bit field preserved | Yes | No | Text is better than Blender for placements. It is object placement data: tile level, tile index, x/y/z, and a 16-bit shape word whose low byte is used at runtime. CSV can be a view, not the canonical source. |
-| `*.3DG` terrain grid | JSON/YAML data + PNG previews | Canonical JSON/YAML with all five grid buffers | Yes | No | PNG previews are only for visualization. Exact hierarchical grid data must be kept in JSON/YAML. |
-| `*.WLD` world/campaign | YAML or JSON, optional CSV tables | Canonical YAML/JSON preserving named binary tables, name table bytes, and record order | Yes | No | Best as structured text: world objects, flight units, terrain grid, name table, and proven mission/category tables. CSV helps spreadsheet editing, but JSON/YAML should be canonical. |
-| Palette data | GIMP `.gpl` or JASC `.pal` for editing | JSON with exact DAC tables, mode, and 6-bit/8-bit level metadata | Yes | No | Editor palette files are useful but not enough; JSON must preserve exact game palette/register metadata. |
+| `*.PIC` | Indexed PNG | PNG plus optional decode JSON | Yes | Yes | PNG is authoritative for pixels, dimensions, and palette. `convert-tree --include-image-json` keeps image mode, max code width, layout, and bulky decode metadata for diagnostics only. Backward conversion to `.PIC` is intentionally not required. |
+| `*.SPR` | Indexed PNG sprite sheet + optional JSON atlas | PNG plus optional decode/index JSON | Yes | Yes | PNG is authoritative for pixels, dimensions, and palette. The atlas is not embedded in SPR; generate/maintain JSON from code sprite descriptors and hand-assigned names only when needed. Backward conversion to `.SPR` is intentionally not required. |
+| `*.3D3` theater models | **glTF (`.glb` default)** + optional generated `cache/*.glmesh` runtime cache + lightweight `3D3` JSON index | Combined GLB and per-shape GLB files in the related world directory; `.glmesh` is generated from GLB and stores the source GLB checksum; default JSON keeps lightweight ids/lookup metadata only, while `--include-3d3-model-data` writes full bridge dumps | Yes | Partial: OpenGL geometry replacement, legacy `.3D3` still required for slot tables/fallback unless a full JSON bridge dump is provided | glTF is authoritative for model geometry and extras. Default JSON must not duplicate model bytecode; full bridge dumps are opt-in. A future GLB-only/free-asset runtime still needs a native replacement for the `.3D3` shape-slot table load. |
+| `15FLT.3D3` aircraft models | **glTF (`.glb` default)** + optional generated `cache/*.glmesh` runtime cache + lightweight `3D3` JSON index | Combined GLB and per-shape GLB files in `15FLT/`; cache files live in `15FLT/cache/` when generated; default JSON keeps lightweight ids/lookup metadata only, while `--include-3d3-model-data` writes full bridge dumps | Yes | Partial: OpenGL geometry replacement, legacy `.3D3` still required for aircraft shape slots/fallback unless a full JSON bridge dump is provided | Same model-stream issue as theater `.3D3`; preserve shape ids and aircraft table mapping as lightweight JSON metadata. A future GLB-only/free-asset runtime must load this table from modern metadata. |
+| `PHOTO.3D3` target-photo models | **glTF (`.glb` default)** + optional generated `cache/*.glmesh` runtime cache + lightweight `3D3` JSON index | Combined GLB and per-shape GLB files in `PHOTO/`; cache files live in `PHOTO/cache/` when generated; default JSON keeps lightweight ids/lookup metadata only, while `--include-3d3-model-data` writes full bridge dumps | Yes | Partial: OpenGL geometry replacement, legacy `.3D3` still required for appended target-view slots/fallback unless a full JSON bridge dump is provided | Treat like `.3D3`; preserve append/slot metadata without duplicating geometry by default. A future GLB-only/free-asset runtime must load append/slot metadata from modern metadata. |
+| `*.3DT` tile placements | Ordered JSON in the related world directory, optional CSV view | Canonical JSON with every 16-bit field preserved | Yes | Yes, via rebuild bridge | Text is better than Blender for placements. It is object placement data: tile level, tile index, x/y/z, and a 16-bit shape word whose low byte is used at runtime. CSV can be a view, not the canonical source. |
+| `*.3DG` terrain grid | Ordered JSON in the related world directory + PNG previews | Canonical JSON with all five grid buffers | Yes | Yes, via rebuild bridge | PNG previews are only for visualization. Exact hierarchical grid data must be kept in JSON. |
+| `*.WLD` world/campaign | Ordered JSON, optional CSV tables | Canonical JSON preserving named binary tables, name table bytes, and record order | Yes | Yes, via rebuild bridge | Best as structured text: world objects, flight units, terrain grid, name table, and proven mission/category tables. CSV helps spreadsheet editing, but JSON should be canonical. |
+| Palette data | GIMP `.gpl` or JASC `.pal` for editing | JSON with exact DAC tables, mode, and 6-bit/8-bit level metadata | Yes | Indirect via PNG | Editor palette files are useful but not enough; JSON must preserve exact game palette/register metadata. |
 | Text and strings | `.po` + `.json` text bundles | In-binary text regions extracted from executable/overlay segments | Planned | No | No standalone text resource files were identified. Use string-id and source-offset maps to support translation and custom copy editing. |
-| Fonts | Unicode `BDF` + atlas `PNG` + metadata JSON | Extracted font tables in `src/fontdata.h` + metrics in `src/gfx_impl.c` | Yes | No | `export-fonts` emits one BDF, atlas, and sidecar per known font. BDF is the editable Unicode-capable bitmap font target; JSON preserves legacy CP437 source bytes, Unicode codepoints, atlas rects, advance widths, and raw bitmap rows. |
-| Sounds | `.wav` + metadata JSON, unresolved driver sidecars | `F15DGTL.BIN` and sound-driver executables | Partial | No | `export-sounds` emits `F15DGTL.BIN` as a raw unsigned 8-bit PCM WAV plus ASOUND-recovered cue WAVs and metadata. Driver EXEs are preserved as unresolved JSON until synthesized effect tables are decoded. |
-| Manuals/maps | Markdown notes + georeferenced PNG overlays | Not applicable | Yes | No | These are reference material, not game assets. Use them to validate WLD coordinates, target names, and theater symbols. |
+| Fonts | Unicode `BDF` + atlas `PNG`, optional metadata JSON | Extracted font tables in `src/fontdata.h` + metrics in `src/gfx_impl.c` | Yes | Yes | `export-fonts` emits BDF and atlas PNG by default. BDF is authoritative for glyph data and metrics; PNG is authoritative for atlas pixels only. Optional JSON maps codepoints to atlas/index metadata when `--include-metadata` is used. |
+| Sounds | cue `.wav`, optional metadata JSON, optional unresolved driver sidecars | `F15DGTL.BIN` and sound-driver executables | Partial | Yes | `export-sounds` emits ASOUND-recovered cue WAVs by default. Cue WAV files are authoritative for runtime sample replacement; customizers do not need JSON or a full sound blob. `--include-metadata` adds cue JSON, driver sidecars, and `sounds.json`; `--include-raw-blob` additionally emits `F15DGTL.BIN` as a raw unsigned 8-bit PCM reference WAV for reverse engineering only. Driver sidecars preserve hashes/sizes/status, not executable bytes. |
+| Manuals/maps | Markdown notes + georeferenced PNG overlays | Not applicable | Yes | Not a runtime asset | These are reference material, not game assets. Use them to validate WLD coordinates, target names, and theater symbols. |
 
 ### Modern Forward-Compatible Export Target
 
@@ -97,18 +108,133 @@ The modern stable formats for developer workflows are:
 
 - Indexed `PNG` (with embedded palette chunk) for image assets (`.PIC`, `.SPR`) because it is universally supported and
   easy to edit.
-- `glTF 2.0` (`.glb` by default, `.gltf` optional) for `3D3` model previews/editing.  
+- `glTF 2.0` (`.glb` by default, `.gltf` optional) for `3D3` model previews/editing and runtime replacement.
   Blender users should import/export via glTF (`.blend` is a downstream workspace,
   not the canonical interchange artifact).
-- JSON (and optional YAML) for table/world data (`.3DT`, `.3DG`, `.WLD`), with stable
+- Ordered JSON for table/world data (`.3DT`, `.3DG`, `.WLD`), with stable
   schemas and explicit byte-preservation sidecars.
 - `.po`/`.json` for translatable text bundles and locale work.
 - Unicode `BDF` + font atlas `PNG` + glyph-metrics `JSON` for font extensions and localization.
 - PCM `WAV` (`AIFF/FLAC` as needed) + sidecar JSON for game sounds.
 
+For customizers, the intended authoring surface is the modern media file when it
+can represent the data directly. Edit per-shape GLB in Blender for 3D, indexed
+PNG for images, BDF/PNG for fonts, and WAV for digitized sounds. JSON remains
+the authoritative source for structured tables such as WLD/3DT/3DG, and a small
+manifest/index for media formats. This keeps sidecar editing minimal while still
+preserving ids, offsets, and lookup metadata needed by the loader.
+
+Long-term licensing goal: this pipeline should allow a future install to run
+with freely licensed custom replacement assets only. That is not true for all
+formats today; the current runtime still needs original assets as fallback and
+as the comparison source for unsupported or incomplete replacement paths.
+
 Blender interoperability is achieved via glTF import/export. There is no direct
 `.3D3` editor round-trip in this project. The stable authoritative interchange
-format for model customization is `.glb` (fallback: `.gltf`).
+format for model customization and model replacement is `.glb` (fallback:
+`.gltf`); the matching JSON is only a lightweight index. Per-shape GLBs are
+minimized so a customized model slot carries only the resources referenced by
+that shape. `.glmesh` is a generated runtime cache stored under `cache/`,
+derived from the matching GLB, and not the authoring source. The cache stores
+the MD5 checksum of the source GLB so runtime loading can rebuild stale caches
+automatically.
+
+`PHOTO.3D3` target-view models are a loader special case: the original game
+selectively appends them to the active theater `.3D3` shape table. Modern
+authoring still uses `PHOTO/shape_###.glb`; the OpenGL replacement path maps
+appended target-view slots back to that `PHOTO` directory before looking up the
+per-shape GLB or generated `cache/*.glmesh`.
+
+GLB primitive `extras` are diagnostic/provenance metadata. They let test-time
+validators prove that an unmodified export preserved original `.3D3` primitive
+order and raw color identity, but rendering must still come from GLB
+geometry/materials. A custom GLB exported from Blender may lose those extras and
+still be a valid replacement; old-vs-new proof will simply be weaker for that
+edited shape.
+
+Runtime replacement status:
+
+- The game has a shared converted-asset resolver that searches extensionless
+  export directories (`VN/`, `LIBYA/`, `GULF/`, `15FLT/`, `PHOTO/`, etc.).
+- If `F15_REPLACEMENT_ROOT` is set, the resolver searches that converted/custom
+  asset directory before the usual `converted_assets_all` locations under the
+  game path or current directory. If the variable points at a parent folder, a
+  `converted_assets_all` child is also searched. Missing replacement-root
+  directories are reported once, ignored, and normal fallback locations are
+  still searched. This lets developers test replacement packs without copying
+  them beside the
+  original DOS assets.
+- `F15_ASSET_TOOL` can override the Python bridge command used to rebuild JSON
+  table byte streams and generated GLMESH caches, for example
+  `F15_ASSET_TOOL="python3 /path/to/f15se2-ex/tools/f15assets/cli.py"`. This is
+  useful when `F15_REPLACEMENT_ROOT` points outside the repository layout.
+- Replacement lookup is case-tolerant for modern filenames and grouped model
+  directories, so converted packs do not depend on the source DOS asset casing.
+- Legacy file loads probe for preferred modern replacements before loading old
+  assets and log that the legacy loader remains active until that format has a
+  native modern importer. Current probes cover `.3D3 -> .glb` for OpenGL
+  geometry, full `.3D3.json` for legacy-byte-stream bridge dumps,
+  `.PIC/.SPR -> .png`, and `.WLD/.3DT/.3DG -> .json`.
+- The resolver can locate per-shape model files by stable shape slot, for
+  example `VN/shape_049_SAM_Radar.glb`; those files are the intended runtime
+  source for customized 3D replacements, not the `.3D3.json` sidecar. The
+  OpenGL backend loads matching `cache/*.glmesh` files when their embedded GLB
+  checksum matches and rebuilds missing or stale caches through the
+  `build-glmesh` bridge. The current model loader still reads legacy `.3D3`
+  bytes for shape-slot tables, PHOTO append ranges, comparison, and software
+  fallback; GLB-only/free-asset runtime support requires replacing those table
+  reads with modern metadata before original `.3D3` files can be omitted.
+  Full `.3D3.json` files containing `model_data` can be rebuilt through the
+  legacy-byte-stream bridge; default minimized `.3D3.json` files are treated as
+  metadata-only and leave the old `.3D3` byte stream in place.
+- Digitized sound loading prefers separate `sounds/voice_cue_*.wav` files when
+  present. Each WAV accepts uncompressed mono unsigned 8-bit PCM, and its RIFF
+  sample rate controls replacement playback speed. Missing cue files, empty
+  WAVs, and invalid WAVs fall back to the matching range in `F15DGTL.BIN`.
+  Decoded WAV equivalence is checked by `validate-replacements` and CTest, not
+  during normal gameplay.
+- PIC/SPR loading prefers matching PNG replacements when present. Indexed PNGs
+  are copied as palette indices and their embedded palette is uploaded to the
+  active DAC, so the PNG remains self-contained for pixels and palette.
+  Palette-less indexed PNGs are rejected and fall back to legacy PIC/SPR.
+  `TITLE640.PIC` uses a dedicated 640x350 hi-res PNG path that compares against
+  the original alternating left/right row decode. The replacement path is used
+  by start/end picture wrappers and by flight cockpit picture loads such as
+  `256pit.PIC`. Menu/debrief disk-presence gates for sprite sheets must accept
+  the same PNG replacement path as the later `loadPic()` call, so `.SPR`
+  replacements do not get blocked before loading.
+  `256pit.PIC`, `256Left.Pic`, and `cockpit.PIC`.
+  Truecolor PNGs are accepted as an editing convenience by mapping pixels to the current
+  game palette. Replacement PNGs are sampled into the existing in-game target
+  rectangle, so higher-resolution source PNGs do not enlarge menus, cockpits, or
+  sprite sheets. Pixel and palette equivalence is checked by
+  `validate-replacements` and CTest.
+- WLD/3DT/3DG loading prefers matching JSON replacements when present. Runtime
+  import currently bridges through the converter's `build-binary` command,
+  rebuilding the original byte stream from JSON and feeding that stream to the
+  existing loaders. This preserves runtime memory layout while keeping JSON as
+  the editable source. `F15_ASSET_TOOL` can override the command prefix; by
+  default runtime first looks for `tools/f15assets/cli.py` beside the
+  replacement asset's `converted_assets_all` root, then tries nearby script
+  paths, then falls back to `python3 -m tools.f15assets.cli`. JSON-rebuilt byte
+  equivalence is checked by `validate-replacements` and CTest.
+- Font drawing prefers exported `fonts/font_<id>.bdf`: the runtime parses glyph
+  rows and advance widths, then renders from the BDF data. If BDF is absent or
+  rejected, exported `fonts/font_<id>.png` atlases are tried for glyph pixels;
+  PNG glyph pixels are authoritative, while advance widths currently come from
+  existing font metrics. BDF fonts with incomplete glyphs or zero advance widths
+  are rejected. Built-in font equivalence is checked by `validate-replacements`
+  and CTest.
+- GLB import is implemented for the OpenGL backend through a simple runtime mesh
+  bridge generated from per-shape GLBs. The backend treats `.glb` as the source
+  of truth, loads `cache/*.glmesh` when the embedded source checksum matches,
+  and rebuilds missing or stale cache files from `.glb` through `build-glmesh`.
+  Empty runtime meshes, unsupported primitive modes, bad line/triangle vertex
+  counts, trailing unread bytes, and stale caches are rejected before
+  rebuild/fallback. Replacement runtime mesh equivalence is checked by
+  `validate-replacements` and CTest.
+  Software rendering still uses the original `.3D3` stream. Exported media files
+  are authoritative whenever they overlap JSON.
 
 A practical modernization goal is: export each game format into one of the above
 stable formats plus a machine-readable metadata sidecar (`.json`) before any custom
@@ -129,10 +255,13 @@ executables/overlays rather than as standalone `.txt`, `.fnt`, or `.wav` asset f
 For reliable modding, extend the forward export contract as follows:
 
 1. Text export to `strings.po` + `strings.json`.
-2. Font export to `font_<id>.bdf` + `font_<id>.png` + `font_<id>.json`.
-3. Sound export to `f15dgtl_raw.wav` + `f15dgtl_raw.json`, ASOUND-recovered
-   cue WAVs such as `voice_cue_000_sample0.wav`, plus driver sidecars such as
-   `asound_driver.json` for unresolved synthesis/effect data.
+2. Font export to `font_<id>.bdf` + `font_<id>.png`; optional
+   `font_<id>.json` metadata only with `--include-metadata`.
+3. Sound export to ASOUND-recovered cue WAVs such as
+   `voice_cue_000_sample0.wav`, plus driver sidecars such as
+   `asound_driver.json` for unresolved synthesis/effect data. The full
+   `f15dgtl_raw.wav`/`.json` blob is optional reference output, not the default
+   customizer artifact.
 
 Proposed metadata fields for all three classes:
 
@@ -158,17 +287,17 @@ Translator guidance:
 
 Implement forward export support in this order:
 
-1. `PIC`/`SPR` to indexed PNG + JSON sidecar.
-2. `WLD`, `3DT`, and `3DG` to structured JSON/YAML sidecars.
+1. `PIC`/`SPR` to indexed PNG, with bulky decode JSON only when explicitly requested.
+2. `WLD`, `3DT`, and `3DG` to structured ordered JSON sidecars.
 3. `3D3`/`15FLT.3D3` to glTF export for viewing/editing in modern toolchains.
    Backward conversion/import back to `.3D3` is intentionally unsupported.
 4. Text extraction from executable/overlay data, then export to the formats
    above for localization workflows. Font and sound forward export now have
    initial CLI support.
 
-For editable text, prefer YAML when humans will hand-edit files and JSON when
-tools will generate or validate files. A robust converter can support both, but
-one canonical form should be chosen per format to avoid noisy diffs.
+For editable structured text, use ordered JSON. The converter writes important
+fields first, keeps coordinate-like fields adjacent, and moves large preserved
+base64 fields to the end.
 
 ### Python Converter CLI
 
@@ -181,16 +310,22 @@ model, terrain, world, font, and sound export paths:
 - `.3DG` (`.3dg`)
 - `.WLD` (`.wld`)
 
+The high-level `convert-all` command recurses through the installed game folder
+so campaign/theater subdirectory assets are included.
+
 Usage:
 
 ```text
 python -m tools.f15assets.cli [--pretty] decode <asset> <sidecar.json>
 python -m tools.f15assets.cli [--pretty] decode <input> <output.json> --png <out.png>
-python -m tools.f15assets.cli [--pretty] decode <input> <output.json> --yaml <output.yaml>
 python -m tools.f15assets.cli [--pretty] decode <input.3d3> <output.json> --gltf <out.gltf|out.glb>
-python -m tools.f15assets.cli [--pretty] convert-tree <asset_dir> <out_dir> [--recursive] [--models glb|gltf|none] [--yaml] [--no-png]
+python -m tools.f15assets.cli [--pretty] convert-all <asset_dir> <out_dir> [--include-image-json] [--include-3d3-model-data] [--include-glmesh-cache] [--include-metadata] [--include-raw-blob]
+python -m tools.f15assets.cli [--pretty] convert-tree <asset_dir> <out_dir> [--recursive] [--models glb|gltf|none] [--no-png] [--include-image-json] [--include-3d3-model-data] [--include-glmesh-cache]
 python -m tools.f15assets.cli [--pretty] export-fonts <repo_root> <out_dir> [--no-bdf]
-python -m tools.f15assets.cli [--pretty] export-sounds <asset_dir> <out_dir> [--sample-rate 7850]
+python -m tools.f15assets.cli [--pretty] export-sounds <asset_dir> <out_dir> [--sample-rate 7850] [--include-metadata] [--include-raw-blob]
+python -m tools.f15assets.cli build-binary <asset.json> [--format 3D3|WLD|3DT|3DG]
+python -m tools.f15assets.cli build-glmesh <shape.glb>
+python -m tools.f15assets.cli validate-replacements <asset_dir> <converted_dir> [--repo-root .] [--no-recursive] [--require-all] [--require-generated-cache] [--require-source-proof] [--strict-original-proof] [--allow-custom-glb-differences] [--loadability-only]
 ```
 
 Supported flags:
@@ -198,36 +333,119 @@ Supported flags:
 - `--format`: force a format if the extension is missing or ambiguous.
 - `--png`: extract indexed PNG for PIC/SPR only.
 - `--gltf`: export `*.3D3` to `.gltf` or `.glb` while writing the `3D3` JSON sidecar.
-- `--yaml`: optional YAML sidecar output for table formats (`3DT`, `3DG`, `WLD`) and other parser outputs.
 - `--pretty`: pretty-print JSON output. It is a global option and must appear
   before the subcommand.
 - `convert-tree` command:
   - `--recursive`: recurse input directories.
   - `--models {glb,gltf,none}`: choose 3D model output; defaults to `glb` for self-contained outputs.
   - `--no-png`: skip image exports for PIC/SPR.
-  - `--yaml`: emit YAML sidecars for all supported parsable formats.
+  - `--include-image-json`: also write bulky PIC/SPR decode JSON. Default image
+    conversion writes only PNG because PNG is the runtime source.
+  - `--include-3d3-model-data`: also write bulky `.3D3` `model_data` base64.
+    Default model conversion writes minimized JSON because GLB is the geometry
+    source. Full JSON with `model_data` is required only when `build-binary` or
+    the runtime bridge must rebuild legacy `.3D3` bytes.
+  - `--include-glmesh-cache`: also pre-generate `cache/*.glmesh` runtime caches.
+    Default model conversion writes GLB only and lets the game rebuild caches.
 - `export-fonts` command:
   - Reads `src/fontdata.h` and `src/gfx_impl.c`.
-  - Emits `font_<id>.bdf`, `font_<id>.png`, and `font_<id>.json`.
+  - Emits `font_<id>.bdf` and `font_<id>.png` by default.
+  - `--include-metadata` additionally emits `font_<id>.json` and `fonts.json`.
   - Current known font ids are `0`, `1`, `3`, `4`, and `5`.
   - JSON uses Unicode codepoints while preserving original CP437 source bytes
     (`source_byte`, `source_encoding`) so additional glyphs for other languages
     can be appended without losing the original game mapping.
 - `export-sounds` command:
   - Reads `F15DGTL.BIN` from the installed game directory and emits
-    `f15dgtl_raw.wav` plus `f15dgtl_raw.json`.
-  - Also emits driver-backed cue files (`voice_cue_000_sample0.wav`,
+    driver-backed cue files (`voice_cue_000_sample0.wav`,
     `voice_cue_001_sample4.wav`, `voice_cue_002_sample2_variant0.wav`, ...)
-    with per-cue JSON. ASOUND uses inclusive playback ranges:
+    by default. ASOUND uses inclusive playback ranges:
     `0x0000..0x31F3`, `0x31F4..0x4796`,
     `0x4797..0x5C92`, `0x5C93..0x6A1A`, and `0x6A1B..0x7D9D`.
     The final three ranges are rotating variants for `audio_playSample(2)`.
+  - `--include-metadata` additionally emits per-cue JSON, unresolved driver
+    sidecars, and `sounds.json` for reverse-engineering notes.
+  - `--include-raw-blob` additionally emits `f15dgtl_raw.wav` plus
+    `f15dgtl_raw.json` for reverse-engineering reference.
     `voiceCueThresholds` in `egdata.c` are availability checks before playback,
     not the complete split table.
-  - Preserves sound-driver executables (`ASOUND.EXE`, `ISOUND.EXE`,
-    `NSOUND.EXE`, `RSOUND.EXE`, `TSOUND.EXE`) as unresolved JSON sidecars.
+  - With `--include-metadata`, records sound-driver executables
+    (`ASOUND.EXE`, `ISOUND.EXE`, `NSOUND.EXE`, `RSOUND.EXE`, `TSOUND.EXE`) as
+    unresolved JSON sidecars. Default sound export omits these sidecars.
   - Uses unsigned 8-bit mono PCM at a PIT-derived `7850` Hz by default; override
     with `--sample-rate` if a different recovered driver rate is confirmed.
+- `validate-replacements` command:
+  - Performs explicit old-vs-modern comparison outside runtime loading.
+  - Recurses through the original asset folder by default, matching
+    `convert-all`; use `--no-recursive` for a flat folder check.
+  - `--require-all` requires authoring replacements. Generated
+    `cache/*.glmesh` runtime caches are validated when present and required only
+    with `--require-generated-cache`.
+  - `--require-source-proof` fails validation when GLB/GLMESH source primitive
+    extras are missing or differ from a fresh original export. Without it,
+    metadata loss is a warning because custom Blender exports may strip extras
+    while still providing valid replacement geometry/materials.
+  - `--strict-original-proof` is the converter-regression mode and implies
+    `--require-generated-cache` plus `--require-source-proof`.
+  - `--allow-custom-glb-differences` warns instead of failing when per-shape GLB
+    primitive counts or source proof metadata differ from the original `.3D3`
+    export. It is for customized model packs, not converter regression proof.
+  - `--loadability-only` validates that modern replacements parse and have the
+    required basic structure, but skips old-vs-new equality checks. Use it for
+    edited/custom replacement packs. It is incompatible with
+    `--strict-original-proof`, `--require-source-proof`, and
+    `--allow-custom-glb-differences`. If the original input directory is
+    intentionally absent, `--loadability-only` runs source-free checks directly
+    over the converted output tree; the output argument may be either the
+    `converted_assets_all` folder or a parent folder containing it.
+    `--require-all` is rejected in that case because there is no original asset
+    inventory to require against. If no replacement files are found, the
+    validator prints a warning listing the expected replacement kinds (`PNG`,
+    `WAV`, `BDF`, `WLD/3DT/3DG JSON`, `3D3 JSON`, `GLB`, or `GLMESH`) so a wrong output path is visible. JSON table
+    replacements are still rebuilt and must produce a non-empty legacy byte
+    stream; WAV cue replacements must parse, contain at least one sample, and
+    carry a valid RIFF sample rate; BDF glyphs must have bitmap rows and
+    positive advance widths for all 96 runtime glyphs from U+0020 through
+    U+007F, unless the matching PNG atlas fallback is loadable in
+    `--loadability-only`; source-free PNG font atlases are checked for the
+    current runtime font ids whose cell dimensions are known; indexed PNGs must include an embedded palette, and
+    truecolor PNGs are accepted in loadability-only mode like the runtime
+    loader; per-shape GLBs and generated GLMESH caches must contain renderable
+    geometry or line/point primitives. Source-free minimized `.3D3.json` files
+    are checked for parseable slot metadata, monotonic offsets, and valid
+    `model_data_size`; exact slot-table equivalence still requires original
+    `.3D3` bytes.
+    With `--require-all`, fonts require at least one runtime source per known
+    font: BDF first, or PNG atlas fallback.
+    Extra source-free `sounds/voice_cue_*.wav` files are parsed in loadability
+    mode, but the current runtime playback path uses only the recovered known
+    cue filenames emitted by `export-sounds`.
+    Combined overview GLBs and converter-only proof metadata are ignored in this
+    mode because per-shape GLB geometry is the runtime-editable source of truth.
+  - Currently compares `PIC`/`SPR` legacy decode pixels with indexed PNG
+    replacement pixels byte-for-byte, plus embedded/external PNG palette data
+    when the source palette is known. Byte-for-byte image comparison requires
+    indexed PNG; use `--loadability-only` for edited truecolor PNG replacements.
+  - Also compares `F15DGTL.BIN` ASOUND cue ranges with
+    `sounds/voice_cue_*.wav` sample bytes and compares cue WAV sample rates
+    against the recovered/export default.
+  - Also compares in-repo original font tables with `fonts/font_<id>.bdf`
+    glyph bitmaps/advance widths and `fonts/font_<id>.png` atlas glyph pixels.
+  - Also rebuilds `WLD`, `3DT`, and `3DG` bytes from JSON and compares them with
+    the original files.
+  - Also validates minimized `.3D3.json` slot metadata: shape offset table,
+    `model_data_size`, monotonic offsets, and absence of unnecessary bulky
+    `model_data` in default exports. This proves the compact metadata needed by
+    a future GLB-only/free-asset loader without duplicating geometry bytecode.
+    If bulky `model_data` is present, validation also rebuilds the `.3D3` byte
+    stream and compares it with the original file.
+  - Also validates `.3D3` GLB structure: combined GLB metadata, renderable shape
+    count, per-shape GLB presence, minimized per-shape marker, and stable
+    `source_shape_index` metadata. Present `.glmesh` runtime caches are compared
+    against the source GLB expansion, including triangle/line/point primitive
+    counts.
+  - Future validators should add full GLB rendered-equivalence checks after the
+    OpenGL import path is validated against representative scenes.
 
 Current objective is forward conversion from game assets to modern editable
 formats only. Rebuild/import pathways are intentionally unsupported to keep the
@@ -237,10 +455,12 @@ A required modern compatibility baseline is therefore:
 
 - `.glb` (fallback `.gltf`) for 3D geometry (Blender-first workflows), and it should remain self-contained.
 - Indexed `.png` for image assets.
-- JSON or YAML text for structural tables and world data, with strict,
+- Ordered JSON text for structural tables and world data, with strict,
   versioned sidecar metadata.
 
-PIC/SPR sidecars are lossless for decoded pixel payloads at export time.
+PIC/SPR decode sidecars are optional and lossless for decoded pixel payloads at
+export time. They are useful for reverse engineering, but not needed for normal
+runtime replacement because PNG is authoritative.
 
 - `format`: format tag (`PIC`)
 - `decoded_width`/`decoded_height`: currently expected to be `320`/`200`
@@ -270,9 +490,11 @@ Current text/font/sound extraction state:
 - `PIC`/`SPR`/`3D3`/`3DT`/`3DG`/`WLD` decoding is the current converter focus.
 - Font extraction is implemented from the current recovered font tables and
   metrics.
-- Sound extraction is partial: `F15DGTL.BIN` is exported as a raw WAV plus
-  ASOUND-recovered cue WAVs. Digitized cue ranges are known; synthesized effect
-  driver tables remain unresolved sidecars.
+- Sound extraction is partial: `F15DGTL.BIN` is exported as ASOUND-recovered
+  cue WAVs by default. Cue JSON, driver sidecars, and the full raw WAV blob are
+  optional reverse-engineering output; they are not needed for customization or
+  runtime replacement. Digitized cue ranges are known; synthesized effect driver
+  tables remain unresolved sidecars when metadata export is requested.
 - Text extraction remains a roadmap item and should emit `status: unresolved`
   entries until parsers are implemented.
 
@@ -284,7 +506,7 @@ Reasons:
 
 - Blender scripting is Python, so `.3D3` to Blender import/export can share code
   with the command-line converter.
-- PNG, indexed palettes, YAML, JSON, CSV, and binary struct handling are all
+- PNG, indexed palettes, JSON, CSV, and binary struct handling are all
   well-supported.
 - Reverse-engineering work benefits from quick scripts, readable parsers, and
   fast iteration more than from maximum runtime speed.
@@ -301,15 +523,45 @@ tools/f15assets/
     f15assets/
         pic.py          # PIC/SPR LZW/RLE decode
         fonts.py        # extracted font tables to BDF/PNG/JSON
-        sounds.py       # F15DGTL.BIN WAV/cue export and driver sidecars
+        sounds.py       # F15DGTL.BIN cue WAV export and optional driver sidecars
         model3d.py      # .3D3 container and display-list parser
         terrain.py      # .3DT and .3DG
         world.py        # .WLD
         io.py           # binary/base64 helpers
+        validation_compare.py            # stable facade for validation diff helpers
+        validation_compare_core.py       # shared byte/count/sequence comparisons
+        validation_compare_image.py      # PIC/SPR PNG pixel and palette comparisons
+        validation_compare_font.py       # BDF/PNG font comparisons
+        validation_compare_sound.py      # cue WAV comparisons
+        validation_compare_model3d.py    # GLB/GLMESH primitive comparisons
+        validation_compare_structured.py # WLD/3DT/3DG rebuild comparisons
+        validation_image.py              # PIC/SPR PNG replacement validator
+        validation_font.py               # BDF/PNG font replacement validator
+        validation_sound.py              # cue WAV replacement validator
+        validation_structured.py         # WLD/3DT/3DG JSON replacement validator
+        validation_model3d.py            # .3D3 JSON/GLB/GLMESH replacement validator
     tests/
         test_smoke.py
         test_full_assets.py
 ```
+
+Replacement comparison helpers live under `src/shared/asset_compare*.c` for
+test/developer tooling. Loaders should focus on finding and loading modern
+assets during gameplay; CTest/Python validation owns old-vs-modern equivalence
+proof. Byte-stream checks live in `asset_compare_bytes.c`, indexed image/palette
+checks in `asset_compare_image.c`, bitmap font checks in `asset_compare_font.c`,
+digitized cue checks in `asset_compare_sound.c`, and renderer-independent 3D
+topology/color/source-metadata reporting in `asset_compare_3d.c`. Tool-side
+validation diff helpers live in `tools/f15assets/f15assets/validation_compare.py`;
+that file is a stable facade over per-format `validation_compare_*` modules.
+Per-format replacement validators live in `validation_image.py`,
+`validation_font.py`, `validation_sound.py`, `validation_structured.py`, and
+`validation_model3d.py`; each exposes a `validate_*` entry point, loads/parses
+assets, and delegates reusable diff reporting to `validation_compare.py`.
+`cli.py` should pass repository/output path policy into those validators rather
+than owning format-specific comparison logic. Renderer-specific or
+parser-specific comparisons can remain near their loaders until their
+dependencies are cleanly separable.
 
 Do not start with a mixed-language converter. Add Rust or C++ later only if a
 specific hot path or library boundary needs it. If that happens, keep the file
@@ -643,7 +895,7 @@ mission/runtime fields. A future `.WLD` round-trip converter should preserve the
 original load order above, including the named binary tables.
 
 For editor-facing exports, keep `name_table` bytes as parsed and include any
-suffix bytes beyond the game payload as `trailing_bytes` in the JSON/YAML
+suffix bytes beyond the game payload as `trailing_bytes` in the JSON
 representation so variant or unknown tails are not discarded.
 
 ## Manual and Map Facts Useful for RE
