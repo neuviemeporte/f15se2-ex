@@ -48,9 +48,9 @@ static bool g_ready;                              /* device opened */
 static AsoundU8 *g_blob;
 static int g_blobSize;
 static bool g_smpActive;
-static const AsoundU8 *g_smpData;
+static const AsoundU8 *g_smpData{};
 static double g_smpPos; /* fractional read position (bytes) */
-static int g_smpSize;
+static int g_smpSize{};
 static double g_smpStep = (double)ASND_SAMPLE_HZ / (double)ASND_OUT_RATE;
 
 /* Fractional countdown (in output frames) to the next sequencer tick. */
@@ -76,14 +76,14 @@ static void asnd_syncChip(void) {
 /* ---- sequencer tick (audio thread, under g_lock) -------------------------- */
 
 static void asnd_startSample(AsoundU16 start, AsoundU16 end) {
-    AsoundReplacementCue cue;
+    AsoundReplacementCue cue{};
     if (asound_find_replacement_cue(start, end, &cue)) {
         g_smpData = cue.samples;
         g_smpSize = cue.sample_count;
         g_smpPos = 0;
         g_smpStep = (double)cue.sample_rate / (double)ASND_OUT_RATE;
         g_smpActive = true;
-        return;
+        return{};
     }
     if (!g_blob || g_blobSize <= 0) return;
     int s = start, e = (int)end + 1;

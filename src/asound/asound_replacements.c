@@ -114,7 +114,7 @@ int asound_load_replacement_cues(void) {
         slot.sample_count = 0;
         slot.sample_rate = 0;
 
-        char path[1024];
+        char path[1024]{};
         if (!findAssetReplacement(slot.filename, path, sizeof(path))) continue;
 
         size_t wav_size = 0;
