@@ -467,9 +467,13 @@ void drawMenuItem(const MenuItem *items, unsigned int index, int16 *gfxPage) {
             }
             break;
         case EVENT_SAM_KILL:
+            /* The DOS code reached the nickname through &name[7] because both
+             * strings occupied one packed byte sequence. SamDataEntry models
+             * them separately, so use both fields without relying on host
+             * structure layout. */
             mystrcpy(scoreString, planeArray[unitIdx].name);
             mystrcat(scoreString, " ");
-            mystrcat(scoreString, &planeArray[unitIdx].name[7]);
+            mystrcat(scoreString, planeArray[unitIdx].nickname);
             mystrcat(scoreString, " shot down");
             break;
         case EVENT_GROUND_KILL:

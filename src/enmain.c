@@ -38,7 +38,12 @@ int end_main(void) {
         computeMissionResult();
     }
     clearKeybuf();
+    /* HD debrief maps and their path/event graphics are native overlays rather
+     * than pixels retained in page 0. Recompose them after expose, focus, or
+     * resize events instead of repainting only the static debrief backdrop. */
+    gfx_setRepaintHook(debriefPresent);
     debriefMainLoop();
+    gfx_setRepaintHook(NULL);
     checkQuitFlag();
     clearKeybuf();
     showPostMissionAwards();

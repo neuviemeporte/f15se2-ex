@@ -10,8 +10,8 @@
 /* Split into chunks due to MSC 5.1 initializer limits.
  *
  * Key offsets within weaponDataBlock[]:
- *   planeArray:     +0x156 (342)
- *   samDataTable:   +0x16E (366)
+ *   planeArray:     +0x14E (334), first name at +0x156 after its prefix
+ *   samDataTable:   +0x16E (366), first aircraft model/sentinel fields
  *   samWeaponTable: +0x3B6 (950)
  *   nightMission:   +0x6DA (1754)
  */

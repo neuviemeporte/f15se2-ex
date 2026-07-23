@@ -158,7 +158,7 @@ void stepFlightModel(void) {
             UpdateThrottleState();
         }
         goto switch_break;
-    case 0x1900: // Alt-P
+    case SCAN_ALT_P:
         waitForKeyPress();
         goto switch_break;
     }
@@ -1130,13 +1130,16 @@ void drawVectorShape(const int16 *shapeData) {
 
 void waitForKeyPress(void) {
     int16 savedTiming;
+    int key;
 
     audio_engineDroneOff();
     savedTiming = g_frameTimingAccum;
-loop:
-    while (kbhit() == 0);
-    if (egReadKey() == 0x1900)
-        goto loop;
+    /* The DOS version busy-polled BIOS kbhit(). The native blocking reader
+     * pumps SDL/blackbox input and yields between polls, keeping pause from
+     * consuming a CPU core while preserving Alt+P's wait-for-another-key rule. */
+    do {
+        key = egReadKey();
+    } while (key == SCAN_ALT_P);
     updateEngineSound();
     g_frameTimingAccum = savedTiming;
 }

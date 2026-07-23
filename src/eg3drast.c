@@ -33,6 +33,16 @@
 #include "r2d.h"
 #include "inttype.h"
 
+/* Packed model display-list byte fields. Keep these hexadecimal because they
+ * are masks and tags in the original stream, not numeric quantities. */
+enum ModelDisplayListConstant {
+    MODEL_OPCODE_MASK = 0x3f,
+    MODEL_OPCODE_EDGERUN = 0x3e,
+    MODEL_OPCODE_POINT = 0x3f,
+    MODEL_STORE_TRANSFORM_MASK = 0x60,
+    MODEL_TRANSFORM_SLOT_MASK = 0x03
+};
+
 /* Set while rendering an aircraft ground shadow (projectSceneShadow): the object's
  * faces/edges fill flat black instead of their model colour. Captured per object
  * into the depth-sorted record so deferred draws recover it. This is the software
@@ -329,7 +339,7 @@ int far advanceModelPointerLod(void) {
 /* seg001 0x0A36 — storeObjTransformByOpcode: g_objTransform[opcode] = spinAngle */
 void storeObjTransformByOpcode(void) {
     unsigned char far *p = (unsigned char far *)g_modelStreamPtr;
-    int idx = (*p) & 3;
+    int idx = (*p) & MODEL_TRANSFORM_SLOT_MASK;
     g_objTransform[idx] = g_spinAngle;
 }
 
@@ -2209,12 +2219,12 @@ static void processSceneObject(void) {
         g_objShade = (uint8)((v << 4) + 0x80);
     }
 
-    op = (*p) & 0x3f;
-    if (op == 0x3f) {
+    op = (*p) & MODEL_OPCODE_MASK;
+    if (op == MODEL_OPCODE_POINT) {
         sceneObjPoint(p);
         return;
     }
-    if (op == 0x3e) {
+    if (op == MODEL_OPCODE_EDGERUN) {
         sceneObjEdgeRun(p);
         return;
     }
@@ -2327,8 +2337,8 @@ void far projectSceneObject(char far *model, int yaw, int pitch, int roll,
     opcode = *p;
     if (*(unsigned *)&p == 1 && g_detailLevel != 2) return;
     cl = opcode;
-    if ((opcode & 0x60) == 0x60) { /* storeObjTransformByOpcode */
-        int idx = (*p) & 3;
+    if ((opcode & MODEL_STORE_TRANSFORM_MASK) == MODEL_STORE_TRANSFORM_MASK) {
+        int idx = (*p) & MODEL_TRANSFORM_SLOT_MASK;
         p++;
         g_objTransform[idx] = g_spinAngle;
     }
@@ -2365,6 +2375,7 @@ int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
                             int16 *combined, long *camBase, long *camX, long *camY,
                             int *shade) {
     int i;
+    unsigned char far *p;
     g_objRenderMode = *(unsigned char far *)model;
     g_objTransform[1] = yaw;
     g_objTransform[2] = pitch;
@@ -2379,10 +2390,11 @@ int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
      * one of its own transform slots with the runtime spin angle (rotating radar
      * dishes / SAM launchers). projectSceneObject does this before building the
      * orientation matrix; peek the same opcode here so the GL model spins too. */
-    {
-        unsigned char far *p = (unsigned char far *)model + 1; /* past render-mode byte */
-        skipDisplayListByLod(&p);
-        if ((*p & 0x60) == 0x60) g_objTransform[(*p) & 3] = g_spinAngle;
+    p = (unsigned char far *)model + 1; /* past render-mode byte */
+    skipDisplayListByLod(&p);
+    if ((*p & MODEL_STORE_TRANSFORM_MASK) == MODEL_STORE_TRANSFORM_MASK) {
+        g_objTransform[(*p) & MODEL_TRANSFORM_SLOT_MASK] = g_spinAngle;
+        p++;
     }
 
     /* Distance shade — identical to processSceneObject. */
@@ -2413,9 +2425,14 @@ int far r3d_objTransformFar(char far *model, int yaw, int pitch, int roll,
     *camX = JOIN32(g_camTransXLo, g_camTransXHi);
     *camY = JOIN32(g_camTransYLo, g_camTransYHi);
 
-    /* No object-facing/back-face-cull axis is produced here: back-face culling is a
-     * software-rasterizer concern (the display-list walk's g_vtxSignMask path). The
-     * GPU backend fills double-sided, so a GPU consumer needs only the transform. */
+    /* rotatePoint3d also performs the original point-in-convex-volume test: if
+     * the camera lies behind all four-or-more model planes it increments
+     * g_posVisibleFlag. Flight, missiles, and AI consume that flag as collision
+     * state. The GL bridge used to omit the display-list walk entirely, which
+     * made rendered mountains non-solid. Point and edge-run forms have no plane
+     * table, matching processSceneObject's early returns for those opcodes. */
+    if (((*p) & MODEL_OPCODE_MASK) < MODEL_OPCODE_EDGERUN)
+        rotatePoint3d(g_objTransform[0], g_objRelY, g_objRelX, &p);
     return 0;
 }
 
