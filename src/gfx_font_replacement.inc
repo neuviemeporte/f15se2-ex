@@ -10,7 +10,7 @@ typedef struct TtfTextOverlayRecord {
 } TtfTextOverlayRecord;
 static TtfTextOverlayRecord g_ttfTextOverlayRecords[512];
 static int g_ttfTextOverlayCount;
-static int g_ttfTextOverlayGeneration;
+static void clearTtfTextOverlayRecords(void);
 #endif
 
 
@@ -29,6 +29,7 @@ static void freeReplacementFont(uint16 fontIdx) {
 static void cleanupReplacementFonts(void) {
 #ifdef F15_HAVE_FREETYPE
     int i;
+    clearTtfTextOverlayRecords();
     for (i = 0; i < 8; i++) freeReplacementFont((uint16)i);
     if (g_freetypeLibrary) {
         FT_Done_FreeType(g_freetypeLibrary);
@@ -435,7 +436,12 @@ static int recordTtfTextOverlayAndAdvance(int16 *params, const char *string,
 
     record->text = SDL_strdup(string);
     if (!record->text) {
-        record->x = 0;
+        if (recordIndex < 0) {
+            --g_ttfTextOverlayCount;
+            memset(record, 0, sizeof(*record));
+        } else {
+            removeTtfTextOverlayRecord(recordIndex);
+        }
         return 0;
     }
     record->x = newX;
