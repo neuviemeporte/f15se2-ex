@@ -35,7 +35,7 @@ static bool isSafeRelativePath(const fs::path &path) {
 /* Resolve one path component case-insensitively beneath an already trusted directory. */
 static bool resolveComponent(const fs::path &directory, const fs::path &component,
                              fs::path *resolved) {
-    std::error_code error;
+    std::error_code error{};
     const fs::path exact = directory / component;
     if (fs::exists(exact, error) && !error) {
         *resolved = exact;
@@ -65,12 +65,12 @@ int findAssetReplacement(const char *relativePath, char *outPath, size_t outPath
     if (!isSafeRelativePath(relative)) return 0;
 
     fs::path resolved{rootValue};
-    std::error_code error;
+    std::error_code error{};
     if (!fs::is_directory(resolved, error) || error) return 0;
 
     for (const fs::path &component : relative) {
         if (component == ".") continue;
-        fs::path next;
+        fs::path next{};
         if (!resolveComponent(resolved, component, &next)) return 0;
         resolved = next;
     }
