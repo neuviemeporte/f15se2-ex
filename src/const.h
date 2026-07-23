@@ -33,7 +33,6 @@
 #define CHAR_BELL 0x7
 
 #define KEYCODE_ALTQ 0x1000
-#define KEYCODE_ALTP 0x1900
 #define KEYCODE_BACKSPACE 0x8
 #define KEYCODE_CTRLX 0x18
 

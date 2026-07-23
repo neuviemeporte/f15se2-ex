@@ -158,7 +158,7 @@ void stepFlightModel(void) {
             UpdateThrottleState();
         }
         goto switch_break;
-    case KEYCODE_ALTP:
+    case SCAN_ALT_P:
         waitForKeyPress();
         goto switch_break;
     }
@@ -1139,7 +1139,7 @@ void waitForKeyPress(void) {
      * consuming a CPU core while preserving Alt+P's wait-for-another-key rule. */
     do {
         key = egReadKey();
-    } while (key == KEYCODE_ALTP);
+    } while (key == SCAN_ALT_P);
     updateEngineSound();
     g_frameTimingAccum = savedTiming;
 }
