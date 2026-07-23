@@ -6,6 +6,7 @@
 #include "egdata.h"
 #include "egflight.h"
 #include "egframe.h"
+#include "game_options.h"
 #include "worldxfer.h"
 #include "egkeys.h"
 #include "egmath.h"
@@ -279,7 +280,8 @@ skip_target_section:
             g_attackRangeY = 0x3c0;
             if (g_viewZ == 0x80 && g_knots > 0x50) {
                 if ((uint16)(g_viewY_ - g_planeTable.planes[g_closestThreatIndex].mapY) * g_northSouthSign >= 0x10 && (uint16)(g_viewY_ - g_planeTable.planes[g_closestThreatIndex].mapY) * g_northSouthSign <= 0x14) {
-                    if (abs((int16)(g_ourHead - ((1 - g_northSouthSign) << 0xe))) < 0x2000) {
+                    if (!gameOptionsEnabled(GAME_OPTION_NO_DAMAGE) &&
+                        abs((int16)(g_ourHead - ((1 - g_northSouthSign) << 0xe))) < 0x2000) {
                         g_autoCrashDive = 1;
                         makeSound(22, 2);
                     }
@@ -355,7 +357,8 @@ skip_target_section:
 skip_autopilot:
     if (g_inLandingCorridor == 0) {
         if (g_viewZ == 0) {
-            if ((gameData->unk4 != 0 || g_gunHits > 4 || g_fuelRemaining == 0) &&
+            if (!gameOptionsEnabled(GAME_OPTION_NO_DAMAGE) &&
+                (gameData->unk4 != 0 || g_gunHits > 4 || g_fuelRemaining == 0) &&
                 g_ejectState == 0 && g_knots > 50) {
                 makeSound(0, 2);
                 setDrawColor(COLOR_BLACK);
@@ -369,7 +372,8 @@ skip_autopilot:
     }
 
     if (g_savedPosVisible != 0 && (g_viewMode & 0x80) == 0) {
-        if (gameData->unk4 != 0 && g_altitude != 0) {
+        if (!gameOptionsEnabled(GAME_OPTION_NO_DAMAGE) &&
+            gameData->unk4 != 0 && g_altitude != 0) {
             makeSound(0, 2);
             gfx_waitRetrace();
             waitFrameSync(120);
@@ -435,7 +439,8 @@ void countermeasures(int16 eventType) {
     int16 i, slot;
 
     slot = -1;
-    if ((g_eventTimers[eventType])-- <= 0) {
+    if (!gameOptionsEnabled(GAME_OPTION_INFINITE_WEAPONS) &&
+        (g_eventTimers[eventType])-- <= 0) {
         g_eventTimers[eventType] = 0;
         hudMessage("Stores exhausted");
     } else {
@@ -500,7 +505,8 @@ void updateBulletsAndFire(void) {
     if (!firing) goto no_fire;
     if (g_gunAmmo <= 0) goto no_fire;
     if (g_ejectState != 0) goto no_fire;
-    g_gunAmmo = clampRange(g_gunAmmo - 40 / g_frameRateScaling, 0, 1000);
+    if (!gameOptionsEnabled(GAME_OPTION_INFINITE_WEAPONS))
+        g_gunAmmo = clampRange(g_gunAmmo - 40 / g_frameRateScaling, 0, 1000);
     makeSound(4, 2);
     /* Round leaves the barrel along the airframe axis plus the M61's dispersion
      * cone; magnitude in fine units per step (the original 186 coarse/s). */

@@ -32,6 +32,13 @@ void gfx_repaint(void);
  * page's legacy sprites). Pass NULL to restore the plain page re-present. */
 void gfx_setRepaintHook(void (*hook)(void));
 
+/*
+ * Convert SDL window coordinates to the logical 320x200 page using the active
+ * renderer's presentation mapping. Returns false for points in letterboxing.
+ */
+bool gfx_windowToLogical(float windowX, float windowY, int windowWidth,
+                         int windowHeight, int *logicalX, int *logicalY);
+
 /* SDL text input (IME composition) is only needed for pilot-name entry in the
  * menus; the input pump disables it in flight so a desktop IME can't
  * intercept/delay editing keys it treats specially (Backspace above all). */

@@ -500,6 +500,28 @@ void FAR CDECL gfx_flipPage(void) {
 static void (*g_repaintHook)(void);
 void gfx_setRepaintHook(void (*hook)(void)) { g_repaintHook = hook; }
 
+/*
+ * Keep pointer hit testing on the exact mapping used to present the active
+ * backend. OpenGL corrects the DOS page to 4:3, while software mode preserves
+ * square source pixels across the available window.
+ */
+bool gfx_windowToLogical(float windowX, float windowY, int windowWidth,
+                         int windowHeight, int *logicalX, int *logicalY) {
+    R2DMapping mapping;
+    int x;
+    int y;
+
+    if (windowWidth <= 0 || windowHeight <= 0) return false;
+    r2d_computeMapping(LOGICAL_WIDTH, LOGICAL_HEIGHT, windowWidth, windowHeight,
+                       s_useGL ? 0 : 1, &mapping);
+    x = (int)((windowX - mapping.offX) / mapping.scaleX);
+    y = (int)((windowY - mapping.offY) / mapping.scaleY);
+    if (x < 0 || x >= LOGICAL_WIDTH || y < 0 || y >= LOGICAL_HEIGHT) return false;
+    if (logicalX) *logicalX = x;
+    if (logicalY) *logicalY = y;
+    return true;
+}
+
 /* Re-present the current visible frame (page 0, or the hi-res title surface).
  * gfx_presentPage already redirects to the hi-res path when the title is up. */
 void gfx_repaint(void) {

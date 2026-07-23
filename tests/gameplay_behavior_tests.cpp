@@ -7,6 +7,8 @@
 #include "egdata.h"
 #include "egkeys.h"
 #include "egmath.h"
+#include "egframe.h"
+#include "game_options.h"
 #include "inttype.h"
 #include "struct.h"
 #include "comm.h"
@@ -49,6 +51,7 @@ void require(bool condition, const char *message) {
 // per mission; the merged process does not, so each case starts from a clean
 // slate.)
 void resetGameplayState() {
+    gameOptionsReset();
     std::memset(&g_planeTable, 0, sizeof(g_planeTable));
     std::memset(g_projectiles, 0, sizeof(struct Projectile) * 12);
     std::memset(g_targetSlots, 0, sizeof(struct TargetSlot) * 2);
@@ -103,6 +106,33 @@ void resetGameplayState() {
 
 int main() {
     test_headless_init();
+
+    // --- countermeasure stores (egframe) ------------------------------------
+    resetGameplayState();
+    g_eventTimers[1] = 3;
+    countermeasures(1);
+    require(g_eventTimers[1] == 2,
+            "countermeasures consumes one flare with normal options");
+
+    resetGameplayState();
+    g_eventTimers[2] = 3;
+    countermeasures(2);
+    require(g_eventTimers[2] == 2,
+            "countermeasures consumes one chaff with normal options");
+
+    resetGameplayState();
+    gameOptionsSet(GAME_OPTION_INFINITE_WEAPONS, true);
+    g_eventTimers[1] = 3;
+    countermeasures(1);
+    require(g_eventTimers[1] == 3,
+            "infinite weapons preserves flare stores");
+
+    resetGameplayState();
+    gameOptionsSet(GAME_OPTION_INFINITE_WEAPONS, true);
+    g_eventTimers[2] = 3;
+    countermeasures(2);
+    require(g_eventTimers[2] == 3,
+            "infinite weapons preserves chaff stores");
 
     // --- Threat range/bearing/score (egthreat) ------------------------------
     // Score is altitude-weighted; range is rangeApprox in km units (>>6);
@@ -336,6 +366,13 @@ int main() {
     finalizeMission(2);
     require(comm.landingType == 1 && comm.bailoutSurvived == 2,
             "finalizeMission records a crash for a nonzero non-eject result");
+
+    resetGameplayState();
+    comm = {};
+    gameOptionsSet(GAME_OPTION_NO_DAMAGE, true);
+    finalizeMission(1);
+    require(g_missionEndedFlag[0] == 1 && comm.bailoutSurvived == 1,
+            "no-damage mode does not intercept explicit mission termination");
 
     resetGameplayState();
     comm = {};
