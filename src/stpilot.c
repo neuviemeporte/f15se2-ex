@@ -8,7 +8,6 @@
 #include "sttypes.h"
 #include "const.h"
 #include "gfx.h"
-#include "input.h"
 #include "slot.h"
 #include "comm.h"
 #include "offsets.h"
@@ -32,38 +31,6 @@ void loadHallfame(void);
 void saveHallfame();
 int getJoyKey();
 int readInputKey();
-
-/* Restore the pilot-selection prompt after transient name editing. */
-static void redrawPilotSelectorPrompt(int16 *page) {
-    int oldBg = page[3];
-    int oldColor = page[2];
-    int oldFont = page[6];
-    page[3] = 0;
-    clearRect(page, 15, 192, 303, 197);
-    gfx_invalidateTtfTextOverlayRect(15, 190, 303, 199);
-    page[2] = COLOR_LIGHTRED;
-    page[6] = 3;
-    drawStringCentered(page, "Use SELECTOR to choose pilot,  ESC to enter new pilot.", 0, 192, 320);
-    page[2] = oldColor;
-    page[6] = oldFont;
-    page[3] = oldBg;
-}
-
-/* Redraw the name-entry prompt and current UTF-8 pilot name without stale overlays. */
-static void redrawPilotNamePrompt(int16 *page) {
-    int oldBg = page[3];
-    int oldColor = page[2];
-    int oldFont = page[6];
-    page[3] = 0;
-    clearRect(page, 15, 192, 303, 197);
-    gfx_invalidateTtfTextOverlayRect(0, 190, SCREEN_MAXX, 199);
-    page[2] = COLOR_LIGHTRED;
-    page[6] = 3;
-    drawStringCentered(page, "ENTER YOUR NAME !", 15, 192, 289);
-    page[2] = oldColor;
-    page[6] = oldFont;
-    page[3] = oldBg;
-}
 
 void pilotSelect(int16 needSplash) {
     int unused;
@@ -123,7 +90,8 @@ void displayPilots(void) {
     do {
         printPilot(pilotIdx);
     } while (++pilotIdx < HALLFAME_SLOTS);
-    redrawPilotSelectorPrompt(screenBuf);
+    screenDesc.color = COLOR_WHITE;
+    drawStringCentered(pageNumPtr, "Use SELECTOR to choose pilot,  ESC to enter new pilot.", 0, 192, 320);
     gfx_commitPage();
 }
 
@@ -196,8 +164,6 @@ void processPilotInput() {
             if (doFcbSearch() != 0) {
                 saveHallfame();
             }
-            redrawPilotSelectorPrompt(screenBuf);
-            gfx_commitPage();
             continue;
         case KEYCODE_UPARROW:
             selectedPilotIdx--;
@@ -266,21 +232,20 @@ void pilotToGameData(const uint8 *pilotData) {
 void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
     int blinkToggle;
     int xPos, yPos;
-    int nameLen = 0;
+    int nameLen;
     int cursorX;
     uint16 keyCode;
     int rankWidth;
     blinkToggle = 0;
     xPos = (selectedPilotIdx < PILOTS_PER_COLUMN) ? PILOT_COL_LEFT : PILOT_COL_RIGHT;
     yPos = ((selectedPilotIdx & (PILOTS_PER_COLUMN - 1)) * PILOT_ROW_HEIGHT) + PILOT_TOP_MARGIN;
-    page[2] = COLOR_WHITE;
-    page[6] = 1;
     clearRect(page, xPos, yPos, xPos + PILOT_ENTRY_WIDTH, yPos + 35);
-    gfx_invalidateTtfTextOverlayRect(xPos, yPos - 2, xPos + PILOT_ENTRY_WIDTH, yPos + 35);
     drawStringAt(page, ranks[0], xPos, yPos);
     xPos += (rankWidth = stringWidth(page, ranks[0]));
     rankWidth = PILOT_ENTRY_WIDTH - rankWidth;
-    redrawPilotNamePrompt(page);
+    screenBuf[3] = 0;
+    clearRect(page, 15, 192, 303, 197);
+    drawStringCentered(pageNumPtr, "\376ENTER YOUR NAME !", 15, 192, 289);
     misc_clearKeyFlags();
     keyCode = KEYCODE_CTRLX;
     do {
@@ -288,52 +253,30 @@ void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
         case KEYCODE_CTRLX:
             nameLen = 0;
             pilot->name[0] = '\0';
-            page[2] = COLOR_WHITE;
             clearRect(page, xPos, yPos, xPos + rankWidth, yPos + c);
-            gfx_invalidateTtfTextOverlayRect(xPos, yPos - 2, xPos + rankWidth, yPos + c + 8);
             drawStringAt(page, pilot->name, xPos, yPos);
             cursorX = page[4];
             break;
         case 8: // backspace
             if (nameLen > 0) {
-                do {
-                    nameLen--;
-                } while (nameLen > 0 && (((uint8)pilot->name[nameLen] & 0xc0) == 0x80));
+                nameLen--;
                 pilot->name[nameLen] = '\0';
                 // 2403 - duplicate code block coalesced with above
-                page[2] = COLOR_WHITE;
                 clearRect(page, xPos, yPos, xPos + rankWidth, yPos + c);
-                gfx_invalidateTtfTextOverlayRect(xPos, yPos - 2, xPos + rankWidth, yPos + c + 8);
                 drawStringAt(page, pilot->name, xPos, yPos);
                 cursorX = page[4];
             }
             break;
         default:
-            {
-                char utf8[8]{};
-                int utf8Len = input_readMenuTextUtf8(utf8, sizeof(utf8));
-                if (utf8Len == 1 && (uint8)utf8[0] >= 0x20 && (uint8)utf8[0] < 0x80) {
-                    input_discardNextAsciiKey((uint8)utf8[0]);
-                }
-                if (utf8Len == 0 && keyCode >= 0x20 && keyCode <= 0x7f) {
-                    utf8[0] = (char)keyCode;
-                    utf8[1] = '\0';
-                    utf8Len = 1;
-                }
-                if (utf8Len > 0 && nameLen + utf8Len < a && stringWidth(page, pilot->name) <= 144) {
-                    memcpy(&pilot->name[nameLen], utf8, (size_t)utf8Len);
-                    nameLen += utf8Len;
-                    pilot->name[nameLen] = '\0';
-                    page[2] = COLOR_WHITE;
-                    clearRect(page, xPos, yPos, xPos + rankWidth, yPos + c);
-                    gfx_invalidateTtfTextOverlayRect(xPos, yPos - 2, xPos + rankWidth, yPos + c + 8);
-                    drawStringAt(page, pilot->name, xPos, yPos);
-                    cursorX = page[4];
-                }
+            if (keyCode >= 0x20 && keyCode <= 0x7f && nameLen < a && stringWidth(page, pilot->name) <= 144) {
+                pilot->name[nameLen++] = keyCode;
+                pilot->name[nameLen] = '\0';
+                clearRect(page, xPos, yPos, xPos + rankWidth, yPos + c);
+                drawStringAt(page, pilot->name, xPos, yPos);
+                cursorX = page[4];
             }
             break;
         }
-        redrawPilotNamePrompt(page);
         gfx_commitPage();
         while (getJoyKey() == 0) {
             waitMdaCgaStatus(3);
@@ -341,7 +284,6 @@ void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
                             pilotNameInputColors[blinkToggle], pilotNameInputColors[blinkToggle ^ 1]);
             blinkToggle ^= 1;
             page[3] = pilotNameInputColors[blinkToggle];
-            redrawPilotNamePrompt(page);
             gfx_commitPage();
         }
         keyCode = readInputKey();
@@ -351,7 +293,6 @@ void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
         if (keyCode == KEYCODE_ENTER) {
             screenBuf[3] = 0;
             clearRect(page, 15, 192, 303, 197);
-            gfx_invalidateTtfTextOverlayRect(0, 188, SCREEN_MAXX, SCREEN_MAXY);
             return;
         }
     } while (true);
@@ -391,7 +332,7 @@ int getJoyKey() {
         restoreCbreakHandler();
         exit(0);
     }
-    return misc_checkKeyBuf() == 0 || input_menuTextWaiting();
+    return misc_checkKeyBuf() == 0;
 }
 
 /* ---- merged from stinkey.c ---- */
@@ -406,7 +347,7 @@ int readInputKey() {
             goto checkKey;
         }
     }
-    key = input_menuTextWaiting() ? 0 : misc_getKey();
+    key = misc_getKey();
 checkKey:
     if (key == KEYCODE_ALTQ || cbreakHit != 0) {
         cleanup();
