@@ -465,6 +465,18 @@ add_behavior_test(geometry_behavior_tests LINK_CORE)
 add_behavior_test(file_io_behavior_tests LINK_CORE)
 add_behavior_test(asset_path_behavior_tests LINK_CORE)
 add_behavior_test(bitmap_font_replacement_behavior_tests LINK_CORE)
+if(F15SE2_CONVERTED_ASSETS
+   AND IS_DIRECTORY "${F15SE2_CONVERTED_ASSETS}")
+    add_behavior_test(bitmap_font_full_validation_tests LINK_CORE
+        DEFS F15_CONVERTED_ASSETS="${F15SE2_CONVERTED_ASSETS}")
+    set_tests_properties(bitmap_font_full_validation_tests PROPERTIES
+        LABELS "assets;integration"
+        TIMEOUT 120)
+else()
+    message(STATUS
+        "Skipping bitmap-font full validation: set "
+        "F15SE2_CONVERTED_ASSETS to an existing directory")
+endif()
 add_behavior_test(gameplay_behavior_tests LINK_CORE)
 add_behavior_test(input_behavior_tests LINK_CORE)
 add_behavior_test(gfx_render_behavior_tests LINK_CORE)

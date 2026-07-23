@@ -61,6 +61,17 @@ struct SDL_Palette *gfx_getPalette(void);
 void gfx_paletteRGB(int idx, uint8 *r, uint8 *g, uint8 *b);
 int gfx_paletteGeneration(void);
 
+#ifdef DEBUG
+int gfx_testCopyEffectiveFont(uint16 fontIdx, uint8 *bitmapOut,
+                              size_t bitmapOutSize, uint8 *widthsOut,
+                              size_t widthsOutSize, int *heightOut,
+                              int *maxWidthOut);
+int gfx_testCopyBuiltinFont(uint16 fontIdx, uint8 *bitmapOut,
+                            size_t bitmapOutSize, uint8 *widthsOut,
+                            size_t widthsOutSize, int *heightOut,
+                            int *maxWidthOut);
+#endif
+
 /* Current explosion screen-shake (0-3 virtual px, set by gfx_dacCycle). The GL
  * backend reads it mid-frame to offset the immediate 2D overlay, matching the
  * software present's shake shift. */

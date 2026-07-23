@@ -612,6 +612,57 @@ static void tryLoadBitmapFontReplacement(uint16 fontIdx) {
     }
 }
 
+#ifdef DEBUG
+static int copyFontTables(const uint8 *bitmap, const uint8 *widths,
+                          int height, int maxWidth,
+                          uint8 *bitmapOut, size_t bitmapOutSize,
+                          uint8 *widthsOut, size_t widthsOutSize,
+                          int *heightOut, int *maxWidthOut) {
+    const size_t bitmapSize = (size_t)96 * (size_t)height;
+    if (!bitmap || !widths || height <= 0 || maxWidth <= 0) return 0;
+    if (bitmapOut && bitmapOutSize < bitmapSize) return 0;
+    if (widthsOut && widthsOutSize < 96u) return 0;
+    if (bitmapOut) memcpy(bitmapOut, bitmap, bitmapSize);
+    if (widthsOut) memcpy(widthsOut, widths, 96u);
+    if (heightOut) *heightOut = height;
+    if (maxWidthOut) *maxWidthOut = maxWidth;
+    return 1;
+}
+
+int gfx_testCopyEffectiveFont(uint16 fontIdx, uint8 *bitmapOut,
+                              size_t bitmapOutSize, uint8 *widthsOut,
+                              size_t widthsOutSize, int *heightOut,
+                              int *maxWidthOut) {
+    if (fontIdx >= 8) return 0;
+    tryLoadBitmapFontReplacement(fontIdx);
+    return copyFontTables(
+        g_fontBitmapPtrs[fontIdx], g_fontWidthTables[fontIdx],
+        g_fontBitmapRowSize[fontIdx], g_fontMaxWidths[fontIdx],
+        bitmapOut, bitmapOutSize, widthsOut, widthsOutSize,
+        heightOut, maxWidthOut);
+}
+
+int gfx_testCopyBuiltinFont(uint16 fontIdx, uint8 *bitmapOut,
+                            size_t bitmapOutSize, uint8 *widthsOut,
+                            size_t widthsOutSize, int *heightOut,
+                            int *maxWidthOut) {
+    const uint8 *bitmap = NULL;
+    const uint8 *widths = NULL;
+    switch (fontIdx) {
+    case 0: bitmap = &g_font0_bitmaps[0][0]; widths = g_font0_widths; break;
+    case 1: bitmap = &g_font1_bitmaps[0][0]; widths = g_font1_widths; break;
+    case 3: bitmap = &g_font3_bitmaps[0][0]; widths = g_font3_widths; break;
+    case 4: bitmap = &g_font4_bitmaps[0][0]; widths = g_font4_widths; break;
+    case 5: bitmap = &g_font5_bitmaps[0][0]; widths = g_font5_widths; break;
+    default: return 0;
+    }
+    return copyFontTables(
+        bitmap, widths, g_fontBitmapRowSize[fontIdx],
+        g_fontMaxWidths[fontIdx], bitmapOut, bitmapOutSize,
+        widthsOut, widthsOutSize, heightOut, maxWidthOut);
+}
+#endif
+
 /* ---- Shared glyph engine (slots 0x01-0x06) ----
  * MGRAPHIC has one core blitter (0x04 @0x4ab) that the string slots fall into
  * after running 0-3 clip stages. The clip stages cut partial glyphs at the
