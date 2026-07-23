@@ -14,6 +14,7 @@
 
 namespace fs = std::filesystem;
 
+/* Compare two asset path components using DOS-compatible ASCII case folding. */
 static bool namesEqualIgnoringCase(const std::string &left, const std::string &right) {
     return left.size() == right.size()
         && std::equal(left.begin(), left.end(), right.begin(),
@@ -22,6 +23,7 @@ static bool namesEqualIgnoringCase(const std::string &left, const std::string &r
             });
 }
 
+/* Reject absolute paths and parent traversal before resolving replacement assets. */
 static bool isSafeRelativePath(const fs::path &path) {
     if (path.empty() || path.is_absolute() || path.has_root_path()) return false;
     for (const fs::path &component : path) {
@@ -30,6 +32,7 @@ static bool isSafeRelativePath(const fs::path &path) {
     return true;
 }
 
+/* Resolve one path component case-insensitively beneath an already trusted directory. */
 static bool resolveComponent(const fs::path &directory, const fs::path &component,
                              fs::path *resolved) {
     std::error_code error;
@@ -50,6 +53,7 @@ static bool resolveComponent(const fs::path &directory, const fs::path &componen
     return false;
 }
 
+/* Find a safe replacement asset beneath F15_REPLACEMENT_ROOT and return its real path. */
 int findAssetReplacement(const char *relativePath, char *outPath, size_t outPathSize) {
     if (outPath && outPathSize) outPath[0] = '\0';
     if (!relativePath || !relativePath[0] || !outPath || !outPathSize) return 0;
