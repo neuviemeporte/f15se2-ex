@@ -603,7 +603,7 @@ static void tryLoadBitmapFontReplacement(uint16 fontIdx) {
     BitmapFontReplacement replacement{};
     if (fontIdx >= 8 || !g_fontWidthTables[fontIdx]
         || !g_fontBitmapPtrs[fontIdx]) {
-        return{};
+        return;
     }
     if (bitmapFontReplacementGet(fontIdx, g_fontMaxWidths[fontIdx],
                                  g_fontHeightsArr[fontIdx],
