@@ -310,7 +310,7 @@ void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
             break;
         default:
             {
-                char utf8[8];
+                char utf8[8]{};
                 int utf8Len = input_readMenuTextUtf8(utf8, sizeof(utf8));
                 if (utf8Len == 1 && (uint8)utf8[0] >= 0x20 && (uint8)utf8[0] < 0x80) {
                     input_discardNextAsciiKey((uint8)utf8[0]);

@@ -64,7 +64,7 @@ static uint16 keyRing[KEY_RING];
 static int ringHead = 0, ringTail = 0;
 
 #define TEXT_RING 32
-static char textRing[TEXT_RING][8];
+static char textRing[TEXT_RING][8]{};
 static int textRingHead = 0, textRingTail = 0;
 
 static void ringPush(uint16 word) {
@@ -76,7 +76,7 @@ static void ringPush(uint16 word) {
 
 /* Append one UTF-8 text-input event to the bounded menu input ring. */
 static void textRingPushUtf8(const char *text, int len) {
-    int next;
+    int next{};
     if (!text || len <= 0 || len >= (int)sizeof(textRing[0])) return;
     next = (textRingTail + 1) % TEXT_RING;
     if (next == textRingHead) return;
@@ -111,7 +111,7 @@ uint16 input_readKey(void) {
 
 /* Read one complete UTF-8 menu text event into the caller buffer. */
 int input_readMenuTextUtf8(char *out, int outSize) {
-    int len;
+    int len{};
     input_pumpEvents();
     if (!out || outSize <= 0 || textRingHead == textRingTail) return 0;
     len = (int)SDL_strlen(textRing[textRingHead]);
@@ -800,8 +800,8 @@ void input_pumpEvents(void) {
                 const unsigned char *p =
                     (const unsigned char *)ev.text.text;
                 while (p && *p) {
-                    uint32_t codepoint;
-                    size_t length;
+                    uint32_t codepoint{};
+                    size_t length{};
                     if (!utf8DecodeCodepoint((const char *)p, &codepoint,
                                              &length)) {
                         ++p;

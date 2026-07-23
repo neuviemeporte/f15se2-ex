@@ -752,7 +752,7 @@ static void drawStringCore(int16 *params, const char *string,
 #ifdef F15_HAVE_FREETYPE
     if (fontIdx < 8 && g_fontReplacementTtfFaces[fontIdx]) {
         (void)recordTtfTextOverlayAndAdvance(params, string, clipL, clipR, clipT, clipB);
-        return;
+        return{};
     }
 #endif
 
@@ -1357,8 +1357,8 @@ int gfx_getGlyphAdvance(uint32 codepoint, uint16 fontIdx) {
 /* Measure a complete UTF-8 string using the active replacement font layout. */
 int gfx_getStringAdvanceUtf8(const char *text, uint16 fontIdx) {
     int width = 0;
-    int charIdx;
-    int drawnChars;
+    int charIdx{};
+    int drawnChars{};
     if (!text) return 0;
     if (fontIdx >= 8) return 0;
     tryLoadReplacementFont(fontIdx);
@@ -1368,7 +1368,7 @@ int gfx_getStringAdvanceUtf8(const char *text, uint16 fontIdx) {
     }
 #endif
     for (charIdx = 0, drawnChars = 0; text[charIdx] != 0 && drawnChars < 256;) {
-        uint32 codepoint;
+        uint32 codepoint{};
         uint8 ch = (uint8)text[charIdx];
         int byteCount = 1;
         if (!decodeUtf8Codepoint(&text[charIdx], &codepoint, &byteCount)) {

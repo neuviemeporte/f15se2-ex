@@ -8,8 +8,8 @@ typedef struct TtfTextOverlayRecord {
     uint16 fontIdx;
     int clipL, clipR, clipT, clipB;
 } TtfTextOverlayRecord;
-static TtfTextOverlayRecord g_ttfTextOverlayRecords[512];
-static int g_ttfTextOverlayCount;
+static TtfTextOverlayRecord g_ttfTextOverlayRecords[512]{};
+static int g_ttfTextOverlayCount{};
 static void clearTtfTextOverlayRecords(void);
 #endif
 
@@ -30,7 +30,7 @@ static void freeReplacementFont(uint16 fontIdx) {
 /* Release all vector-font faces and the shared FreeType library. */
 static void cleanupReplacementFonts(void) {
 #ifdef F15_HAVE_FREETYPE
-    int i;
+    int i{};
     clearTtfTextOverlayRecords();
     for (i = 0; i < 8; i++) freeReplacementFont((uint16)i);
     if (g_freetypeLibrary) {
@@ -41,8 +41,8 @@ static void cleanupReplacementFonts(void) {
 }
 /* Decode one UTF-8 codepoint and advance the caller cursor safely. */
 static int decodeUtf8Codepoint(const char *text, uint32 *codepointOut, int *byteCountOut) {
-    uint32_t codepoint;
-    size_t byteCount;
+    uint32_t codepoint{};
+    size_t byteCount{};
     if (!utf8DecodeCodepoint(text, &codepoint, &byteCount)) return 0;
     *codepointOut = (uint32)codepoint;
     *byteCountOut = (int)byteCount;
@@ -52,7 +52,7 @@ static int decodeUtf8Codepoint(const char *text, uint32 *codepointOut, int *byte
 #ifdef F15_HAVE_FREETYPE
 /* Discard every retained vector-text overlay record for a new screen. */
 static void clearTtfTextOverlayRecords(void) {
-    int i;
+    int i{};
     for (i = 0; i < g_ttfTextOverlayCount; i++) {
         SDL_free(g_ttfTextOverlayRecords[i].text);
         g_ttfTextOverlayRecords[i].text = NULL;
@@ -110,7 +110,7 @@ static int ttfTextOverlayRecordsOverlap(const TtfTextOverlayRecord *a,
 /* Recognize changing numeric HUD text that should replace an older row record. */
 static int ttfTextOverlaySameDynamicRow(const TtfTextOverlayRecord *a,
                                         int x, int y, int width, int height) {
-    int dy;
+    int dy{};
     if (!a) return 0;
     dy = a->y - y;
     if (dy < 0) dy = -dy;
@@ -137,7 +137,7 @@ static void removeTtfTextOverlayRecord(int index) {
 
 /* Invalidate retained text touched by a legacy framebuffer update. */
 static void invalidateTtfTextOverlayRect(int x1, int y1, int x2, int y2) {
-    int i;
+    int i{};
     if (x2 < x1) {
         int tmp = x1;
         x1 = x2;
@@ -162,7 +162,7 @@ static void invalidateTtfTextOverlayRect(int x1, int y1, int x2, int y2) {
 
 /* Recolor retained text records affected by a legacy palette animation. */
 static void switchTtfTextOverlayColorRect(int x1, int y1, int x2, int y2, int oldColor, int newColor) {
-    int i;
+    int i{};
     if (x2 < x1) {
         int tmp = x1;
         x1 = x2;
@@ -201,8 +201,8 @@ static int ensureFreetypeLibrary(void) {
 
 /* Sample either monochrome or antialiased FreeType bitmap coverage. */
 static uint8 freetypeBitmapPixel(const FT_Bitmap *bitmap, int x, int y) {
-    const uint8 *row;
-    int pitch;
+    const uint8 *row{};
+    int pitch{};
     if (!bitmap || !bitmap->buffer || x < 0 || y < 0 || x >= (int)bitmap->width || y >= (int)bitmap->rows) return 0;
     pitch = bitmap->pitch < 0 ? -bitmap->pitch : bitmap->pitch;
     row = bitmap->buffer + (size_t)y * (size_t)pitch;
@@ -217,7 +217,7 @@ static uint8 freetypeBitmapPixel(const FT_Bitmap *bitmap, int x, int y) {
 
 /* Choose a vector-font pixel size that matches the legacy font slot metrics. */
 static int replacementTtfPixelSize(uint16 fontIdx) {
-    int h;
+    int h{};
     if (fontIdx >= 8) return 8;
     h = g_fontHeightsArr[fontIdx];
     /* Replacement TTF text must occupy the same screen footprint as the original
@@ -228,8 +228,8 @@ static int replacementTtfPixelSize(uint16 fontIdx) {
 
 /* Return the FreeType advance for one Unicode codepoint at the active size. */
 static int replacementTtfUnicodeAdvance(uint16 fontIdx) {
-    const uint8 *widths;
-    int idx;
+    const uint8 *widths{};
+    int idx{};
     if (fontIdx >= 8) return 8;
     widths = g_fontWidthTables[fontIdx];
     if (widths) {
@@ -241,8 +241,8 @@ static int replacementTtfUnicodeAdvance(uint16 fontIdx) {
 
 /* Return the logical advance for one legacy byte through its UTF-8-compatible mapping. */
 static int replacementTtfAdvance(uint16 fontIdx, uint32 codepoint) {
-    FT_Face face;
-    int advance;
+    FT_Face face{};
+    int advance{};
     if (fontIdx >= 8 || !g_fontReplacementTtfFaces[fontIdx]) return 8;
     if (codepoint >= 0x20 && codepoint < 0x80 && g_fontWidthTables[fontIdx]) {
         return g_fontWidthTables[fontIdx][codepoint - 0x20];
@@ -259,13 +259,13 @@ static int replacementTtfAdvance(uint16 fontIdx, uint32 codepoint) {
 static void replacementTtfLayoutScale(uint16 fontIdx, int pixelSize,
                                       float targetScaleX, float targetScaleY,
                                       float *layoutScaleX, float *layoutScaleY) {
-    FT_Face face;
-    const uint8 *legacyWidths;
-    int ch;
+    FT_Face face{};
+    const uint8 *legacyWidths{};
+    int ch{};
     int legacyAdvance = 0;
     int ftAdvance = 0;
-    float targetHeight;
-    float ftHeight;
+    float targetHeight{};
+    float ftHeight{};
 
     *layoutScaleX = 1.0f;
     *layoutScaleY = 1.0f;
@@ -297,19 +297,19 @@ static void replacementTtfLayoutScale(uint16 fontIdx, int pixelSize,
 
 /* Measure a complete UTF-8 string using the same layout rules as rendering. */
 static int replacementTtfStringAdvance(uint16 fontIdx, const char *text) {
-    FT_Face face;
+    FT_Face face{};
     FT_UInt previousGlyphIndex = 0;
-    float layoutScaleX;
-    float layoutScaleY;
+    float layoutScaleX{};
+    float layoutScaleY{};
     float x = 0.0f;
-    int charIdx;
-    int drawnChars;
+    int charIdx{};
+    int drawnChars{};
 
     if (!text || fontIdx >= 8 || !g_fontReplacementTtfFaces[fontIdx]) return 0;
     if (fontIdx == 0) {
         int width = 0;
         for (charIdx = 0, drawnChars = 0; text[charIdx] != 0 && drawnChars < 256;) {
-            uint32 codepoint;
+            uint32 codepoint{};
             uint8 ch = (uint8)text[charIdx];
             int byteCount = 1;
             if (!decodeUtf8Codepoint(&text[charIdx], &codepoint, &byteCount)) {
@@ -333,11 +333,11 @@ static int replacementTtfStringAdvance(uint16 fontIdx, const char *text) {
     if (FT_Set_Pixel_Sizes(face, 0, (FT_UInt)replacementTtfPixelSize(fontIdx)) != 0) return 0;
 
     for (charIdx = 0, drawnChars = 0; text[charIdx] != 0 && drawnChars < 256;) {
-        uint32 codepoint;
+        uint32 codepoint{};
         uint8 ch = (uint8)text[charIdx];
         int byteCount = 1;
-        FT_UInt glyphIndex;
-        FT_Vector kerning;
+        FT_UInt glyphIndex{};
+        FT_Vector kerning{};
 
         if (!decodeUtf8Codepoint(&text[charIdx], &codepoint, &byteCount)) {
             codepoint = ch;
@@ -366,8 +366,8 @@ static int replacementTtfStringAdvance(uint16 fontIdx, const char *text) {
 /* Load and cache an optional TTF or OTF face for one legacy font slot. */
 static int loadReplacementFontTtf(uint16 fontIdx, const char *replacementPath) {
     FT_Face face = NULL;
-    int fontWidth;
-    int fontHeight;
+    int fontWidth{};
+    int fontHeight{};
 
     if (fontIdx >= 8 || !replacementPath) return 0;
     fontWidth = g_fontMaxWidths[fontIdx];
@@ -394,17 +394,17 @@ static int loadReplacementFontTtf(uint16 fontIdx, const char *replacementPath) {
 /* Retain one UTF-8 line for vector rendering and return its logical advance. */
 static int recordTtfTextOverlayAndAdvance(int16 *params, const char *string,
                                           int clipL, int clipR, int clipT, int clipB) {
-    TtfTextOverlayRecord *record;
-    int charIdx;
-    int drawnChars;
-    int color;
-    uint16 fontIdx;
-    int i;
-    int newX;
-    int newY;
-    int newWidth;
-    int newHeight;
-    int recordIndex;
+    TtfTextOverlayRecord *record{};
+    int charIdx{};
+    int drawnChars{};
+    int color{};
+    uint16 fontIdx{};
+    int i{};
+    int newX{};
+    int newY{};
+    int newWidth{};
+    int newHeight{};
+    int recordIndex{};
 
     if (!params || !string) return 0;
     fontIdx = (uint16)params[6] & 7;
@@ -477,7 +477,7 @@ static int recordTtfTextOverlayAndAdvance(int16 *params, const char *string,
 
     color = record->color;
     for (charIdx = 0, drawnChars = 0; string[charIdx] != 0 && drawnChars < 256;) {
-        uint32 codepoint;
+        uint32 codepoint{};
         uint8 ch = (uint8)string[charIdx];
         int byteCount = 1;
         if (!decodeUtf8Codepoint(&string[charIdx], &codepoint, &byteCount)) {
@@ -505,7 +505,7 @@ static void renderTtfTextOverlayGlyphSDL(SDL_Renderer *renderer, FT_Bitmap *bitm
     for (row = 0; row < (int)bitmap->rows; row++) {
         for (col = 0; col < (int)bitmap->width; col++) {
             uint8 coverage = freetypeBitmapPixel(bitmap, col, row);
-            SDL_FRect px;
+            SDL_FRect px{};
             if (!coverage) continue;
             px.x = x + (float)col * pixelScaleX;
             px.y = y + (float)row * pixelScaleY;
@@ -549,21 +549,21 @@ static void renderTtfTextOverlayGlyphGL(FT_Bitmap *bitmap, float x, float y, flo
 /* Lay out and render one retained UTF-8 text record as a coherent line. */
 static void renderTtfTextOverlayRecord(const TtfTextOverlayRecord *record, R2DMapping *m,
                                        SDL_Renderer *renderer, int useGL) {
-    SDL_Color c;
-    SDL_Palette *pal;
-    FT_Face face;
+    SDL_Color c{};
+    SDL_Palette *pal{};
+    FT_Face face{};
     FT_UInt previousGlyphIndex = 0;
-    float x;
-    int charIdx;
-    int drawnChars;
-    int pixelSize;
-    float cellY;
-    float cellHeight;
-    float baseline;
-    float ascender;
-    float layoutScaleX;
-    float layoutScaleY;
-    SDL_FRect clip;
+    float x{};
+    int charIdx{};
+    int drawnChars{};
+    int pixelSize{};
+    float cellY{};
+    float cellHeight{};
+    float baseline{};
+    float ascender{};
+    float layoutScaleX{};
+    float layoutScaleY{};
+    SDL_FRect clip{};
 
     if (!record || !record->text || record->fontIdx >= 8 || !g_fontReplacementTtfFaces[record->fontIdx]) return;
     face = g_fontReplacementTtfFaces[record->fontIdx];
@@ -595,17 +595,17 @@ static void renderTtfTextOverlayRecord(const TtfTextOverlayRecord *record, R2DMa
     }
 
     for (charIdx = 0, drawnChars = 0; record->text[charIdx] != 0 && drawnChars < 256;) {
-        uint32 codepoint;
+        uint32 codepoint{};
         uint8 ch = (uint8)record->text[charIdx];
         int byteCount = 1;
-        FT_UInt glyphIndex;
-        FT_Vector kerning;
-        FT_GlyphSlot glyph;
-        FT_Bitmap *bitmap;
-        float gx;
-        float gy;
-        float glyphScaleX;
-        float glyphScaleY;
+        FT_UInt glyphIndex{};
+        FT_Vector kerning{};
+        FT_GlyphSlot glyph{};
+        FT_Bitmap *bitmap{};
+        float gx{};
+        float gy{};
+        float glyphScaleX{};
+        float glyphScaleY{};
 
         if (!decodeUtf8Codepoint(&record->text[charIdx], &codepoint, &byteCount)) {
             codepoint = ch;
@@ -667,7 +667,7 @@ static void renderTtfTextOverlayRecord(const TtfTextOverlayRecord *record, R2DMa
 
 /* Render all retained vector-text records for the current frame. */
 static void renderTtfTextOverlay(R2DMapping *m, SDL_Renderer *renderer, int useGL) {
-    int i;
+    int i{};
     if (!m || g_ttfTextOverlayCount <= 0) return;
     for (i = 0; i < g_ttfTextOverlayCount; i++) {
         renderTtfTextOverlayRecord(&g_ttfTextOverlayRecords[i], m, renderer, useGL);
@@ -676,7 +676,7 @@ static void renderTtfTextOverlay(R2DMapping *m, SDL_Renderer *renderer, int useG
 
 /* Render retained vector text into the active OpenGL presentation mapping. */
 void gfx_renderTtfTextOverlayOpenGL(int virtW, int virtH, int winW, int winH) {
-    R2DMapping m;
+    R2DMapping m{};
     r2d_computeMapping(virtW, virtH, winW, winH, 0, &m);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -719,7 +719,7 @@ void gfx_invalidateTtfTextOverlayRect(int x1, int y1, int x2, int y2) {
 /* Find a TTF or OTF replacement using stable per-slot filenames. */
 static int findReplacementVectorFont(uint16 fontIdx, const char *extension,
                                      char *path, size_t pathSize) {
-    char relative[64];
+    char relative[64]{};
     snprintf(relative, sizeof(relative), "fonts/font_%u.%s",
              (unsigned)fontIdx, extension);
     return findAssetReplacement(relative, path, pathSize);
@@ -727,7 +727,7 @@ static int findReplacementVectorFont(uint16 fontIdx, const char *extension,
 
 /* Activate a vector-font replacement for one legacy font slot when available. */
 static void tryLoadReplacementFont(uint16 fontIdx) {
-    char path[512];
+    char path[512]{};
     int vectorFontPresent = 0;
 
     if (fontIdx >= 8 || g_fontReplacementTried[fontIdx]) return;

@@ -50,8 +50,8 @@ void clearStatusPanel(void) {
 
 // ==== seg000:0x8e50 ====
 void renderHudFrame(int unused) {
-    static int hudStatusOverlayVisible;
-    static int directorOverlayVisible;
+    static int hudStatusOverlayVisible{};
+    static int directorOverlayVisible{};
     int climbMarkerY, angleFixed, waypointMarkerX, circleX, angle, circleY, prevX, speedBarLen, prevY, markerX, deltaX, markerY, deltaY;
     char seekerShift;
     // probably x,y

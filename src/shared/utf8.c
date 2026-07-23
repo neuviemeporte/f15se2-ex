@@ -7,9 +7,9 @@
 int utf8DecodeCodepoint(const char *text, uint32_t *codepoint,
                         size_t *byte_count) {
     const unsigned char *bytes = (const unsigned char *)text;
-    uint32_t value;
-    size_t length;
-    size_t index;
+    uint32_t value{};
+    size_t length{};
+    size_t index{};
 
     if (!bytes || !codepoint || !byte_count || bytes[0] == 0) return 0;
     if (bytes[0] < 0x80) {
