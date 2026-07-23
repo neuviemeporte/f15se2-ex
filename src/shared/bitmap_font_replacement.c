@@ -26,6 +26,7 @@ typedef struct CachedFont {
 
 static CachedFont g_fonts[FONT_SLOT_COUNT];
 
+/* Resolve one optional BDF or PNG font replacement using the shared asset search rules. */
 static int replacementPath(unsigned font_id, const char *extension,
                            char *path, size_t path_size) {
     char relative[64];
@@ -34,6 +35,7 @@ static int replacementPath(unsigned font_id, const char *extension,
     return findAssetReplacement(relative, path, path_size);
 }
 
+/* Release one decoded bitmap font replacement and clear its cached state. */
 static void discardFont(CachedFont *font) {
     SDL_free(font->bitmaps);
     SDL_free(font->widths);
@@ -41,6 +43,7 @@ static void discardFont(CachedFont *font) {
     font->widths = NULL;
 }
 
+/* Parse editable BDF glyph bitmaps and advances into the legacy font slot representation. */
 static int parseBdf(const char *path, unsigned height,
                     uint8_t **bitmaps_out, uint8_t **widths_out) {
     FILE *file = fopen(path, "rb");
@@ -119,12 +122,14 @@ fail:
     return 0;
 }
 
+/* Interpret one atlas pixel as foreground using alpha and luminance. */
 static int pixelIsLit(SDL_Surface *surface, int x, int y) {
     Uint8 r, g, b, a;
     if (!SDL_ReadSurfacePixel(surface, x, y, &r, &g, &b, &a)) return 0;
     return a != 0 && (r != 0 || g != 0 || b != 0);
 }
 
+/* Parse a replacement font atlas while preserving the established glyph-cell layout. */
 static int parsePng(const char *path, unsigned cell_width, unsigned height,
                     const uint8_t *original_widths,
                     uint8_t **bitmaps_out, uint8_t **widths_out) {
@@ -172,6 +177,7 @@ fail:
     return 0;
 }
 
+/* Load and cache the first available BDF or PNG replacement for a font slot. */
 int bitmapFontReplacementGet(unsigned font_id, unsigned cell_width,
                              unsigned height, const uint8_t *original_widths,
                              BitmapFontReplacement *result) {
@@ -197,6 +203,7 @@ int bitmapFontReplacementGet(unsigned font_id, unsigned cell_width,
             }
         }
         if (!font->bitmaps
+/* Resolve one optional BDF or PNG font replacement using the shared asset search rules. */
             && replacementPath(font_id, "png", path, sizeof(path))) {
             if (parsePng(path, cell_width, height, original_widths,
                          &font->bitmaps, &font->widths)) {
@@ -214,6 +221,7 @@ int bitmapFontReplacementGet(unsigned font_id, unsigned cell_width,
     return 1;
 }
 
+/* Release all cached bitmap font replacements at renderer shutdown. */
 void bitmapFontReplacementShutdown(void) {
     for (unsigned index = 0; index < FONT_SLOT_COUNT; ++index) {
         discardFont(&g_fonts[index]);

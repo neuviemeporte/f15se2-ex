@@ -598,6 +598,7 @@ static uint8 *g_fontBitmapPtrs[8] = {
     (uint8 *)g_font0_bitmaps, (uint8 *)g_font1_bitmaps, NULL, (uint8 *)g_font3_bitmaps,
     (uint8 *)g_font4_bitmaps, (uint8 *)g_font5_bitmaps, NULL, NULL};
 static const uint8 g_fontBitmapRowSize[8] = {5, 8, 0, 6, 7, 6, 0, 0};
+/* Override one legacy bitmap font slot from editable BDF or PNG media when available. */
 static void tryLoadBitmapFontReplacement(uint16 fontIdx) {
     BitmapFontReplacement replacement;
     if (fontIdx >= 8 || !g_fontWidthTables[fontIdx]
