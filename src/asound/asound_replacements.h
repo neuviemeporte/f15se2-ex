@@ -23,6 +23,12 @@ int asound_load_replacement_cues(void);
 int asound_find_replacement_cue(AsoundU16 start, AsoundU16 end_inclusive,
                                 AsoundReplacementCue *cue);
 
+/* Read-only enumeration for diagnostics and asset validation tools. */
+int asound_replacement_cue_count(void);
+int asound_replacement_cue_at(int index, AsoundU16 *start,
+                              AsoundU16 *end_inclusive,
+                              AsoundReplacementCue *cue);
+
 #ifdef __cplusplus
 }
 #endif

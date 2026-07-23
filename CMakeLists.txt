@@ -465,6 +465,21 @@ add_behavior_test(geometry_behavior_tests LINK_CORE)
 add_behavior_test(file_io_behavior_tests LINK_CORE)
 add_behavior_test(asset_path_behavior_tests LINK_CORE)
 add_behavior_test(asound_replacements_behavior_tests LINK_CORE)
+if(F15SE2_ORIGINAL_ASSETS AND F15SE2_CONVERTED_ASSETS
+   AND IS_DIRECTORY "${F15SE2_ORIGINAL_ASSETS}"
+   AND IS_DIRECTORY "${F15SE2_CONVERTED_ASSETS}")
+    add_behavior_test(asound_cue_full_validation_tests LINK_CORE
+        DEFS
+            F15_ORIGINAL_ASSETS="${F15SE2_ORIGINAL_ASSETS}"
+            F15_CONVERTED_ASSETS="${F15SE2_CONVERTED_ASSETS}")
+    set_tests_properties(asound_cue_full_validation_tests PROPERTIES
+        LABELS "assets;integration"
+        TIMEOUT 120)
+else()
+    message(STATUS
+        "Skipping sound full validation: set F15SE2_ORIGINAL_ASSETS and "
+        "F15SE2_CONVERTED_ASSETS to existing directories")
+endif()
 add_behavior_test(gameplay_behavior_tests LINK_CORE)
 add_behavior_test(input_behavior_tests LINK_CORE)
 add_behavior_test(gfx_render_behavior_tests LINK_CORE)

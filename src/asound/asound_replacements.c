@@ -153,3 +153,23 @@ int asound_find_replacement_cue(AsoundU16 start, AsoundU16 end_inclusive,
     }
     return 0;
 }
+
+int asound_replacement_cue_count(void) {
+    return (int)(sizeof(g_cues) / sizeof(g_cues[0]));
+}
+
+int asound_replacement_cue_at(int index, AsoundU16 *start,
+                              AsoundU16 *end_inclusive,
+                              AsoundReplacementCue *cue) {
+    if (index < 0 || index >= asound_replacement_cue_count()) return 0;
+    CueSlot *slot = &g_cues[index];
+    if (!slot->samples || slot->sample_count <= 0) return 0;
+    if (start) *start = slot->start;
+    if (end_inclusive) *end_inclusive = slot->end_inclusive;
+    if (cue) {
+        cue->samples = slot->samples;
+        cue->sample_count = slot->sample_count;
+        cue->sample_rate = slot->sample_rate;
+    }
+    return 1;
+}
