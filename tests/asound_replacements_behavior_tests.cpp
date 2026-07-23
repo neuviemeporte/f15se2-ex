@@ -29,7 +29,7 @@ void append32(std::vector<unsigned char> &out, unsigned int value) {
     append16(out, value >> 16);
 }
 
-void writePcm8MonoWav(const std::filesystem::path &path, int rate,
+void writePcm8MonoWav(const std::filesystem::path &path, unsigned int rate,
                       const std::vector<unsigned char> &samples) {
     std::vector<unsigned char> wav;
     wav.insert(wav.end(), {'R', 'I', 'F', 'F'});
@@ -67,7 +67,8 @@ int main() {
     std::filesystem::create_directories(root / "sounds");
     writePcm8MonoWav(root / "sounds" / "voice_cue_000_sample0.wav",
                      11025, {0, 64, 128, 255});
-    std::ofstream(root / "sounds" / "voice_cue_001_sample4.wav") << "not a WAV";
+    writePcm8MonoWav(root / "sounds" / "voice_cue_001_sample4.wav",
+                     0x80000000u, {128});
 
     setReplacementRoot(root.string());
     require(asound_load_replacement_cues() == 1,
@@ -81,7 +82,7 @@ int main() {
     require(cue.samples[0] == 0 && cue.samples[2] == 128 && cue.samples[3] == 255,
             "cue preserves unsigned PCM bytes");
     require(!asound_find_replacement_cue(0x31f4u, 0x4796u, &cue),
-            "malformed cue remains a legacy fallback");
+            "out-of-range sample rate remains a legacy fallback");
     require(!asound_find_replacement_cue(1, 2, &cue),
             "unknown sample range remains a legacy fallback");
 

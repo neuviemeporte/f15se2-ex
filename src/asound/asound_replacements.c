@@ -9,6 +9,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <limits.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -81,7 +82,8 @@ static int decodePcm8MonoWav(const AsoundU8 *wav, size_t wav_size,
             const uint16_t channels = read16le(wav + data_offset + 2);
             rate = read32le(wav + data_offset + 4);
             const uint16_t bits = read16le(wav + data_offset + 14);
-            format_valid = format == 1 && channels == 1 && bits == 8 && rate > 0;
+            format_valid = format == 1 && channels == 1 && bits == 8
+                && rate > 0 && rate <= INT_MAX;
         } else if (!memcmp(chunk, "data", 4)) {
             if (!format_valid || !chunk_size || chunk_size > INT32_MAX) return 0;
             AsoundU8 *decoded = (AsoundU8 *)SDL_malloc(chunk_size);
