@@ -83,7 +83,7 @@ static void asnd_startSample(AsoundU16 start, AsoundU16 end) {
         g_smpPos = 0;
         g_smpStep = (double)cue.sample_rate / (double)ASND_OUT_RATE;
         g_smpActive = true;
-        return{};
+        return;
     }
     if (!g_blob || g_blobSize <= 0) return;
     int s = start, e = (int)end + 1;
@@ -352,8 +352,8 @@ int FAR CDECL audio_noiseTick(void) { return 0; }
  * the game stores in f15DgtlResult and passes to audio_setup as the sample-
  * variant selector (and uses to gate voice cues). 0 on failure -> cues disabled. */
 int loadF15DgtlBin(void) {
-    const int replacementCount = asound_load_replacement_cues();
-    const int replacementSpan = replacementCount > 0 ? 0x7d9e : 0;
+    asound_load_replacement_cues();
+    const int replacementSpan = asound_replacement_logical_span();
     SDL_IOStream *io = openFile("F15DGTL.BIN", 0);
     if (!io) {
         if (replacementSpan) return replacementSpan;

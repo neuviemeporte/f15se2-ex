@@ -140,6 +140,17 @@ int asound_load_replacement_cues(void) {
     return loaded;
 }
 
+/* Return one past the highest legacy byte offset covered by a loaded cue. */
+int asound_replacement_logical_span(void) {
+    int logicalSpan = 0;
+    for (const CueSlot &slot : g_cues) {
+        if (!slot.samples || slot.sample_count <= 0) continue;
+        const int slotSpan = (int)slot.end_inclusive + 1;
+        if (slotSpan > logicalSpan) logicalSpan = slotSpan;
+    }
+    return logicalSpan;
+}
+
 /* Return the replacement cue for a legacy sample pointer, or NULL when not overridden. */
 int asound_find_replacement_cue(AsoundU16 start, AsoundU16 end_inclusive,
                                 AsoundReplacementCue *cue) {

@@ -19,6 +19,9 @@ typedef struct AsoundReplacementCue {
 /* Reload all known cue WAVs. Missing or malformed files remain legacy fallbacks. */
 int asound_load_replacement_cues(void);
 
+/* Return one past the highest legacy byte offset covered by a loaded cue. */
+int asound_replacement_logical_span(void);
+
 /* Return a loaded cue matching the original inclusive sample range. */
 int asound_find_replacement_cue(AsoundU16 start, AsoundU16 end_inclusive,
                                 AsoundReplacementCue *cue);
