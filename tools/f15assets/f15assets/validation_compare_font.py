@@ -24,6 +24,7 @@ def compare_font_glyph96(
 
 
 def compare_font_atlas_rows(path: str, expected_rows: list[list[int]], actual_rows: list[list[int]]) -> str | None:
+    """Compare font atlas rows and report semantic mismatches."""
     if actual_rows != expected_rows:
         return f"{path}: atlas bitmap differs from original font rows"
     return None

@@ -22,6 +22,7 @@ __all__ = ["glb_to_glmesh_bytes", "validate_3d3_glb_replacements"]
 
 
 def _safe_output_stem(value: object) -> str:
+    """Return a portable output stem derived from an asset filename."""
     text = str(value or "").strip()
     safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in text)
     safe = "_".join(part for part in safe.split("_") if part)
@@ -29,6 +30,7 @@ def _safe_output_stem(value: object) -> str:
 
 
 def _first_existing_path(primary: Path, *fallbacks: Path) -> Path:
+    """Return the first candidate path that exists."""
     for path in (primary, *fallbacks):
         if path.exists():
             return path
@@ -36,6 +38,7 @@ def _first_existing_path(primary: Path, *fallbacks: Path) -> Path:
 
 
 def _read_glb_json(path: Path) -> Dict[str, Any]:
+    """Read glb json."""
     data = path.read_bytes()
     if len(data) < 20:
         raise ValueError("GLB too short")
@@ -55,6 +58,7 @@ def _read_glb_json(path: Path) -> Dict[str, Any]:
 
 
 def _read_glb_doc_and_bin(path: Path) -> tuple[Dict[str, Any], bytes]:
+    """Read glb doc and bin."""
     data = path.read_bytes()
     if len(data) < 20:
         raise ValueError("GLB too short")
@@ -77,6 +81,7 @@ def _read_glb_doc_and_bin(path: Path) -> tuple[Dict[str, Any], bytes]:
 
 
 def _gltf_accessor_values(doc: Dict[str, Any], blob: bytes, accessor_index: int) -> list[Any]:
+    """Perform the gltf accessor values asset-processing operation."""
     accessor = doc["accessors"][accessor_index]
     view = doc["bufferViews"][int(accessor["bufferView"])]
     offset = int(view.get("byteOffset", 0)) + int(accessor.get("byteOffset", 0))
@@ -103,6 +108,7 @@ def _gltf_accessor_values(doc: Dict[str, Any], blob: bytes, accessor_index: int)
 
 
 def _material_rgba(doc: Dict[str, Any], material_index: int | None) -> tuple[float, float, float, float]:
+    """Resolve one glTF material to normalized RGBA values."""
     if material_index is None:
         return (1.0, 1.0, 1.0, 1.0)
     materials = doc.get("materials", [])
@@ -116,6 +122,7 @@ def _material_rgba(doc: Dict[str, Any], material_index: int | None) -> tuple[flo
 
 
 def _source_primitive_meta(prim: Dict[str, Any]) -> tuple[int, int, int, int]:
+    """Read preserved renderer semantics from a glTF primitive."""
     extras = prim.get("extras", {})
     if not isinstance(extras, dict):
         # Custom GLBs exported from Blender may not preserve converter extras.
@@ -144,6 +151,7 @@ def _source_primitive_meta(prim: Dict[str, Any]) -> tuple[int, int, int, int]:
 
 
 def glb_to_glmesh_bytes(path: Path) -> bytes:
+    """Perform the glb to glmesh bytes asset-processing operation."""
     source = path.read_bytes()
     source_md5 = hashlib.md5(source).hexdigest().encode("ascii")
     doc, blob = _read_glb_doc_and_bin(path)
@@ -197,6 +205,7 @@ def glb_to_glmesh_bytes(path: Path) -> bytes:
 
 
 def _glmesh_primitive_counts(data: bytes) -> Dict[str, int]:
+    """Perform the glmesh primitive counts asset-processing operation."""
     if data.startswith(b"F15GLM3\0"):
         pos = 44
         prim_count = struct.unpack_from("<I", data, 40)[0]
@@ -240,6 +249,7 @@ def _glmesh_primitive_counts(data: bytes) -> Dict[str, int]:
 
 
 def _glmesh_source_meta(data: bytes) -> list[tuple[int, int, int, int]]:
+    """Perform the glmesh source meta asset-processing operation."""
     if not data.startswith(b"F15GLM3\0"):
         return []
     pos = 44
@@ -259,6 +269,7 @@ def _glmesh_source_meta(data: bytes) -> list[tuple[int, int, int, int]]:
 
 
 def _glmesh_stream(data: bytes) -> list[Dict[str, Any]]:
+    """Decode the ordered primitive stream from a runtime mesh cache."""
     if data.startswith(b"F15GLM3\0"):
         pos = 44
         prim_count = struct.unpack_from("<I", data, 40)[0]
@@ -320,10 +331,12 @@ def _glmesh_stream(data: bytes) -> list[Dict[str, Any]]:
 
 
 def _compare_glmesh_streams(expected: bytes, actual: bytes, tolerance: float = 1e-5) -> str | None:
+    """Compare glmesh streams and report semantic mismatches."""
     return compare_glmesh_primitive_streams(_glmesh_stream(expected), _glmesh_stream(actual), tolerance)
 
 
 def _glb_primitive_counts(doc: Dict[str, Any]) -> Dict[str, int]:
+    """Perform the glb primitive counts asset-processing operation."""
     counts = {"triangles": 0, "lines": 0, "points": 0, "primitives": 0}
     accessors = doc.get("accessors", [])
     if not isinstance(accessors, list):
@@ -359,6 +372,7 @@ def _glb_primitive_counts(doc: Dict[str, Any]) -> Dict[str, int]:
 
 
 def _glb_source_meta(doc: Dict[str, Any]) -> list[tuple[int, int, int, int]]:
+    """Perform the glb source meta asset-processing operation."""
     meta: list[tuple[int, int, int, int]] = []
     for mesh in doc.get("meshes", []):
         if not isinstance(mesh, dict):
@@ -370,6 +384,7 @@ def _glb_source_meta(doc: Dict[str, Any]) -> list[tuple[int, int, int, int]]:
 
 
 def _glb_raw_color_usage(doc: Dict[str, Any]) -> Dict[str, Dict[str, int]]:
+    """Perform the glb raw color usage asset-processing operation."""
     extras = doc.get("extras", {})
     if not isinstance(extras, dict):
         return {"faces": {}, "lines": {}, "points": {}}
@@ -387,6 +402,7 @@ def _glb_raw_color_usage(doc: Dict[str, Any]) -> Dict[str, Dict[str, int]]:
 
 
 def _validate_glb_order_sensitive_primitives(path: Path, doc: Dict[str, Any]) -> list[str]:
+    """Validate glb order sensitive primitives against runtime requirements."""
     errors: list[str] = []
     meshes = doc.get("meshes", [])
     if not isinstance(meshes, list):
@@ -582,6 +598,7 @@ def _validate_3d3_json_loadability(json_path: Path) -> tuple[int, int]:
 
 
 def _validate_glb_loadability(path: Path) -> tuple[int, int]:
+    """Validate glb loadability against runtime requirements."""
     try:
         doc = _read_glb_json(path)
         counts = _glb_primitive_counts(doc)
@@ -599,6 +616,7 @@ def _validate_glb_loadability(path: Path) -> tuple[int, int]:
 
 
 def _validate_glmesh_loadability(path: Path) -> tuple[int, int]:
+    """Validate glmesh loadability against runtime requirements."""
     try:
         counts = _glmesh_primitive_counts(path.read_bytes())
     except Exception as exc:
@@ -628,6 +646,7 @@ def validate_3d3_glb_replacements(
     allow_custom_glb_differences: bool,
     loadability_only: bool,
 ) -> tuple[int, int]:
+    """Validate 3d3 glb replacements against runtime requirements."""
     checked = 0
     failed = 0
     checked_json_paths: set[Path] = set()

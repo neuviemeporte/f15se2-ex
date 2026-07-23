@@ -66,6 +66,7 @@ def compare_count_value(
     actual_name: str = "actual",
     expected_name: str = "expected",
 ) -> str | None:
+    """Compare count value and report semantic mismatches."""
     if actual == expected:
         return None
     return (

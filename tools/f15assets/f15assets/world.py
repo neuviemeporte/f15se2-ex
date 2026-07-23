@@ -16,6 +16,7 @@ WORLD_BUFSZ = 750
 
 
 def parse_wld(data: bytes) -> Dict[str, Any]:
+    """Parse wld."""
     offset = 0
     if len(data) < 2 + 2 + 2 + 2:
         raise ValueError(".WLD data too short")
@@ -145,6 +146,7 @@ def parse_wld(data: bytes) -> Dict[str, Any]:
 
 
 def build_wld(payload: Dict[str, Any]) -> bytes:
+    """Build wld from normalized asset data."""
     if payload.get("format") != "WLD":
         raise ValueError("invalid payload format")
 

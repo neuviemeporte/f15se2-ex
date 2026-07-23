@@ -64,12 +64,14 @@ ASOUND_SAMPLE_CUES = (
 
 
 def _sha256(data: bytes) -> str:
+    """Perform the sha256 asset-processing operation."""
     return hashlib.sha256(data).hexdigest()
 
 
 def write_unsigned_pcm8_wav(path: Path, samples: bytes, *, sample_rate: int = DEFAULT_SAMPLE_RATE) -> None:
     # F15DGTL.BIN is raw unsigned 8-bit PCM. WAV expects the same byte range for
     # 8-bit PCM, so no signedness conversion is needed here.
+    """Write unsigned pcm8 wav."""
     with wave.open(str(path), "wb") as wav:
         wav.setnchannels(1)
         wav.setsampwidth(1)
@@ -78,6 +80,7 @@ def write_unsigned_pcm8_wav(path: Path, samples: bytes, *, sample_rate: int = DE
 
 
 def decode_digitized_blob(data: bytes, *, sample_rate: int = DEFAULT_SAMPLE_RATE) -> Dict[str, Any]:
+    """Decode digitized blob while preserving legacy semantics."""
     segments = infer_digitized_segments(data)
     return {
         "format": "F15_SOUND",
@@ -108,6 +111,7 @@ def decode_digitized_blob(data: bytes, *, sample_rate: int = DEFAULT_SAMPLE_RATE
 
 
 def infer_digitized_segments(data: bytes) -> List[Dict[str, Any]]:
+    """Infer digitized segments."""
     segments: List[Dict[str, Any]] = []
     for idx, cue in enumerate(ASOUND_SAMPLE_CUES):
         start = int(cue["source_start"])
@@ -136,6 +140,7 @@ def unresolved_sound_driver_record(path: Path, data: bytes) -> Dict[str, Any]:
     # Preserve only portable identification metadata for the DOS sound drivers.
     # The executable bytes are not useful authoring files for customizers; they
     # remain in the original game directory for future driver research.
+    """Describe preserved sound-driver fields whose meaning remains unknown."""
     return {
         "format": "F15_SOUND_DRIVER",
         "version": 1,
@@ -155,10 +160,12 @@ def unresolved_sound_driver_record(path: Path, data: bytes) -> Dict[str, Any]:
 
 
 def _repo_root_from_tools() -> Path:
+    """Perform the repo root from tools asset-processing operation."""
     return Path(__file__).resolve().parents[3]
 
 
 def _extract_asound_array(source_text: str, name: str) -> List[int]:
+    """Extract asound array."""
     match = re.search(
         rf"const\s+AsoundU8\s+{re.escape(name)}\[\]\s*=\s*\{{(?P<body>.*?)\}};",
         source_text,
@@ -173,6 +180,7 @@ def _extract_asound_array(source_text: str, name: str) -> List[int]:
 
 
 def _decode_asound_stream(stream: List[int], voice: int, *, max_events: int = 10000) -> List[Dict[str, Any]]:
+    """Decode asound stream while preserving legacy semantics."""
     pos = 0
     tick = 0
     loop_pos = 0
@@ -256,6 +264,7 @@ def _decode_asound_stream(stream: List[int], voice: int, *, max_events: int = 10
 
 
 def _write_varlen(value: int) -> bytes:
+    """Encode one MIDI variable-length integer."""
     value = max(0, int(value))
     out = [value & 0x7F]
     value >>= 7
@@ -266,6 +275,7 @@ def _write_varlen(value: int) -> bytes:
 
 
 def _midi_track(events: List[tuple[int, bytes]]) -> bytes:
+    """Wrap encoded MIDI events in a complete track chunk."""
     events = sorted(events, key=lambda item: item[0])
     data = bytearray()
     last = 0
@@ -278,6 +288,7 @@ def _midi_track(events: List[tuple[int, bytes]]) -> bytes:
 
 
 def _write_intro_midi(path: Path, voices: List[Dict[str, Any]]) -> None:
+    """Write intro midi."""
     ppq = 480
     midi_ticks_per_asound_tick = 16  # 60 Hz ASOUND tick at 120 BPM.
     tracks = []
@@ -307,6 +318,7 @@ def _write_intro_midi(path: Path, voices: List[Dict[str, Any]]) -> None:
 
 
 def export_intro_music(output_root: Path, *, repo_root: Path | None = None) -> Dict[str, Any]:
+    """Export intro music to an editable modern format."""
     repo = repo_root or _repo_root_from_tools()
     model_path = repo / "src" / "asound" / "asound_model.c"
     source_text = model_path.read_text(encoding="utf-8")
@@ -360,6 +372,7 @@ def export_sounds(
     include_raw_blob: bool = False,
     include_metadata: bool = False,
 ) -> Dict[str, Any]:
+    """Export sounds to an editable modern format."""
     output_root.mkdir(parents=True, exist_ok=True)
     exported: List[Dict[str, Any]] = []
 

@@ -22,6 +22,7 @@ _M0_PIC_IMAGE_HEADER_SIZE = 8
 
 class _PICBitReader:
     def __init__(self, data: bytes):
+        """Initialize the _PICBitReader codec state."""
         self._data = data
         # The first word is both the first compressed bits and the source for
         # the format mode byte. The original decoder consumes codes from this
@@ -33,6 +34,7 @@ class _PICBitReader:
         self._remaining = 8
 
     def read_code(self, code_width: int) -> int:
+        """Read one variable-width code from the compressed bit stream."""
         bits = self._word >> (16 - self._remaining)
         cl = self._remaining
         if cl < code_width:
@@ -56,6 +58,7 @@ class _PICBitReader:
 
 class _LZWDecoder:
     def __init__(self, bit_reader: _PICBitReader, max_width: int):
+        """Initialize the _LZWDecoder codec state."""
         self._reader = bit_reader
         self._max_width = max(9, max_width)
         self._code_width = 9
@@ -71,6 +74,7 @@ class _LZWDecoder:
         self._reset_dictionary()
 
     def _reset_dictionary(self) -> None:
+        """Perform the reset dictionary asset-processing operation."""
         for i in range(256):
             self._dict_parent[i] = 0xFFFF
             self._dict_char[i] = i
@@ -79,6 +83,7 @@ class _LZWDecoder:
         self._max_code_at_width = 0x1FF
 
     def _decode_code(self) -> List[int]:
+        """Decode code while preserving legacy semantics."""
         code = self._reader.read_code(self._code_width)
         orig_code = code
         stack: List[int] = []
@@ -119,11 +124,13 @@ class _LZWDecoder:
         return stack
 
     def get_next_byte(self) -> int:
+        """Return the next byte from the decompressed stream."""
         while len(self._out_buf) == 0:
             self._out_buf.extend(self._decode_code())
         return self._out_buf.pop(0)
 
     def decode_row(self, count: int) -> bytes:
+        """Decode row while preserving legacy semantics."""
         out = bytearray()
         safety = 0
 
@@ -156,6 +163,7 @@ class _LZWDecoder:
 
 class _LZWEncoder:
     def __init__(self, max_width: int):
+        """Initialize the _LZWEncoder codec state."""
         self._max_width = max(1, max_width)
         self._code_width = 9
         self._max_code_at_width = 0x1FF
@@ -166,11 +174,13 @@ class _LZWEncoder:
         self._packed: List[int] = []
 
     def _reset_dictionary(self) -> None:
+        """Perform the reset dictionary asset-processing operation."""
         self._next_code = 256
         self._code_width = 9
         self._max_code_at_width = 0x1FF
 
     def _emit(self, code: int) -> None:
+        """Append one code to the packed output stream."""
         mask = (1 << self._code_width) - 1
         self._bit_buffer |= (code & mask) << self._bit_count
         self._bit_count += self._code_width
@@ -180,6 +190,7 @@ class _LZWEncoder:
             self._bit_count -= 8
 
     def finalize(self) -> bytes:
+        """Flush pending bits and return the completed encoded stream."""
         if self._bit_count:
             self._packed.append(self._bit_buffer & 0xFF)
             self._bit_buffer = 0
@@ -187,6 +198,7 @@ class _LZWEncoder:
         return bytes(self._packed)
 
     def encode(self, payload: bytes) -> bytes:
+        """Encode source bytes with the game-compatible LZW variant."""
         if not payload:
             return self.finalize()
 
@@ -213,6 +225,7 @@ def decode_pic_asset(
     source_name: str | None = None,
     forced_bitstream_mode: str | None = None,
 ) -> Dict[str, Any]:
+    """Decode pic asset while preserving legacy semantics."""
     if len(data) < 2:
         raise ValueError("PIC payload is too short")
 
@@ -294,6 +307,7 @@ def _is_m0_wrapped_pic(data: bytes) -> bool:
     # M0 stores a small wrapper header, a 256-entry VGA DAC palette, then an
     # inner PIC-like compressed image. It is detected structurally because the
     # game still names these files *.PIC.
+    """Return whether m0 wrapped pic."""
     if len(data) < _M0_PIC_HEADER_SIZE + _M0_PIC_PALETTE_SIZE + _M0_PIC_IMAGE_HEADER_SIZE + 2:
         return False
     if data[:2] != b"M0":
@@ -306,10 +320,12 @@ def _is_m0_wrapped_pic(data: bytes) -> bool:
 
 def _palette_dac6_to_rgb8(palette_dac6: bytes) -> List[int]:
     # VGA DAC channels are 6-bit values. PNG palettes need 8-bit channels.
+    """Perform the palette dac6 to rgb8 asset-processing operation."""
     return [_to_png_color_rgb8(value) for value in palette_dac6[:768]]
 
 
 def _decode_m0_wrapped_pic(data: bytes, *, source_name: str | None = None) -> Dict[str, Any]:
+    """Decode m0 wrapped pic while preserving legacy semantics."""
     palette_offset = _M0_PIC_HEADER_SIZE
     image_header_offset = palette_offset + _M0_PIC_PALETTE_SIZE
     inner_offset = image_header_offset + _M0_PIC_IMAGE_HEADER_SIZE
@@ -352,6 +368,7 @@ def decode_title640_pic_asset(data: bytes, *, source_name: str | None = None) ->
     # calling the start-module PIC blitter. The decompressor still emits 320
     # bytes per row; empirically row pairs are left/right halves of one
     # 640-pixel scanline.
+    """Decode title640 pic asset while preserving legacy semantics."""
     raw_payload = decode_pic_asset(
         data,
         row_count=TITLE640_HEIGHT * 2,
@@ -391,6 +408,7 @@ def decode_title640_pic_asset(data: bytes, *, source_name: str | None = None) ->
 
 
 def _pack_nibbles(nibble_pixels: bytes) -> bytes:
+    """Pack nibbles."""
     if len(nibble_pixels) & 1:
         nibble_pixels = nibble_pixels + b"\x00"
     out = bytearray()
@@ -400,6 +418,7 @@ def _pack_nibbles(nibble_pixels: bytes) -> bytes:
 
 
 def encode_pic_asset(record: Dict[str, Any], *, source_pixels: Optional[bytes] = None) -> bytes:
+    """Encode pic asset."""
     preserved_payload = record.get("compressed_payload_base64")
     if source_pixels is None and preserved_payload:
         return from_base64(str(preserved_payload))
@@ -445,6 +464,7 @@ def encode_pic_asset(record: Dict[str, Any], *, source_pixels: Optional[bytes] =
 
 
 def _rle_encode(payload: bytes) -> bytes:
+    """Perform the rle encode asset-processing operation."""
     if not payload:
         return b""
 
@@ -474,6 +494,7 @@ def _rle_encode(payload: bytes) -> bytes:
 
 
 def decode_pic_to_raw_rgba(data: bytes, row_count: int = PIC_HEIGHT) -> List[int]:
+    """Decode pic to raw rgba while preserving legacy semantics."""
     doc = decode_pic_asset(data, row_count=row_count)
     pixels = from_base64(doc["pixels_base64"])
     return list(pixels)
@@ -553,15 +574,18 @@ _DEFAULT_VGA256_PALETTE_CACHE: Optional[List[int]] = None
 
 
 def _to_png_color_rgb8(value_6bit: int) -> int:
+    """Convert normalized asset data to png color rgb8."""
     value_8bit = int(value_6bit) & 0x3F
     return max(0, min(255, (value_8bit << 2) | (value_8bit >> 4)))
 
 
 def _dac6_palette_to_rgb8(values_6bit: List[int]) -> List[int]:
+    """Perform the dac6 palette to rgb8 asset-processing operation."""
     return [_to_png_color_rgb8(value) for value in values_6bit]
 
 
 def _extract_u8_array_from_source(name: str) -> Optional[List[int]]:
+    """Extract u8 array from source."""
     source_path = Path(__file__).resolve().parents[3] / "src" / "egdata.c"
     if not source_path.exists():
         for i in (4, 3, 2, 1):
@@ -617,6 +641,7 @@ def _extract_u8_array_from_source(name: str) -> Optional[List[int]]:
 
 
 def _build_default_vga256_palette() -> Optional[List[int]]:
+    """Build default vga256 palette from normalized asset data."""
     global _DEFAULT_VGA256_PALETTE_CACHE
     if _DEFAULT_VGA256_PALETTE_CACHE is not None:
         return _DEFAULT_VGA256_PALETTE_CACHE
@@ -649,6 +674,7 @@ def _build_default_vga256_palette() -> Optional[List[int]]:
 
 
 def _fallback_vga_palette(index_bit_depth: int) -> List[int]:
+    """Perform the fallback vga palette asset-processing operation."""
     if index_bit_depth <= 4:
         return [_to_png_color_rgb8(c) for c in DEFAULT_EGA16_PALETTE_6BIT]
 
@@ -672,6 +698,7 @@ def _fallback_vga_palette(index_bit_depth: int) -> List[int]:
 
 
 def _default_palette(index_bit_depth: int) -> List[int]:
+    """Perform the default palette asset-processing operation."""
     return _fallback_vga_palette(index_bit_depth)
 
 
@@ -690,6 +717,7 @@ RUNTIME_DAC_PALETTE4_FILES = {
 
 
 def known_runtime_pic_palette(source_name: str | None, index_bit_depth: int) -> Optional[Dict[str, Any]]:
+    """Return the palette selected by the original runtime for a known PIC."""
     if not source_name:
         return None
     source_file = Path(source_name).name.upper()
@@ -741,6 +769,7 @@ def known_runtime_pic_palette(source_name: str | None, index_bit_depth: int) -> 
 
 
 def expected_runtime_pic_palette(source_name: str | None, index_bit_depth: int) -> Dict[str, Any]:
+    """Resolve the authoritative palette for replacement validation."""
     known = known_runtime_pic_palette(source_name, index_bit_depth)
     if known is not None:
         return known
@@ -774,6 +803,7 @@ def to_png_data(
     index_bit_depth: int = 8,
     palette: Optional[List[int]] = None,
 ) -> "Image.Image":
+    """Convert normalized asset data to png data."""
     try:
         from PIL import Image
     except Exception as exc:
@@ -790,6 +820,7 @@ def to_png_data(
 
 
 def png_to_pixels(path: str) -> bytes:
+    """Perform the png to pixels asset-processing operation."""
     try:
         from PIL import Image
     except Exception as exc:

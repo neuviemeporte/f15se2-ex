@@ -15,6 +15,7 @@ __all__ = ["validate_structured_json_replacements"]
 
 
 def _format_from_structured_json_path(path: Path) -> str | None:
+    """Perform the format from structured json path asset-processing operation."""
     name = path.name.upper()
     for fmt in ("WLD", "3DT", "3DG"):
         if name.endswith(f".{fmt}.JSON"):
@@ -23,6 +24,7 @@ def _format_from_structured_json_path(path: Path) -> str | None:
 
 
 def _validate_structured_json_loadability(path: Path, fmt: str, builder: Callable[[dict], bytes]) -> tuple[int, int]:
+    """Validate structured json loadability against runtime requirements."""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
         rebuilt = builder(payload)
@@ -36,11 +38,13 @@ def _validate_structured_json_loadability(path: Path, fmt: str, builder: Callabl
 
 
 def _legacy_structured_json_path(relative: Path, output_root: Path) -> Path:
+    """Perform the legacy structured json path asset-processing operation."""
     legacy_base = output_root / relative
     return legacy_base.with_name(legacy_base.name + ".json")
 
 
 def _first_existing_path(primary: Path, *fallbacks: Path) -> Path:
+    """Return the first candidate path that exists."""
     for path in (primary, *fallbacks):
         if path.exists():
             return path
@@ -57,6 +61,7 @@ def validate_structured_json_replacements(
     structured_json_path: Callable[[Path, Path, Path, Path, str], Path],
     loadability_only: bool = False,
 ) -> tuple[int, int]:
+    """Validate structured json replacements against runtime requirements."""
     builders = {
         "WLD": build_wld,
         "3DT": build_3dt,

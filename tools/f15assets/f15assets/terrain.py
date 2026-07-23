@@ -9,6 +9,7 @@ SIGNATURE_3DG = 0x3232
 
 
 def parse_3dt(data: bytes) -> Dict[str, Any]:
+    """Parse 3dt."""
     if len(data) < 12:
         raise ValueError(".3DT data too short")
 
@@ -66,6 +67,7 @@ def parse_3dt(data: bytes) -> Dict[str, Any]:
 
 
 def build_3dt(payload: Dict[str, Any]) -> bytes:
+    """Build 3dt from normalized asset data."""
     if payload.get("format") != "3DT":
         raise ValueError("invalid payload format")
 
@@ -96,6 +98,7 @@ def build_3dt(payload: Dict[str, Any]) -> bytes:
 
 
 def parse_3dg(data: bytes) -> Dict[str, Any]:
+    """Parse 3dg."""
     if len(data) < 1810:
         raise ValueError(f"unexpected .3DG size: {len(data)}")
 
@@ -133,6 +136,7 @@ def parse_3dg(data: bytes) -> Dict[str, Any]:
 
 
 def build_3dg(payload: Dict[str, Any]) -> bytes:
+    """Build 3dg from normalized asset data."""
     if payload.get("format") != "3DG":
         raise ValueError("invalid payload format")
 

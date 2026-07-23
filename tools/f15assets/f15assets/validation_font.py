@@ -24,6 +24,7 @@ RUNTIME_FONT_ATLAS_DIMS = {
 
 
 def _parse_bdf_font(path: Path) -> Dict[int, Dict[str, Any]]:
+    """Parse bdf font."""
     glyphs: Dict[int, Dict[str, Any]] = {}
     current: Dict[str, Any] | None = None
     bitmap_rows: list[int] = []
@@ -59,6 +60,7 @@ def _parse_bdf_font(path: Path) -> Dict[int, Dict[str, Any]]:
 
 
 def _read_font_png_rows(path: Path, cell_width: int, height: int) -> list[list[int]]:
+    """Read font png rows."""
     try:
         from PIL import Image
     except Exception as exc:
@@ -104,6 +106,7 @@ def _read_font_png_rows(path: Path, cell_width: int, height: int) -> list[list[i
 
 
 def _font_id_from_media_path(path: Path, suffix: str) -> int | None:
+    """Perform the font id from media path asset-processing operation."""
     name = path.name.lower()
     if not name.startswith("font_") or not name.endswith(suffix):
         return None
@@ -119,6 +122,7 @@ def validate_font_replacements(
     require_all: bool,
     loadability_only: bool = False,
 ) -> tuple[int, int]:
+    """Validate font replacements against runtime requirements."""
     font_root = output_root / "fonts"
     checked = 0
     failed = 0

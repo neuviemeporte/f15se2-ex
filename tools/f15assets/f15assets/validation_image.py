@@ -13,6 +13,7 @@ __all__ = ["validate_png_replacement_loadability", "validate_pic_png_replacement
 
 
 def _open_png_for_validation(path: Path):
+    """Open png for validation."""
     try:
         from PIL import Image
     except Exception as exc:
@@ -22,6 +23,7 @@ def _open_png_for_validation(path: Path):
 
 
 def _validate_png_loadable_like_runtime(path: Path) -> None:
+    """Validate png loadable like runtime against runtime requirements."""
     image = _open_png_for_validation(path)
     try:
         if image.size[0] <= 0 or image.size[1] <= 0:
@@ -43,6 +45,7 @@ def validate_png_replacement_loadability(path: Path) -> list[str]:
 
 
 def _read_indexed_png_pixels_and_palette(path: Path, width: int, height: int) -> tuple[bytes, bytes]:
+    """Read indexed png pixels and palette."""
     image = _open_png_for_validation(path)
     if image.mode != "P":
         raise ValueError(f"expected indexed PNG replacement for byte-for-byte comparison: {path}")
@@ -61,6 +64,7 @@ def validate_pic_png_replacement(
     read_binary: Callable[[Path], bytes],
     loadability_only: bool = False,
 ) -> list[str]:
+    """Validate pic png replacement against runtime requirements."""
     errors: list[str] = []
     is_title640 = src.name.upper() == "TITLE640.PIC"
     data = read_binary(src)

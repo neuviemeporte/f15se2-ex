@@ -198,6 +198,7 @@ LATIN_EXTENDED_GLYPHS = {
 
 
 def _extract_c_initializer(text: str, decl_pattern: str) -> str | None:
+    """Extract c initializer."""
     match = re.search(decl_pattern, text, re.S)
     if not match:
         return None
@@ -216,10 +217,12 @@ def _extract_c_initializer(text: str, decl_pattern: str) -> str | None:
 
 
 def _parse_int_tokens(text: str) -> List[int]:
+    """Parse int tokens."""
     return [int(token, 0) for token in re.findall(r"0x[0-9a-fA-F]+|\b\d+\b", text)]
 
 
 def _parse_font_bitmaps(fontdata_text: str) -> Dict[int, List[List[int]]]:
+    """Parse font bitmaps."""
     fonts: Dict[int, List[List[int]]] = {}
     for match in re.finditer(r"g_font(\d+)_bitmaps\s*\[96\]\[(\d+)\]\s*=\s*\{", fontdata_text):
         font_id = int(match.group(1))
@@ -242,6 +245,7 @@ def _parse_font_bitmaps(fontdata_text: str) -> Dict[int, List[List[int]]]:
 
 
 def _parse_font_widths(gfx_text: str) -> Dict[int, List[int]]:
+    """Parse font widths."""
     widths: Dict[int, List[int]] = {}
     for font_id in (0, 1, 3, 4, 5):
         body = _extract_c_initializer(
@@ -257,6 +261,7 @@ def _parse_font_widths(gfx_text: str) -> Dict[int, List[int]]:
 
 
 def _bitmap_to_pixels(rows: List[int], width: int) -> List[List[int]]:
+    """Perform the bitmap to pixels asset-processing operation."""
     pixels: List[List[int]] = []
     for row in rows:
         # Font rows are stored MSB-first, matching the old blitter's bit order.
@@ -265,12 +270,14 @@ def _bitmap_to_pixels(rows: List[int], width: int) -> List[List[int]]:
 
 
 def _font_source_hash(path: Path) -> str:
+    """Compute a stable digest of source tables used for font export."""
     import hashlib
 
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def load_font_assets(repo_root: Path) -> Dict[int, Dict[str, Any]]:
+    """Load font assets."""
     fontdata_path = repo_root / "src" / "fontdata.h"
     gfx_impl_path = repo_root / "src" / "gfx_impl.c"
     fontdata_text = fontdata_path.read_text(encoding="utf-8")
@@ -304,6 +311,7 @@ def load_font_assets(repo_root: Path) -> Dict[int, Dict[str, Any]]:
 
 
 def _build_atlas(font: Dict[str, Any]) -> Tuple["Image.Image", Dict[str, Any]]:
+    """Build atlas from normalized asset data."""
     try:
         from PIL import Image
     except Exception as exc:
@@ -373,11 +381,13 @@ def _build_atlas(font: Dict[str, Any]) -> Tuple["Image.Image", Dict[str, Any]]:
 
 
 def _glyph_bdf_bitmap(glyph_rows: List[int], width: int) -> List[str]:
+    """Perform the glyph bdf bitmap asset-processing operation."""
     hex_width = max(2, ((width + 7) // 8) * 2)
     return [f"{row & 0xFF:0{hex_width}X}" for row in glyph_rows]
 
 
 def _cyrillic_template(codepoint: int) -> List[str]:
+    """Perform the cyrillic template asset-processing operation."""
     if codepoint in CYRILLIC_LOWER_5X7:
         return CYRILLIC_LOWER_5X7[codepoint]
     upper = CYRILLIC_LOWER_TO_UPPER.get(codepoint, codepoint)
@@ -385,6 +395,7 @@ def _cyrillic_template(codepoint: int) -> List[str]:
 
 
 def _scale_template_columns(row: str, width: int) -> str:
+    """Scale template columns."""
     if width == len(row):
         return row
     if width <= 0:
@@ -400,6 +411,7 @@ def _scale_template_columns(row: str, width: int) -> str:
 
 
 def _template_to_glyph_rows(template: List[str], cell_width: int, height: int) -> List[int]:
+    """Perform the template to glyph rows asset-processing operation."""
     draw_width = max(1, min(5, cell_width))
     x_offset = max(0, (cell_width - draw_width) // 2)
     rows: List[int] = []
@@ -420,6 +432,7 @@ def _template_to_glyph_rows(template: List[str], cell_width: int, height: int) -
 
 
 def _cyrillic_glyph(font: Dict[str, Any], codepoint: int) -> Tuple[List[int], int]:
+    """Perform the cyrillic glyph asset-processing operation."""
     cell_width = int(font["cell_width"])
     height = int(font["height"])
     template = CYRILLIC_4X5.get(codepoint) if cell_width <= 4 and height <= 5 else None
@@ -440,6 +453,7 @@ def _cyrillic_glyph(font: Dict[str, Any], codepoint: int) -> Tuple[List[int], in
 
 
 def _ascii_glyph(font: Dict[str, Any], source_char: str) -> Tuple[List[int], int]:
+    """Perform the ascii glyph asset-processing operation."""
     idx = ord(source_char) - FONT_CODEPOINT_START
     if idx < 0 or idx >= FONT_CODEPOINT_COUNT:
         idx = ord("?") - FONT_CODEPOINT_START
@@ -447,11 +461,13 @@ def _ascii_glyph(font: Dict[str, Any], source_char: str) -> Tuple[List[int], int
 
 
 def _set_pixel(rows: List[int], x: int, y: int, cell_width: int) -> None:
+    """Set one in-bounds pixel in a mutable glyph."""
     if 0 <= y < len(rows) and 0 <= x < min(cell_width, 8):
         rows[y] |= 0x80 >> x
 
 
 def _overlay_mark(rows: List[int], cell_width: int, mark: str) -> None:
+    """Overlay an accent or distinguishing mark on a synthesized glyph."""
     width = min(cell_width, 8)
     if width <= 0 or not rows:
         return
@@ -494,6 +510,7 @@ def _overlay_mark(rows: List[int], cell_width: int, mark: str) -> None:
 
 
 def _latin_extended_glyph(font: Dict[str, Any], codepoint: int) -> Tuple[List[int], int]:
+    """Perform the latin extended glyph asset-processing operation."""
     source_char, mark = LATIN_EXTENDED_GLYPHS[codepoint]
     cell_width = int(font["cell_width"])
     height = int(font["height"])
@@ -520,6 +537,7 @@ def _latin_extended_glyph(font: Dict[str, Any], codepoint: int) -> Tuple[List[in
 
 
 def build_bdf(font: Dict[str, Any]) -> str:
+    """Build bdf from normalized asset data."""
     font_id = int(font["font_id"])
     width = int(font["cell_width"])
     height = int(font["height"])
@@ -580,6 +598,7 @@ def export_fonts(
     write_bdf: bool = True,
     include_metadata: bool = False,
 ) -> Dict[str, Any]:
+    """Export fonts to an editable modern format."""
     output_root.mkdir(parents=True, exist_ok=True)
     fonts = load_font_assets(repo_root)
     exported = []

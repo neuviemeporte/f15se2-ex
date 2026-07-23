@@ -96,6 +96,7 @@ _glb_to_glmesh_bytes = glb_to_glmesh_bytes
 
 
 def _iter_asset_paths(root: Path, recursive: bool):
+    """Yield supported game asset files beneath the requested source path."""
     root = root
     if not root.exists():
         return []
@@ -113,6 +114,7 @@ def _iter_asset_paths(root: Path, recursive: bool):
 
 
 def _read_binary(path: Path) -> bytes:
+    """Read binary from the asset representation."""
     with path.open("rb") as f:
         return f.read()
 
@@ -121,6 +123,7 @@ def _write_json(path: Path, payload: Dict[str, Any], pretty: bool = True, *, med
     # Default converter sidecars are media-first: for 3D3, GLB files are the
     # editable source and JSON is minimized. Full bridge dumps deliberately opt
     # out so runtime can rebuild the legacy byte stream without original .3D3.
+    """Write json in the requested modern representation."""
     writable_payload = _sidecar_payload_for_write(payload) if media_sidecar else payload
     ordered_payload = _human_ordered_payload(writable_payload)
     with path.open("w", encoding="utf-8") as f:
@@ -132,6 +135,7 @@ def _write_json(path: Path, payload: Dict[str, Any], pretty: bool = True, *, med
 
 
 def _sidecar_payload_for_write(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Prepare decoded metadata for a deterministic human-readable sidecar."""
     if payload.get("format") == "PIC":
         out = {
             key: payload[key]
@@ -263,11 +267,13 @@ _RECORD_KEY_ORDER = [
 
 
 def _is_large_json_key(key: object) -> bool:
+    """Return whether large json key."""
     text = str(key)
     return text in _LARGE_JSON_KEYS or text.endswith("_base64")
 
 
 def _ordered_human_mapping(payload: Dict[str, Any], preferred: list[str] | None = None) -> Dict[str, Any]:
+    """Order metadata keys so editable fields precede opaque preservation data."""
     preferred = preferred or []
     out: Dict[str, Any] = {}
     seen = set()
@@ -291,6 +297,7 @@ def _ordered_human_mapping(payload: Dict[str, Any], preferred: list[str] | None 
 
 
 def _human_ordered_payload(value: Any) -> Any:
+    """Recursively reorder metadata for stable, readable JSON output."""
     if isinstance(value, list):
         return [_human_ordered_payload(item) for item in value]
     if not isinstance(value, dict):
@@ -304,6 +311,7 @@ def _human_ordered_payload(value: Any) -> Any:
 
 
 def _write_gltf(path: Path, payload: Dict[str, Any], pretty: bool = True) -> None:
+    """Write gltf in the requested modern representation."""
     with path.open("w", encoding="utf-8") as f:
         if pretty:
             json.dump(payload, f, indent=2, sort_keys=True)
@@ -313,16 +321,19 @@ def _write_gltf(path: Path, payload: Dict[str, Any], pretty: bool = True) -> Non
 
 
 def _write_gltf_binary(path: Path, payload: Dict[str, Any]) -> None:
+    """Write gltf binary in the requested modern representation."""
     glb_data = export_3d3_to_glb(payload)
     path.write_bytes(glb_data)
 
 
 def _write_gltf_binary_doc(path: Path, gltf: Dict[str, Any]) -> None:
+    """Serialize a glTF document and binary payload into one GLB container."""
     glb_data = export_3d3_gltf_to_glb(gltf)
     path.write_bytes(glb_data)
 
 
 def _remove_if_exists(path: Path) -> None:
+    """Implement the remove if exists asset-processing operation."""
     if path.exists():
         try:
             path.unlink()
@@ -331,10 +342,12 @@ def _remove_if_exists(path: Path) -> None:
 
 
 def _detect_format(path: Path) -> str:
+    """Identify an asset format from its extension and binary signature."""
     return ASSET_EXT_FORMATS.get(path.suffix.lower(), "")
 
 
 def _safe_output_stem(value: object) -> str:
+    """Return a portable output stem."""
     text = str(value or "").strip()
     safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in text)
     safe = "_".join(part for part in safe.split("_") if part)
@@ -342,6 +355,7 @@ def _safe_output_stem(value: object) -> str:
 
 
 def _related_world_stem_for_theater_asset(source_path: Path) -> str:
+    """Map a theater-specific asset name to its owning world directory."""
     stem = source_path.stem
     upper_stem = stem.upper()
     wld_stem = THEATER_WLD_STEM_ALIASES.get(upper_stem, upper_stem)
@@ -353,6 +367,7 @@ def _related_world_stem_for_theater_asset(source_path: Path) -> str:
 
 
 def _asset_output_dir(src: Path, relative: Path, input_root: Path, output_root: Path, fmt: str) -> Path:
+    """Choose the self-contained output directory for one source asset."""
     parent = output_root / relative.parent
     if fmt == "WLD":
         return parent / src.stem
@@ -368,6 +383,7 @@ def _write_3d3_shape_models(
     pretty: bool,
     write_cache: bool = False,
 ) -> None:
+    """Export each decoded 3D3 shape as an independently editable GLB file."""
     if model_format == "none":
         return
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -392,6 +408,7 @@ def _write_3d3_shape_models(
 
 
 def _log_3d3_gltf_diagnostics(gltf: Dict[str, Any], source_path: Path | None) -> None:
+    """Report suspicious or skipped 3D3 shape slots without aborting conversion."""
     label = str(source_path) if source_path is not None else "3D3"
     skipped = gltf.get("extras", {}).get("skipped_shapes", [])
     if isinstance(skipped, list):
@@ -431,10 +448,12 @@ def _log_3d3_gltf_diagnostics(gltf: Dict[str, Any], source_path: Path | None) ->
 
 
 def _dac6_to_rgb8(data: bytes) -> bytes:
+    """Implement the dac6 to rgb8 asset-processing operation."""
     return bytes(((value & 0x3F) << 2) | ((value & 0x3F) >> 4) for value in data[:768])
 
 
 def _find_external_palette(source_path: Path) -> tuple[Path, bytes, str] | None:
+    """Locate external palette using the converter search rules."""
     same_stem = source_path.with_suffix(".PAL")
     if same_stem.exists() and same_stem.stat().st_size >= 768:
         return same_stem, same_stem.read_bytes()[:768], "same_stem_pal"
@@ -464,6 +483,7 @@ def _find_external_palette(source_path: Path) -> tuple[Path, bytes, str] | None:
 
 
 def _attach_external_palette(payload: Dict[str, Any], source_path: Path | None) -> None:
+    """Attach the best matching external palette to an indexed image asset."""
     if source_path is None:
         return
     profile = payload.get("palette_profile")
@@ -512,6 +532,7 @@ def _decode_asset(
     args: argparse.Namespace,
     source_path: Path | None = None,
 ) -> Dict[str, Any]:
+    """Decode one legacy asset and return normalized metadata plus media outputs."""
     if args.png and fmt != "PIC":
         raise ValueError("--png is only supported for PIC/SPR inputs")
 
@@ -579,6 +600,7 @@ def _decode_asset(
 
 
 def _load_shape_names_for_3d3(source_path: Path) -> Dict[str, str]:
+    """Load stable shape names associated with a 3D3 model table."""
     stem = source_path.stem.upper()
     wld_stem = THEATER_WLD_STEM_ALIASES.get(stem, stem)
     wld_path = source_path.with_name(f"{wld_stem}.WLD")
@@ -611,10 +633,12 @@ def _load_shape_names_for_3d3(source_path: Path) -> Dict[str, str]:
 
 
 def _decode_args(png: str | None = None, gltf: str | None = None, pretty: bool = False) -> argparse.Namespace:
+    """Translate command-line decode options into decoder keyword arguments."""
     return argparse.Namespace(png=png, gltf=gltf, pretty=pretty)
 
 
 def _minimize_3d3_json(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove geometry duplicated by per-shape GLB files from a 3D3 sidecar."""
     shared_pool = payload.get("shared_vertex_pool")
     shared_pool_summary = None
     if isinstance(shared_pool, dict):
@@ -645,6 +669,7 @@ def _minimize_3d3_json(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def cmd_decode(args: argparse.Namespace) -> int:
+    """Implement the single-asset decode command."""
     fmt = args.format.upper() if args.format else _detect_format(Path(args.input))
     if not fmt:
         raise ValueError("cannot detect format from extension; pass --format")
@@ -656,6 +681,7 @@ def cmd_decode(args: argparse.Namespace) -> int:
 
 
 def cmd_convert_tree(args: argparse.Namespace) -> int:
+    """Implement recursive conversion of a game asset tree."""
     input_root = Path(args.input)
     output_root = Path(args.output)
     if not input_root.exists() or not input_root.is_dir():
@@ -755,6 +781,7 @@ def cmd_convert_tree(args: argparse.Namespace) -> int:
 
 
 def cmd_export_fonts(args: argparse.Namespace) -> int:
+    """Implement export of legacy bitmap fonts to editable modern files."""
     repo_root = Path(args.repo_root)
     output_root = Path(args.output)
     if not (repo_root / "src" / "fontdata.h").exists():
@@ -774,6 +801,7 @@ def cmd_export_fonts(args: argparse.Namespace) -> int:
 
 
 def cmd_export_sounds(args: argparse.Namespace) -> int:
+    """Implement export of digitized cues and music streams."""
     input_root = Path(args.input)
     output_root = Path(args.output)
     if not input_root.exists() or not input_root.is_dir():
@@ -791,6 +819,7 @@ def cmd_export_sounds(args: argparse.Namespace) -> int:
 
 
 def cmd_build_binary(args: argparse.Namespace) -> int:
+    """Implement reconstruction of a legacy binary from editable metadata."""
     json_path = Path(args.json)
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     fmt = args.format.upper() if args.format else str(payload.get("format", "")).upper()
@@ -825,6 +854,7 @@ def cmd_build_binary(args: argparse.Namespace) -> int:
 
 
 def _structured_json_path(src: Path, relative: Path, input_root: Path, output_root: Path, fmt: str) -> Path:
+    """Implement the structured json path asset-processing operation."""
     if fmt in {"WLD", "3D3", "3DT", "3DG"}:
         output_base = _asset_output_dir(src, relative, input_root, output_root, fmt) / src.name
         return output_base.with_name(output_base.name + ".json")
@@ -860,6 +890,7 @@ def _structured_json_path(src: Path, relative: Path, input_root: Path, output_ro
 
 
 def cmd_build_glmesh(args: argparse.Namespace) -> int:
+    """Implement generation of the runtime GL mesh cache from a GLB model."""
     sys.stdout.buffer.write(glb_to_glmesh_bytes(Path(args.glb)))
     return 0
 
@@ -867,6 +898,7 @@ def cmd_build_glmesh(args: argparse.Namespace) -> int:
 
 
 def cmd_validate_replacements(args: argparse.Namespace) -> int:
+    """Implement exhaustive legacy-versus-replacement asset validation."""
     input_root = Path(args.input)
     output_root = Path(args.output)
     if not input_root.exists() or not input_root.is_dir():
@@ -981,10 +1013,12 @@ def cmd_validate_replacements(args: argparse.Namespace) -> int:
 
 
 def _repo_root_from_tool() -> Path:
+    """Implement the repo root from tool asset-processing operation."""
     return Path(__file__).resolve().parents[2]
 
 
 def cmd_convert_all(args: argparse.Namespace) -> int:
+    """Convert every supported asset using only source and destination directories."""
     input_root = Path(args.input)
     output_root = Path(args.output)
     if not input_root.exists() or not input_root.is_dir():
@@ -1032,6 +1066,7 @@ def cmd_convert_all(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser and register all asset-tool subcommands."""
     parser = argparse.ArgumentParser(
         description="F-15 asset converter (forward-only: game binary -> modern editable outputs)"
     )
@@ -1246,6 +1281,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the asset-tool command-line entry point."""
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

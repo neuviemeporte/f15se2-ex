@@ -14,6 +14,7 @@ __all__ = ["validate_sound_replacements"]
 
 
 def _read_pcm8_mono_wav(path: Path) -> tuple[int, bytes]:
+    """Read pcm8 mono wav."""
     with wave.open(str(path), "rb") as wav:
         if wav.getnchannels() != 1:
             raise ValueError(f"expected mono WAV: {path}")
@@ -27,10 +28,12 @@ def _read_pcm8_mono_wav(path: Path) -> tuple[int, bytes]:
 
 
 def _repo_root_from_tools() -> Path:
+    """Perform the repo root from tools asset-processing operation."""
     return Path(__file__).resolve().parents[3]
 
 
 def _validate_intro_music_export(sound_root: Path, require_all: bool) -> tuple[int, int]:
+    """Validate intro music export against runtime requirements."""
     checked = 0
     failed = 0
     json_path = sound_root / "intro_music.asound.json"
@@ -68,6 +71,7 @@ def validate_sound_replacements(
     require_all: bool,
     loadability_only: bool = False,
 ) -> tuple[int, int]:
+    """Validate sound replacements against runtime requirements."""
     blob_path = input_root / DIGITIZED_SAMPLE_BLOB
     sound_root = output_root / "sounds"
     checked = 0

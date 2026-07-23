@@ -38,6 +38,7 @@ _FLIGHT_DAY_COLOR_LUT = [
 
 
 def _face_material_color(color_index: int) -> Tuple[float, float, float, float]:
+    """Resolve the effective game palette color for one polygon."""
     global _FACE_PALETTE_RGB8
     if _FACE_PALETTE_RGB8 is None:
         _FACE_PALETTE_RGB8 = _default_palette(8)
@@ -70,6 +71,7 @@ def _decode_rle_primitive_order(
     # This follows the original renderer's traversal table rather than a normal
     # compression scheme. The stream describes primitive draw order through
     # edge-index links, with 0xFF acting as a return/sentinel marker.
+    """Decode rle primitive order while preserving legacy semantics."""
     if edge_count <= 0:
         return [0xFF]
     if not src:
@@ -159,6 +161,7 @@ def _decode_primitive_command_stream(
     List[Tuple[int, int, Optional[int]]],
     Dict[int, int],
 ]:
+    """Decode primitive command stream while preserving legacy semantics."""
     triangles: List[Tuple[int, int, int]] = []
     triangle_colors: List[int] = []
     lines: List[Tuple[int, int, Optional[int]]] = []
@@ -304,6 +307,7 @@ def _decode_fixed_edge_records(
     edge_count: int,
     wide_mask: bool,
 ) -> Tuple[List[Tuple[int, int]], int, Optional[str]]:
+    """Decode fixed edge records while preserving legacy semantics."""
     edges: List[Tuple[int, int]] = []
     cursor = 0
     for _ in range(edge_count):
@@ -337,6 +341,7 @@ def _decode_primitive_payload(
     Dict[int, int],
     Optional[str],
 ]:
+    """Decode primitive payload while preserving legacy semantics."""
     if cursor >= len(stream):
         return [], [], [], {}, "missing_primitive_payload"
 
@@ -443,10 +448,12 @@ def _decode_primitive_payload(
 
 
 def _skip_visibility_mask(data: bytes, offset: int, wide: bool) -> int:
+    """Perform the skip visibility mask asset-processing operation."""
     return offset + (4 if wide else 2)
 
 
 def _read_visibility_mask(data: bytes, offset: int, wide: bool) -> Tuple[int, int]:
+    """Read visibility mask."""
     end = _skip_visibility_mask(data, offset, wide)
     if end > len(data):
         raise ValueError("truncated visibility mask")
@@ -454,6 +461,7 @@ def _read_visibility_mask(data: bytes, offset: int, wide: bool) -> Tuple[int, in
 
 
 def _edge_loop_from_edges(edge_indices: Sequence[int], edges: Sequence[Tuple[int, int]]) -> List[int]:
+    """Recover a closed polygon loop from unordered edge references."""
     if len(edge_indices) < 3:
         return []
 
@@ -511,6 +519,7 @@ def _edge_loop_from_edges(edge_indices: Sequence[int], edges: Sequence[Tuple[int
 
 
 def _canonical_polygon_signature(vertices: Sequence[int]) -> Tuple[int, ...]:
+    """Build a winding-independent polygon signature for deduplication."""
     if len(vertices) < 3:
         return ()
 
@@ -548,6 +557,7 @@ def _canonical_polygon_signature(vertices: Sequence[int]) -> Tuple[int, ...]:
 def _decode_model_edges_and_primitives(
     stream: bytes, shared_pool: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
+    """Decode model edges and primitives while preserving legacy semantics."""
     if not stream:
         return {
             "render_mode": 0,
@@ -938,10 +948,12 @@ def _decode_model_edges_and_primitives(
 
 
 def _align4(value: int) -> int:
+    """Return the next four-byte-aligned offset."""
     return (4 - (value % 4)) % 4
 
 
 def _emit_buffer_view(gltf: Dict[str, Any], raw: bytes, target: int) -> int:
+    """Perform the emit buffer view asset-processing operation."""
     uri = gltf["buffers"][0]["uri"]
     comma_pos = uri.index(",")
     raw_buffer = bytearray(from_base64(uri[comma_pos + 1:]))
@@ -972,6 +984,7 @@ def _emit_accessor(
     count: int,
     byte_offset: int = 0,
 ) -> int:
+    """Perform the emit accessor asset-processing operation."""
     accessor_index = len(gltf["accessors"])
     dims = 3 if type_name == "VEC3" else 1
     gltf["accessors"].append(
@@ -989,6 +1002,7 @@ def _emit_accessor(
 
 
 def _pack_indices(values: Sequence[int]) -> Tuple[bytes, int]:
+    """Pack indices."""
     max_value = max(values) if values else 0
     if max_value > 0xFFFF:
         return struct.pack("<" + "I" * len(values), *values), 5125
@@ -996,10 +1010,12 @@ def _pack_indices(values: Sequence[int]) -> Tuple[bytes, int]:
 
 
 def _pack_floats(values: Sequence[float]) -> bytes:
+    """Pack floats."""
     return struct.pack("<" + "f" * len(values), *values) if values else b""
 
 
 def _safe_shape_name(value: object) -> str:
+    """Return a portable filename component for a source shape name."""
     name = str(value or "").strip()
     name = re.sub(r"[^0-9A-Za-z_. -]+", "_", name)
     name = re.sub(r"\s+", "_", name)
@@ -1007,6 +1023,7 @@ def _safe_shape_name(value: object) -> str:
 
 
 def _shape_label(shape_names: object, shape_index: int) -> str:
+    """Build the stable display label for a shape slot."""
     label = ""
     if isinstance(shape_names, dict):
         label = str(shape_names.get(str(shape_index), "") or shape_names.get(shape_index, "") or "")
@@ -1019,17 +1036,20 @@ def _shape_label(shape_names: object, shape_index: int) -> str:
 
 
 def _color_key(color: object) -> str:
+    """Normalize a color for deterministic material reuse."""
     if color is None:
         return "none"
     return f"0x{int(color) & 0xFF:02x}"
 
 
 def _bump_color_count(bucket: Dict[str, int], color: object, amount: int = 1) -> None:
+    """Increment a color-frequency table used by diagnostics."""
     key = _color_key(color)
     bucket[key] = bucket.get(key, 0) + int(amount)
 
 
 def parse_3d3(data: bytes) -> Dict[str, Any]:
+    """Parse 3d3."""
     if len(data) < 6:
         raise ValueError(".3D3 data too short")
 
@@ -1136,6 +1156,7 @@ def parse_3d3(data: bytes) -> Dict[str, Any]:
 
 
 def export_3d3_to_gltf(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Export 3d3 to gltf to an editable modern format."""
     if payload.get("format") != "3D3":
         raise ValueError("invalid payload format")
 
@@ -1528,6 +1549,7 @@ def _minimized_single_mesh_gltf(gltf: Dict[str, Any], mesh: Dict[str, Any], shap
     out["extras"]["minimized_per_shape_glb"] = True
 
     def remap_buffer_view(old_view_index: int) -> int:
+        """Remap buffer view."""
         if old_view_index in buffer_view_map:
             return buffer_view_map[old_view_index]
         old_view = gltf["bufferViews"][old_view_index]
@@ -1546,6 +1568,7 @@ def _minimized_single_mesh_gltf(gltf: Dict[str, Any], mesh: Dict[str, Any], shap
         return new_index
 
     def remap_accessor(old_accessor_index: int) -> int:
+        """Remap accessor."""
         if old_accessor_index in accessor_map:
             return accessor_map[old_accessor_index]
         old_accessor = gltf["accessors"][old_accessor_index]
@@ -1558,6 +1581,7 @@ def _minimized_single_mesh_gltf(gltf: Dict[str, Any], mesh: Dict[str, Any], shap
         return new_index
 
     def remap_material(old_material_index: int) -> int:
+        """Remap material."""
         if old_material_index in material_map:
             return material_map[old_material_index]
         new_index = len(out["materials"])
@@ -1639,6 +1663,7 @@ def export_3d3_gltf_to_glb(gltf: Dict[str, Any]) -> bytes:
 
 
 def build_3d3(payload: Dict[str, Any]) -> bytes:
+    """Build 3d3 from normalized asset data."""
     if payload.get("format") != "3D3":
         raise ValueError("invalid payload format")
 

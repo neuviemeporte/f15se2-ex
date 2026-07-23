@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 def extract_asound_array(source_text: str, name: str) -> list[int]:
+    """Extract asound array."""
     match = re.search(
         rf"const\s+AsoundU8\s+{re.escape(name)}\[\]\s*=\s*\{{(?P<body>.*?)\}};",
         source_text,
@@ -19,6 +20,7 @@ def extract_asound_array(source_text: str, name: str) -> list[int]:
 
 
 def compare_intro_music_json(json_path: Path, source_text: str) -> list[str]:
+    """Compare intro music json and report semantic mismatches."""
     errors: list[str] = []
     try:
         payload = json.loads(json_path.read_text(encoding="utf-8"))
@@ -50,6 +52,7 @@ def compare_intro_music_json(json_path: Path, source_text: str) -> list[str]:
 
 
 def compare_intro_music_midi(midi_path: Path) -> list[str]:
+    """Compare intro music midi and report semantic mismatches."""
     if not midi_path.exists():
         return [f"missing intro music MIDI preview: {midi_path}"]
     data = midi_path.read_bytes()
