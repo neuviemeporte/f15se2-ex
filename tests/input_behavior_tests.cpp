@@ -2,6 +2,7 @@
 #include "egdata.h"
 #include "eginput.h"
 #include "headless.h"
+#include "input.h"
 
 #include <SDL3/SDL.h>
 
@@ -91,6 +92,7 @@ enum InputOriginalConstant : int {
     kRingOverflowAttempts = 40,
     kBlockingPushDelayMs = 5,
     kTestFailureExitCode = 1,
+    kMenuMouseClick = INPUT_MENU_MOUSE_CLICK,
 };
 
 void require(bool condition, const char *message) {
@@ -123,6 +125,17 @@ void pushKey(SDL_Scancode scancode, SDL_Keymod modifiers = SDL_KMOD_NONE) {
 void pushMouseMotion() {
     SDL_Event event = {};
     event.type = SDL_EVENT_MOUSE_MOTION;
+    SDL_PushEvent(&event);
+}
+
+void pushMouseClick(SDL_Window *window, float x, float y) {
+    SDL_Event event = {};
+    event.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    event.button.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    event.button.windowID = SDL_GetWindowID(window);
+    event.button.button = SDL_BUTTON_LEFT;
+    event.button.x = x;
+    event.button.y = y;
     SDL_PushEvent(&event);
 }
 
@@ -244,6 +257,24 @@ int main() {
     pushMouseMotion();
     require(kbhit() == 0,
             "egReadKey ignores non-key SDL events");
+
+    SDL_Window *menuWindow = SDL_CreateWindow(
+        "input behavior menu", 640, 400, SDL_WINDOW_HIDDEN);
+    require(menuWindow != nullptr, "menu mouse test creates a hidden window");
+    input_setMode(INPUT_MODE_MENU);
+    input_ringReset();
+    pushMouseClick(menuWindow, 620.0f, 380.0f);
+    require(input_keyWaiting() && input_readKey() == kMenuMouseClick,
+            "menu click wakes a legacy key-driven menu loop");
+    int mouseX = 0;
+    int mouseY = 0;
+    require(input_takeMenuClick(&mouseX, &mouseY) &&
+                mouseX == 310 && mouseY == 190,
+            "menu click is exposed in logical 320x200 coordinates");
+    require(!input_takeMenuClick(&mouseX, &mouseY),
+            "menu click is consumed exactly once");
+    SDL_DestroyWindow(menuWindow);
+    resetInputState();
 
     resetInputState();
     std::thread delayedKey([] {

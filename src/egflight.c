@@ -2,6 +2,7 @@
 #include "egcode.h"
 #include "egdata.h"
 #include "egflight.h"
+#include "game_options.h"
 #include "egframe.h"
 #include "egkeys.h"
 #include "egmath.h"
@@ -401,7 +402,8 @@ switch_break:
     if (g_setThrust < g_thrust) g_thrust = g_setThrust;
 
     if ((((uint16)frameTick) % ((uint16)(g_frameRateScaling << 1))) == 0 && g_setThrust != 0 && g_autopilotEngaged == 0) {
-        g_fuelRemaining -= ((g_setThrust * g_setThrust) / 750) + 2;
+        if (!gameOptionsEnabled(GAME_OPTION_INFINITE_FUEL))
+            g_fuelRemaining -= ((g_setThrust * g_setThrust) / 750) + 2;
         drawFuelGauge();
     }
 
@@ -575,10 +577,11 @@ switch_break:
             makeSound(12, 2);
             // temp_bx = g_closestThreatIndex << 4;
 
-            if (((((g_planeTable.planes[g_closestThreatIndex].flags & 0x200) ? 0x100 : 0x80) < ((int16)(-g_climbRate * g_missionStatus) / 2))) ||
+            if (!gameOptionsEnabled(GAME_OPTION_NO_DAMAGE) &&
+                (((((g_planeTable.planes[g_closestThreatIndex].flags & 0x200) ? 0x100 : 0x80) < ((int16)(-g_climbRate * g_missionStatus) / 2))) ||
                 ((gameData->unk4 != 0 &&
                   (((g_playerPlaneFlags & 1) != 0) ||
-                   (((int16)abs(g_ourRoll)) > (int16)((0x30 / (g_missionStatus + 1)) << 8)))))) {
+                   (((int16)abs(g_ourRoll)) > (int16)((0x30 / (g_missionStatus + 1)) << 8))))))) {
                 makeSound(0, 2);
                 waitFrameSync(60);
                 finalizeMission(5);

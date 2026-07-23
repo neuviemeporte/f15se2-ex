@@ -40,6 +40,9 @@ static void (*g_quitHandler)(void) = NULL;
  * stick keeps working as before; a key press flips it to the keyboard and stick
  * activity flips it back (see input_preferGamepad / noteGamepadActivity). */
 static bool g_lastWasGamepad = true;
+static bool g_menuClickPending = false;
+static int g_menuClickX = 0;
+static int g_menuClickY = 0;
 
 void input_setMode(InputMode mode) {
     /* Leaving text input on during flight lets a desktop IME intercept editing
@@ -71,8 +74,28 @@ static void ringPush(uint16 word) {
 
 void input_ringReset(void) {
     ringHead = ringTail = 0;
+    g_menuClickPending = false;
     g_joyRawX = 0x80;
     g_joyRawY = 0x80;
+}
+
+/* Consume one menu click after its synthetic key wakes a legacy menu loop. */
+bool input_takeMenuClick(int *x, int *y) {
+    if (!g_menuClickPending) return false;
+    if (x) *x = g_menuClickX;
+    if (y) *y = g_menuClickY;
+    g_menuClickPending = false;
+    return true;
+}
+
+/* Convert a click through the active renderer's exact presentation mapping. */
+static bool menuPointFromWindow(const SDL_MouseButtonEvent *button, int *x, int *y) {
+    SDL_Window *window = SDL_GetWindowFromID(button->windowID);
+    int width;
+    int height;
+
+    if (!window || !SDL_GetWindowSize(window, &width, &height)) return false;
+    return gfx_windowToLogical(button->x, button->y, width, height, x, y);
 }
 
 bool input_keyWaiting(void) {
@@ -759,6 +782,15 @@ void input_pumpEvents(void) {
                     unsigned char c = (unsigned char)*p;
                     if (c >= 0x20 && c < 0x80) ringPush(c);
                 }
+            }
+            break;
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            if (g_mode == INPUT_MODE_MENU &&
+                ev.button.button == SDL_BUTTON_LEFT &&
+                menuPointFromWindow(&ev.button, &g_menuClickX, &g_menuClickY)) {
+                g_lastWasGamepad = false;
+                g_menuClickPending = true;
+                ringPush(INPUT_MENU_MOUSE_CLICK);
             }
             break;
         default:

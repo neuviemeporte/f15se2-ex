@@ -4,6 +4,7 @@
 #include "inttype.h"
 
 void pilotSelect(int16 ps_needSplash);
+void displayPilots(void);
 void blinkPilot();
 
 #endif /* F15_SE2_STPILOT */

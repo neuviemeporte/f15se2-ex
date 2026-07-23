@@ -94,6 +94,7 @@ set(F15SE2_SOURCES
 
     # Shared gfx-slot / timer / misc / pic / overlay basics
     ${SRC_DIR}/input.c
+    ${SRC_DIR}/game_options.c
     ${SRC_DIR}/shared/miscimpl.c
     ${SRC_DIR}/shared/ovlimpl.c
     ${SRC_DIR}/shared/picimpl.c
@@ -118,6 +119,7 @@ set(F15SE2_SOURCES
     ${SRC_DIR}/stmain.c
     ${SRC_DIR}/stinit.c
     ${SRC_DIR}/stmissn.c
+    ${SRC_DIR}/stoptions.c
     ${SRC_DIR}/stsprit.c
     ${SRC_DIR}/strand.c
     ${SRC_DIR}/stpilot.c
@@ -463,6 +465,8 @@ add_behavior_test(geometry_behavior_tests LINK_CORE)
 add_behavior_test(file_io_behavior_tests LINK_CORE)
 add_behavior_test(gameplay_behavior_tests LINK_CORE)
 add_behavior_test(input_behavior_tests LINK_CORE)
+add_behavior_test(game_options_behavior_tests LINK_CORE)
+add_behavior_test(stoptions_behavior_tests LINK_CORE)
 add_behavior_test(gfx_render_behavior_tests LINK_CORE)
 add_behavior_test(view_behavior_tests LINK_CORE)
 add_behavior_test(egsys_internal_behavior_tests LINK_CORE)

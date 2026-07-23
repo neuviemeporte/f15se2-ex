@@ -5,6 +5,7 @@
 
 void clearKeybuf(void);
 void waitMdaCgaStatus(int16 iter);
+void drawLine(const int16 *pageNum, int x1, int y1, int x2, int y2, int color);
 void showPic640(const char *filename);
 void missionSelect(void);
 int16 askRepeatMission(void);
