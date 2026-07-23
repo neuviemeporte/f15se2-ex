@@ -170,6 +170,7 @@ set(EGAME_SOURCES
 
     # audio: ported ASOUND AdLib driver on SDL3
     ${SRC_DIR}/asound/asound_model.c
+    ${SRC_DIR}/asound/asound_music_replacement.c
     ${SRC_DIR}/asound/asound_replacements.c
     ${SRC_DIR}/asound/asopl.c
     ${SRC_DIR}/asound/asound_sdl.c
@@ -480,6 +481,7 @@ else()
         "Skipping sound full validation: set F15SE2_ORIGINAL_ASSETS and "
         "F15SE2_CONVERTED_ASSETS to existing directories")
 endif()
+add_behavior_test(asound_music_replacement_behavior_tests LINK_CORE)
 add_behavior_test(gameplay_behavior_tests LINK_CORE)
 add_behavior_test(input_behavior_tests LINK_CORE)
 add_behavior_test(gfx_render_behavior_tests LINK_CORE)

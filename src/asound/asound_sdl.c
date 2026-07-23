@@ -15,6 +15,7 @@
 #include <SDL3/SDL.h>
 
 #include "asound_model.h"
+#include "asound_music_replacement.h"
 #include "asound_replacements.h"
 #include "asopl.h"
 /* opl3.h has no extern "C" guard of its own; this TU compiles as C++ but opl3.c
@@ -273,7 +274,9 @@ int FAR CDECL audio_playIntro(void) {
     if (!g_ready) return 0;
 
     SDL_LockMutex(g_lock);
-    sound_driver_play_intro();
+    if (!asound_start_replacement_music(sound_driver_state(), 0)) {
+        sound_driver_play_intro();
+    }
     SDL_UnlockMutex(g_lock);
 
     input_setMode(INPUT_MODE_MENU);
@@ -285,7 +288,9 @@ int FAR CDECL audio_playIntro(void) {
 
     /* release tail (adlib_start_intro_release), then let it decay out */
     SDL_LockMutex(g_lock);
-    asound_driver_start_intro_rel(sound_driver_state());
+    if (!asound_start_replacement_music(sound_driver_state(), 1)) {
+        asound_driver_start_intro_rel(sound_driver_state());
+    }
     SDL_UnlockMutex(g_lock);
     deadline = SDL_GetTicksNS() + 2 * SDL_NS_PER_SECOND;
     while (asnd_introVoicesActive() && SDL_GetTicksNS() < deadline) {
