@@ -1,6 +1,8 @@
 #ifndef R3D_GL_H
 #define R3D_GL_H
 
+#include <stddef.h>
+
 /*
  * OpenGL 1.x backend support hooks consumed by the graphics layer (gfx_impl.c).
  *
@@ -15,6 +17,25 @@
 struct SDL_Window;
 struct SDL_Surface;
 typedef struct R2DImage R2DImage;
+
+#ifdef DEBUG
+typedef struct R3DLegacyShapeStats {
+    int form;
+    int renderable;
+    int triangles;
+    int minimumLines;
+    int maximumLines;
+    int points;
+    int faceColors[256];
+    int minimumLineColors[256];
+    int maximumLineColors[256];
+    int pointColors[256];
+} R3DLegacyShapeStats;
+
+int r3dgl_testLegacyShapeStats(const unsigned char *legacyModel,
+                               size_t legacyModelSize,
+                               R3DLegacyShapeStats *stats);
+#endif
 
 /* Whether to bring a GL window/context up (GL is the auto preference, or forced
  * via F15_RENDER=gl). Checked by gfx_impl.c before window creation so it can

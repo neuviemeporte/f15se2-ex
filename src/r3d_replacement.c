@@ -63,7 +63,17 @@ static fs::path replacementRoot(void) {
 static fs::path shapeDirectory(const char *container_name) {
     fs::path root = replacementRoot();
     if (root.empty() || !container_name || !container_name[0]) return {};
-    const std::string stem = fs::path(container_name).stem().string();
+    std::string stem = fs::path(container_name).stem().string();
+    const std::string normalized = lower(stem);
+
+    /* The original runtime uses short theater filenames, while the converter
+     * gives their replacement directories descriptive campaign names. */
+    if (normalized == "lb") {
+        stem = "LIBYA";
+    } else if (normalized == "pg") {
+        stem = "GULF";
+    }
+
     fs::path directory = findChildCaseInsensitive(root, stem);
     if (!directory.empty() && fs::is_directory(directory)) return directory;
     return {};

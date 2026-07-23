@@ -139,6 +139,79 @@ static void fillPools(MeshVtxPools *pools) {
     pools->nZ = (int)size3d3_6;
 }
 
+#ifdef DEBUG
+int r3dgl_testLegacyShapeStats(const unsigned char *legacyModel,
+                               size_t legacyModelSize,
+                               R3DLegacyShapeStats *stats) {
+    MeshVtxPools pools;
+    Mesh decoded;
+    MeshLod *lod;
+
+    if (!legacyModel || !stats || legacyModelSize == 0 ||
+        legacyModelSize > WORLD3D_DATA_SIZE) {
+        return 0;
+    }
+    memset(stats, 0, sizeof(*stats));
+    memset(g_world3dData, 0, WORLD3D_DATA_SIZE);
+    memcpy(g_world3dData, legacyModel, legacyModelSize);
+    fillPools(&pools);
+    if (r3dmesh_decode((const uint8 *)g_world3dData,
+                       (const uint8 *)g_world3dData + legacyModelSize,
+                       &pools, colorLut, &decoded) < 0) {
+        return 0;
+    }
+    lod = &decoded.lods[0];
+    stats->form = lod->form;
+    if (lod->form == MESH_FORM_POINT) {
+        stats->renderable = 1;
+        stats->points = 1;
+        stats->pointColors[lod->pointColor] = 1;
+        return 1;
+    }
+    if (lod->form == MESH_FORM_EDGERUN) {
+        stats->renderable = lod->nRunRefs > 0;
+        stats->points = lod->nRunRefs;
+        stats->pointColors[lod->pointColor] = lod->nRunRefs;
+        return 1;
+    }
+    if (lod->form != MESH_FORM_MODEL) return 1;
+
+    for (int i = 0; i < lod->nFaces; ++i) {
+        MeshFace *face = &lod->faces[i];
+        if (face->nEdges < 3 || face->colorByte == 0xff) continue;
+        const int triangleCount = (int)face->nEdges - 2;
+        stats->renderable = 1;
+        stats->triangles += triangleCount;
+        stats->faceColors[face->colorByte] += triangleCount;
+        for (int edgeIndex = 0; edgeIndex < face->nEdges; ++edgeIndex) {
+            MeshEdge *edge = &lod->edges[face->edge[edgeIndex]];
+            if (edge->va == edge->vb) {
+                ++stats->points;
+                ++stats->pointColors[face->colorByte];
+            } else {
+                ++stats->maximumLines;
+                ++stats->maximumLineColors[face->colorByte];
+            }
+        }
+    }
+    for (int i = 0; i < lod->nLines; ++i) {
+        MeshLine *line = &lod->lines[i];
+        MeshEdge *edge = &lod->edges[line->edge];
+        stats->renderable = 1;
+        if (edge->va == edge->vb) {
+            ++stats->points;
+            ++stats->pointColors[line->colorByte];
+        } else {
+            ++stats->minimumLines;
+            ++stats->maximumLines;
+            ++stats->minimumLineColors[line->colorByte];
+            ++stats->maximumLineColors[line->colorByte];
+        }
+    }
+    return 1;
+}
+#endif
+
 /* ---- scene state -------------------------------------------------------- */
 
 static int s_sceneRendered;  /* a GL 3D view was drawn this frame (live under the present) */
