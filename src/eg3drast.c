@@ -2448,7 +2448,7 @@ static void processSceneObject(void) {
 
     if (g_activeReplacementMesh) {
         drawReplacementMesh(g_activeReplacementMesh);
-        return{};
+        return;
     }
 
     op = (*p) & MODEL_OPCODE_MASK;
@@ -2569,14 +2569,14 @@ static void projectSceneObjectImpl(char far *model, R3DReplacementMesh *replacem
 
     if (transformAndCullObject(g_objRelY, g_objTransform[0], g_objRelX)) {
         g_pendingReplacementMesh = 0;
-        return{};
+        return;
     }
 
     skipDisplayListByLod(&p);
     opcode = *p;
     if (*(unsigned *)&p == 1 && g_detailLevel != 2) {
         g_pendingReplacementMesh = 0;
-        return{};
+        return;
     }
     cl = opcode;
     if ((opcode & MODEL_STORE_TRANSFORM_MASK) == MODEL_STORE_TRANSFORM_MASK) {
