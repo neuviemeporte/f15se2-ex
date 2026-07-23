@@ -1068,6 +1068,32 @@ const AsoundU8 asound_release_voice5[] = {
     0x00u,
 };
 
+/* Return the active intro replacement duration, falling back to the legacy model length. */
+size_t asound_intro_voice_length(int voice) {
+    switch (voice) {
+    case 0: return sizeof(asound_intro_voice0);
+    case 1: return sizeof(asound_intro_voice1);
+    case 2: return sizeof(asound_intro_voice2);
+    case 3: return sizeof(asound_intro_voice3);
+    case 4: return sizeof(asound_intro_voice4);
+    case 5: return sizeof(asound_intro_voice5);
+    default: return 0;
+    }
+}
+
+/* Return the active release replacement duration, falling back to the legacy model length. */
+size_t asound_release_voice_length(int voice) {
+    switch (voice) {
+    case 0: return sizeof(asound_release_voice0);
+    case 1: return sizeof(asound_release_voice1);
+    case 2: return sizeof(asound_release_voice2);
+    case 3: return sizeof(asound_release_voice3);
+    case 4: return sizeof(asound_release_voice4);
+    case 5: return sizeof(asound_release_voice5);
+    default: return 0;
+    }
+}
+
 void asound_log_init(AsoundEventLog *log, AsoundEvent *events, size_t capacity) {
     log->events = events;
     log->count = 0;
