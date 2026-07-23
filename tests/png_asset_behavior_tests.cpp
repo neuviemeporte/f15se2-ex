@@ -68,10 +68,10 @@ int main() {
             "replacement scales the last indexed row");
 
     SDL_Palette *activePalette = gfx_getPalette();
-    require(activePalette && activePalette->colors[1].r == 255
+    require(activePalette && activePalette->colors[1].r == 0
             && activePalette->colors[1].g == 0
-            && activePalette->colors[1].b == 0,
-            "replacement installs the PNG embedded palette");
+            && activePalette->colors[1].b == 170,
+            "indexed PNG preserves the caller-selected game palette");
 
     SDL_Surface *truecolor = SDL_CreateSurface(1, 1, SDL_PIXELFORMAT_RGBA32);
     require(truecolor, "true-color PNG fixture allocation");
@@ -83,9 +83,22 @@ int main() {
     require(SDL_SavePNG(truecolor, (root / "TRUE.PNG").string().c_str()),
             "true-color PNG fixture save");
     SDL_DestroySurface(truecolor);
+    int expectedRedIndex = 0;
+    unsigned int bestRedDistance = ~0U;
+    for (int i = 0; i < activePalette->ncolors; ++i) {
+        const int dr = 255 - activePalette->colors[i].r;
+        const int dg = activePalette->colors[i].g;
+        const int db = activePalette->colors[i].b;
+        const unsigned int distance =
+            (unsigned int)(dr * dr + dg * dg + db * db);
+        if (distance < bestRedDistance) {
+            bestRedDistance = distance;
+            expectedRedIndex = i;
+        }
+    }
     require(loadReplacementPng("True.Pic", destination),
             "true-color PNG replacement converts to the active game palette");
-    require(((const uint8 *)destination->pixels)[0] == 1,
+    require(((const uint8 *)destination->pixels)[0] == expectedRedIndex,
             "true-color conversion chooses the nearest palette index");
 
     SDL_Surface *wrongDestination =

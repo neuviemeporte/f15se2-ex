@@ -26,21 +26,6 @@ static bool replacementName(const char *legacyFilename, std::string *name) {
     return true;
 }
 
-static uint8 rgb8ToDac6(uint8 value) {
-    return (uint8)(((unsigned int)value * 63U + 127U) / 255U);
-}
-
-static void installEmbeddedPalette(SDL_Palette *palette) {
-    uint8 dac[256 * 3] = {};
-    const int count = palette->ncolors < 256 ? palette->ncolors : 256;
-    for (int i = 0; i < count; ++i) {
-        dac[i * 3] = rgb8ToDac6(palette->colors[i].r);
-        dac[i * 3 + 1] = rgb8ToDac6(palette->colors[i].g);
-        dac[i * 3 + 2] = rgb8ToDac6(palette->colors[i].b);
-    }
-    gfx_setDacRange(0, (uint16)count, dac);
-}
-
 static bool copyScaledIndices(SDL_Surface *source, SDL_Surface *destination) {
     if (source->w <= 0 || source->h <= 0
         || destination->w <= 0 || destination->h <= 0
@@ -157,7 +142,11 @@ int loadReplacementPng(const char *legacyFilename, SDL_Surface *destination) {
             return 0;
         }
         loaded = copyScaledIndices(source, destination);
-        if (loaded) installEmbeddedPalette(palette);
+        /*
+         * PIC/SPR data contains palette indices only. The original callers
+         * select the active DAC separately, so the PNG's embedded palette is
+         * editor metadata and must not recolor the running game.
+         */
     } else {
         /* The legacy page remains indexed. Quantize true-color replacements
          * against its current DAC palette; a future native-color renderer can
