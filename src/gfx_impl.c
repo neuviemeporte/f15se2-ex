@@ -676,20 +676,22 @@ static void drawStringCore(int16 *params, const char *string,
             uint8 *glyph = bitmaps + (ch - 0x20) * (uint16)rowSize;
             for (row = 0; row < height; row++) {
                 int py = y + row;
-                uint8 bits;
+                const uint8 bits = glyph[row];
                 uint8 *dstRow;
                 if (py < clipT || py > clipB) continue; /* row outside window */
                 if (py < 0 || py >= surfH) continue;    /* off the surface */
-                bits = glyph[row];
                 dstRow = base + (size_t)py * pitch;
                 for (col = 0; col < 8; col++) {
                     int px = x + col;
-                    if ((bits & 0x80) && px >= clipL && px <= clipR &&
+                    /* Glyph rows are packed MSB first. Test each source bit
+                     * directly so integer promotion cannot affect later
+                     * columns differently between GCC and MSVC. */
+                    if ((bits & (uint8)(0x80u >> col)) != 0 &&
+                        px >= clipL && px <= clipR &&
                         px >= 0 && px < surfW) {
                         if (submit) r2d_submitPoint(px, py, color);
                         else dstRow[px] = (uint8)color;
                     }
-                    bits <<= 1;
                 }
             }
         }
