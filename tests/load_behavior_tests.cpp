@@ -3,6 +3,7 @@
 #include "eg3dload.h"
 #include "egdata.h"
 #include "egtypes.h"
+#include "strand.h"
 
 #include <cstdint>
 #include <cstdlib>
@@ -19,6 +20,14 @@ extern void load15Flt3d3(void);
 char aRegn_xxx[] = "regn.xxx";
 struct Game *gameData = nullptr;
 SDL_IOStream *fileHandle = nullptr;
+
+// egmath.c contains RNG-using functions unrelated to these loader tests. ELF
+// dead-section linking discards them, while MSVC retains their references from
+// the object file, so provide deterministic link-only stubs for this isolated
+// legacy target rather than pulling the complete runtime RNG/blackbox stack in.
+void gameSrand(uint32) {}
+void gameSrandFromClock(int16 *) {}
+int gameRand15(void) { return 0; }
 
 namespace {
 

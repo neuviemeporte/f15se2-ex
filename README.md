@@ -154,6 +154,50 @@ Building with MSVC should also work.
 
 After building, either drop the resulting binary into a directory with the game assets, use the `--game` command line option or the `F15SE2_DIR` environmental variable to set the assets' location. The game checks MD5 checksums on all asset files to make sure they are not corrupted, and will not start unless all files from the original game match up.
 
+## Deterministic blackbox debugging
+
+The blackbox mode records deterministic 60 Hz ticks, phase changes, input events,
+virtual-stick axes, RNG values, and pre-overlay indexed-page checksums into a text log.
+Use it when a gameplay bug needs to be reproduced or inspected later.
+
+Full guide: [docs/blackbox_debugging.md](docs/blackbox_debugging.md)
+
+Debug builds record to `_blackbox.rec` in the current working directory by
+default. Explicit debug, record, or replay options override that behavior.
+
+Record a run:
+
+```bash
+./build/f15se2-ex --game /path/to/f15 --blackbox-record /tmp/f15.bb --blackbox-seed 7
+```
+
+Replay it:
+
+```bash
+./build/f15se2-ex --game /path/to/f15 --blackbox-replay /tmp/f15.bb
+```
+
+Replay and freeze at a displayed time for inspection:
+
+```bash
+./build/f15se2-ex --game /path/to/f15 --blackbox-replay /tmp/f15.bb --blackbox-pause-tick 12345
+```
+
+Inspect a timeframe around the same displayed time without running the game:
+
+```bash
+python3 tools/blackbox_inspect.py /tmp/f15.bb --around-tick 12345 --before 180 --after 180
+```
+
+The top-left overlay shows one compact decimal number: `seconds * 100 + tick`,
+where the final two digits are `00..59`. Pass that number directly to the
+game and inspector, for example `--around-tick 20545`. Blackbox log event lines
+use internal raw ticks; the full guide explains the conversion and dump format.
+
+During replay, RNG and frame checksum mismatches are logged as blackbox
+divergence errors. The first divergence tick is the best starting point for
+`--blackbox-pause-tick`.
+
 ## Contributor policy
 
 Contributions to this project are very welcome. However, contributors are expected to follow certain rules to keep the project manageable:

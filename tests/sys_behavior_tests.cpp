@@ -2,6 +2,8 @@
 #include "egdata.h"
 #include "egtypes.h"
 #include "inttype.h"
+#include "shared/blackbox.h"
+#include "shared/blackbox_diag.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -21,6 +23,10 @@ void renderFrame(void) {}
 void renderHudFrame(int) {}
 void stepFlightModel(void) {}
 void updateFrame(void) {}
+int blackbox_enabled(void) { return 0; }
+int blackbox_usesVirtualTime(void) { return 0; }
+void blackbox_diagCaptureSimStep(void) {}
+void blackbox_diagBeginRenderFrame(void) {}
 
 namespace {
 

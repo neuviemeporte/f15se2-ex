@@ -15,6 +15,7 @@
 #include "slot.h"
 #include "const.h"
 #include "r3d.h"
+#include "strand.h"
 
 #include <dos.h>
 #include <memory.h>
@@ -489,16 +490,18 @@ int16 signOf(int16 value) { /* Original: sgn(x). Return -1, 0, or 1. */
 
 void seedRng(void) {
     if (g_inputDisabled == 0) {
-        g_rngSeed = getTimeOfDay();
+        gameSrandFromClock(&g_rngSeed);
+    } else {
+        gameSrand((uint32)g_rngSeed);
     }
-    srand(g_rngSeed);
 }
 
 // ==== seg000:0xd200 randomRange ====
 int randomRange(int maxVal) { /* Original: rnd(Max). Deterministic ((long)Max * rand()) >> 15 range scaling. */
     enum { RAND_SCALE_SHIFT = 15 };
     /* DOS rand() is 15-bit (RAND_MAX 0x7fff); mask to match so the >>15 scaling yields [0, maxVal). */
-    return (int)(((long)(rand() & 0x7fff) * (long)maxVal) >> RAND_SCALE_SHIFT);
+    int randValue = gameRand15();
+    return (int)(((long)randValue * (long)maxVal) >> RAND_SCALE_SHIFT);
 }
 
 /* One axis of a gun's dispersion, in 16-bit angle units (0x10000 = full turn,

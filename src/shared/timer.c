@@ -14,6 +14,7 @@
  */
 
 #include "inttype.h"
+#include "blackbox.h"
 #include <dos.h>
 #include <SDL3/SDL.h>
 
@@ -37,6 +38,17 @@ static void(FAR *gameTickHook)(void) = 0;
 static Uint64 nextTickNs; /* clock time the next pending tick is due */
 static bool timerRunning = false;
 
+static void advanceTimerTick(int trackBlackbox) {
+    timerCounter++;
+    timerCounter2++;
+    timerCounter3++;
+    timerCounter4++;
+    if (trackBlackbox) blackbox_noteTick();
+    if (gameTickHook != 0)
+        gameTickHook();
+    if (trackBlackbox) blackbox_afterTick();
+}
+
 void setTimerTickHook(void(far *fn)(void)) {
     gameTickHook = fn;
 }
@@ -45,25 +57,42 @@ void setTimerTickHook(void(far *fn)(void)) {
  * per 1/60 s tick. Safe to call as often as a spin loop likes. */
 void timerPump(void) {
     Uint64 now;
+    uint32 pumpStartTick;
+    uint32 pumpedTicks = 0;
     if (!timerRunning) return;
+    if (blackbox_replaying()) {
+        uint32 replayTicks = blackbox_replayTimerPump();
+        while (replayTicks-- != 0 && !blackbox_pauseReached())
+            advanceTimerTick(1);
+        return;
+    }
+    if (blackbox_usesVirtualTime()) {
+        if (blackbox_pauseReached()) return;
+        advanceTimerTick(1);
+        return;
+    }
+    pumpStartTick = blackbox_tick();
     now = SDL_GetTicksNS();
     if (now > nextTickNs + MAX_CATCHUP_NS)
         nextTickNs = now; /* fell too far behind: resync, don't burst */
     while (now >= nextTickNs) {
+        if (blackbox_recording() && blackbox_pauseReached()) break;
         nextTickNs += TICK_NS;
-        timerCounter++;
-        timerCounter2++;
-        timerCounter3++;
-        timerCounter4++;
-        if (gameTickHook != 0)
-            gameTickHook();
+        advanceTimerTick(blackbox_recording());
+        pumpedTicks++;
     }
+    if (blackbox_recording())
+        blackbox_recordTimerPump(pumpStartTick, pumpedTicks);
 }
 
 /* Monotonic clock in nanoseconds, for the render loop's fixed-timestep sim
  * pacing and interpolation alpha (same clock timerPump advances the 60 Hz ticks
  * from, so sim cadence and tick counters stay coherent). */
 uint64 timerNowNs(void) {
+    /* Recording is paced by native ticks, but simulation observes the same
+     * tick-derived clock as replay. Host scheduling jitter must not change how
+     * many fixed simulation steps a recorded frame performs. */
+    if (blackbox_enabled()) return blackbox_timerNowNs();
     return SDL_GetTicksNS();
 }
 
@@ -71,7 +100,7 @@ uint64 timerNowNs(void) {
  * clock and yield the CPU so the wait doesn't peg a core. */
 void timerYield(void) {
     timerPump();
-    SDL_DelayNS(SDL_NS_PER_MS);
+    if (!blackbox_fastForwarding()) SDL_DelayNS(SDL_NS_PER_MS);
 }
 
 void setTimerIrqHandler(void) {

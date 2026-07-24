@@ -30,6 +30,8 @@ extern "C" {
 #include "common.h" /* openFile */
 #include "input.h"  /* input_keyWaiting / input_setMode */
 #include "log.h"
+#include "shared/blackbox.h"
+#include "shared/blackbox_wait.h"
 
 #define ASND_OUT_RATE 44100 /* SDL output sample rate (Hz) */
 #define ASND_TICK_HZ 60     /* sequencer tick = game tick rate */
@@ -231,7 +233,11 @@ int FAR CDECL audio_shutdown(void) {
 }
 
 int FAR CDECL audio_playSound(int soundId) {
-    if (!g_ready) return 0;
+    /* Fast-forward advances many simulated seconds per wall-clock second. Do
+     * not serialize every historical sound update against the real-time audio
+     * callback: audio is not simulation state, and fresh updates resume at the
+     * target tick. This also prevents a backlog of obsolete sounds. */
+    if (!g_ready || blackbox_fastForwarding()) return 0;
     SDL_LockMutex(g_lock);
     int r = sound_driver_dispatch_sound((AsoundU16)soundId);
     SDL_UnlockMutex(g_lock);
@@ -264,20 +270,27 @@ int FAR CDECL audio_playIntro(void) {
     SDL_UnlockMutex(g_lock);
 
     input_setMode(INPUT_MODE_MENU);
-    Uint64 deadline = SDL_GetTicksNS() + 15 * SDL_NS_PER_SECOND;
-    while (asnd_introVoicesActive() && !input_keyWaiting() &&
-           SDL_GetTicksNS() < deadline) {
-        SDL_DelayNS(2 * SDL_NS_PER_MS); /* input_keyWaiting() pumps the clock */
-    }
+    if (blackbox_virtualWait(15u * 60u, 1, input_keyWaiting)) {
+        SDL_LockMutex(g_lock);
+        asound_driver_start_intro_rel(sound_driver_state());
+        SDL_UnlockMutex(g_lock);
+        blackbox_virtualWait(2u * 60u, 0, input_keyWaiting);
+    } else {
+        Uint64 deadline = SDL_GetTicksNS() + 15 * SDL_NS_PER_SECOND;
+        while (asnd_introVoicesActive() && !input_keyWaiting() &&
+               SDL_GetTicksNS() < deadline) {
+            SDL_DelayNS(2 * SDL_NS_PER_MS); /* input_keyWaiting() pumps the clock */
+        }
 
-    /* release tail (adlib_start_intro_release), then let it decay out */
-    SDL_LockMutex(g_lock);
-    asound_driver_start_intro_rel(sound_driver_state());
-    SDL_UnlockMutex(g_lock);
-    deadline = SDL_GetTicksNS() + 2 * SDL_NS_PER_SECOND;
-    while (asnd_introVoicesActive() && SDL_GetTicksNS() < deadline) {
-        SDL_DelayNS(2 * SDL_NS_PER_MS);
-        input_keyWaiting();
+        /* release tail (adlib_start_intro_release), then let it decay out */
+        SDL_LockMutex(g_lock);
+        asound_driver_start_intro_rel(sound_driver_state());
+        SDL_UnlockMutex(g_lock);
+        deadline = SDL_GetTicksNS() + 2 * SDL_NS_PER_SECOND;
+        while (asnd_introVoicesActive() && SDL_GetTicksNS() < deadline) {
+            SDL_DelayNS(2 * SDL_NS_PER_MS);
+            input_keyWaiting();
+        }
     }
 
     /* silence the chip (adlib_reset_state) */
@@ -292,7 +305,7 @@ int FAR CDECL audio_playIntro(void) {
 }
 
 int FAR CDECL audio_engineDroneOn(void) {
-    if (!g_ready) return 0;
+    if (!g_ready || blackbox_fastForwarding()) return 0;
     SDL_LockMutex(g_lock);
     sound_driver_enable_drone();
     asopl_set_drone_enable(&g_opl, 1);
@@ -301,7 +314,7 @@ int FAR CDECL audio_engineDroneOn(void) {
 }
 
 int FAR CDECL audio_engineDroneOff(void) {
-    if (!g_ready) return 0;
+    if (!g_ready || blackbox_fastForwarding()) return 0;
     SDL_LockMutex(g_lock);
     sound_driver_disable_drone();
     asopl_set_drone_enable(&g_opl, 0);
@@ -311,7 +324,7 @@ int FAR CDECL audio_engineDroneOff(void) {
 
 int FAR CDECL audio_setEnginePitch(int knots, int thrust) {
     (void)thrust; /* the original ASOUND set_drone_pitch slot used only the first arg */
-    if (!g_ready) return 0;
+    if (!g_ready || blackbox_fastForwarding()) return 0;
     AsoundU16 pitch = (knots < 0) ? 0 : (knots > 0x02bc ? 0x02bc : (AsoundU16)knots);
     SDL_LockMutex(g_lock);
     sound_driver_set_drone_pitch(pitch);
@@ -321,7 +334,7 @@ int FAR CDECL audio_setEnginePitch(int knots, int thrust) {
 }
 
 int FAR CDECL audio_playSample(int sampleIdx) {
-    if (!g_ready) return 0;
+    if (!g_ready || blackbox_fastForwarding()) return 0;
     SDL_LockMutex(g_lock);
     int r = sound_driver_play_sample((AsoundU16)sampleIdx);
     SDL_UnlockMutex(g_lock);

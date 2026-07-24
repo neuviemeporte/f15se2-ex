@@ -7,6 +7,7 @@
 #include "comm.h"
 #include "const.h"
 #include "input.h"
+#include "shared/blackbox.h"
 #include <dos.h>
 #include <SDL3/SDL.h>
 
@@ -28,7 +29,7 @@ int far cdecl misc_checkKeyBuf(void) {
      * waits advance the clock (via the pump) without pegging a core. egame's
      * per-frame loop uses INPUT_MODE_FLIGHT, so it is unaffected. */
     bool waiting = input_keyWaiting();
-    SDL_DelayNS(SDL_NS_PER_MS);
+    if (!blackbox_fastForwarding()) SDL_DelayNS(SDL_NS_PER_MS);
     return waiting ? 0 : 0xFFFF;
 }
 
