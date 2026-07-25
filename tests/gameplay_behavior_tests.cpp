@@ -120,6 +120,13 @@ int main() {
             "tracking camera preserves the fine altitude/range ratio");
     require(cameraPitch > -0x4000 && cameraPitch < 0x4000,
             "tracking camera pitch does not trigger a false 180-degree flip");
+    require(computeBearing32(0x20000, 0x10000) ==
+                computeBearing(0x2000, 0x1000),
+            "computeBearing32 equally scales vectors that exceed int16");
+    require(rangeApprox32(-0x20000, -0x10000) == 0x28000,
+            "rangeApprox32 preserves full-width negative deltas");
+    require(rangeApprox32(-0x10000, -0x20000) == 0x28000,
+            "rangeApprox32 covers either component as the major axis");
 
     // --- Threat range/bearing/score (egthreat) ------------------------------
     // Score is altitude-weighted; range is rangeApprox in km units (>>6);
