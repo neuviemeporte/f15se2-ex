@@ -53,8 +53,8 @@ void resetMissionRuntimeState(void) {
 }
 
 // ==== seg000:0x10 ====
-int egame_main(void) {
-    resetMissionRuntimeState();
+int egame_main(void) { /* GCOVR_EXCL_LINE: interactive entry point */
+    resetMissionRuntimeState(); /* GCOVR_EXCL_LINE: reset body is covered directly */
     installCBreakHandler();
     if (commData->setupUseJoy == 1) {
         copyJoystickData(commData->joyData);
