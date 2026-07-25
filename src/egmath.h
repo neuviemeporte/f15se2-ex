@@ -13,6 +13,8 @@ int shapeDataOffset(int shapeId);
 int16 clampRange(int16 value, int16 minVal, int16 maxVal);
 int egClampValue(int value, int minVal, int maxVal);
 int16 computeBearing(int16 deltaX, int16 deltaY);
+int16 computeBearing32(int32 deltaX, int32 deltaY);
+int32 rangeApprox32(int32 deltaX, int32 deltaY);
 int16 cosMul(int16 angle, int16 value);
 long sinMulQ8(int angle, int value);
 long cosMulQ8(int angle, int value);

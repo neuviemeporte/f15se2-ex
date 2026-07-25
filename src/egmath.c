@@ -184,7 +184,7 @@ static int roundToInt(float v) {
 
 /* Fast 2D distance approximation (rangeApprox) at full 32-bit width: no int16
  * truncation and no 0x7FFF cap, so it can feed a bearing off FINE world deltas. */
-static int32 rangeApprox32(int32 dx, int32 dy) {
+int32 rangeApprox32(int32 dx, int32 dy) {
     if (dx < 0) dx = -dx;
     if (dy < 0) dy = -dy;
     return dx > dy ? dx + (dy >> 1) : dy + (dx >> 1);
@@ -196,7 +196,7 @@ static int32 rangeApprox32(int32 dx, int32 dy) {
  * units the original fed it — those coarse deltas requantize every render frame
  * under the sim/render decouple, so the tracked model shivered; the fine deltas
  * vary smoothly, so it steps at most one pixel at a time. */
-static int bearingFromFine(int32 deltaX, int32 deltaY) {
+int16 computeBearing32(int32 deltaX, int32 deltaY) {
     int32 m = (deltaX < 0 ? -deltaX : deltaX) | (deltaY < 0 ? -deltaY : deltaY);
     int sh = 0;
     while ((m >> sh) > 0x3fff) sh++;
@@ -245,8 +245,8 @@ void drawTargetView(int shapeId, int32 worldX, int32 worldY, int altitude, int o
         relZ = (int)(dzFine >> 5);
         /* Bearing/pitch off the fine deltas so the tracked model glides; the range
          * (model size / tracking scale) keeps the original coarse magnitude. */
-        bearing = bearingFromFine(dxFine, -dyFine);
-        pitch = bearingFromFine(dzFine, rangeApprox32(dxFine, dyFine));
+        bearing = computeBearing32(dxFine, -dyFine);
+        pitch = computeBearing32(dzFine, rangeApprox32(dxFine, dyFine));
         range = rangeApprox(relZ, rangeApprox(relX, relY));
 
         if (mode == 1) {

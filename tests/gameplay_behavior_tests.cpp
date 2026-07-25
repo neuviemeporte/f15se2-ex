@@ -5,6 +5,7 @@
 // state (threat scoring, SAM acquisition, target/mission bookkeeping, replay
 // log, director scheduling, wreck physics, timing/LOD math).
 #include "egdata.h"
+#include "egflight.h"
 #include "egkeys.h"
 #include "egmath.h"
 #include "inttype.h"
@@ -103,6 +104,22 @@ void resetGameplayState() {
 
 int main() {
     test_headless_init();
+
+    // --- Tracking-camera fine-coordinate conversion ------------------------
+    // These values are from a blackbox frame that formerly flipped vertically:
+    // target Y is world-space, while g_ViewY is renderer-inverted. Mixing them
+    // also overflowed computeBearing's int16 input and produced a near-180 pitch.
+    int16 cameraHeading = 0;
+    int16 cameraPitch = 0;
+    computeTrackingCameraAngles(612536, 311380, 2111,
+                                614019, 737929, 1513,
+                                &cameraHeading, &cameraPitch);
+    require(cameraHeading == computeBearing(-1483, -733),
+            "tracking camera converts inverted view Y before computing heading");
+    require(cameraPitch == -computeBearing(598, 1849),
+            "tracking camera preserves the fine altitude/range ratio");
+    require(cameraPitch > -0x4000 && cameraPitch < 0x4000,
+            "tracking camera pitch does not trigger a false 180-degree flip");
 
     // --- Threat range/bearing/score (egthreat) ------------------------------
     // Score is altitude-weighted; range is rangeApprox in km units (>>6);
