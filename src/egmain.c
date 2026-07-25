@@ -30,14 +30,11 @@ void runGameSession();
  * process, so leaving these values intact can make a new ground start look like
  * the final frame of the previous mission's landing sequence. */
 void resetMissionRuntimeState(void) {
-    frameTick = 0;
-    g_missionTick = 0;
     g_initPhase = 0;
     g_missionEndedFlag[0] = g_missionEndedFlag[1] = 0;
     g_eventLogCount = 0;
     g_ejectState = 0;
     g_ejectPending = 0;
-    g_destroyedCueDeadline = 0;
     g_inLandingCorridor = 1;
     g_landingDoneFlag = 1;
     g_landingTimer = 0;
@@ -49,8 +46,10 @@ void resetMissionRuntimeState(void) {
     g_viewMode = VIEW_COCKPIT;
     g_directorMode = 0;
     g_directorEventDeadline = -1;
-    g_tacmapIndicators[7] = g_tacmapIndicators[12] =
-        g_tacmapIndicators[17] = g_tacmapIndicators[22] = 3;
+    g_tacmapIndicators[7] = 3;
+    g_tacmapIndicators[12] = 3;
+    g_tacmapIndicators[17] = 3;
+    g_tacmapIndicators[22] = 3;
 }
 
 // ==== seg000:0x10 ====

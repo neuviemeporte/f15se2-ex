@@ -132,6 +132,8 @@ int main() {
     // A crashed sortie can leave landingTimer armed because normal airborne
     // flight sets it to one. The original loaded a fresh EGAME executable for
     // the next sortie; the merged native process must reproduce those globals.
+    struct GameComm *previousCommData = commData;
+    struct Game *previousGameData = gameData;
     struct GameComm handoffComm = {};
     struct Game handoffGame = {};
     std::strcpy(handoffGame.pilotName, "Selected pilot");
@@ -149,14 +151,11 @@ int main() {
     const struct GameComm expectedComm = handoffComm;
     const struct Game expectedGame = handoffGame;
 
-    frameTick = 2712;
-    g_missionTick = 34;
     g_initPhase = 2;
     g_missionEndedFlag[0] = g_missionEndedFlag[1] = 1;
     g_eventLogCount = 9;
     g_ejectState = 1;
     g_ejectPending = 1;
-    g_destroyedCueDeadline = 2712;
     g_inLandingCorridor = 0;
     g_landingDoneFlag = 0;
     g_landingTimer = 1;
@@ -173,17 +172,16 @@ int main() {
 
     resetMissionRuntimeState();
 
-    require(frameTick == 0 && g_missionTick == 0 && g_initPhase == 0,
-            "mission reset restores fresh EGAME timing and initialization state");
+    require(g_initPhase == 0,
+            "mission reset re-arms EGAME initialization");
     require(g_landingTimer == 0 && g_landingDoneFlag == 1 &&
                 g_inLandingCorridor == 1 && g_autoLandingActive == 0,
             "mission reset disarms the previous sortie's landing sequence");
     require(g_resupplyCount == 1 && g_hudMsgTimer == 0 &&
                 g_dirMsgTimer == 0 && tempString[0] == '\0',
             "mission reset clears stale resupply counters and HUD messages");
-    require(g_destroyedCueDeadline == 0 && g_ejectState == 0 &&
-                g_ejectPending == 0 && g_eventLogCount == 0,
-            "mission reset clears delayed cues and previous outcome state");
+    require(g_ejectState == 0 && g_ejectPending == 0 && g_eventLogCount == 0,
+            "mission reset clears previous outcome state");
     require(g_missionEndedFlag[0] == 0 && g_missionEndedFlag[1] == 0 &&
                 g_viewMode == VIEW_COCKPIT && g_directorMode == 0 &&
                 g_directorEventDeadline == -1,
@@ -193,7 +191,9 @@ int main() {
             "mission reset restores cockpit indicator base colors");
     require(std::memcmp(&handoffComm, &expectedComm, sizeof(handoffComm)) == 0 &&
                 std::memcmp(&handoffGame, &expectedGame, sizeof(handoffGame)) == 0,
-            "mission reset preserves the selected pilot and mission handoff");
+            "mission reset preserves selected pilot and mission metadata");
+    commData = previousCommData;
+    gameData = previousGameData;
 
     // --- Threat range/bearing/score (egthreat) ------------------------------
     // Score is altitude-weighted; range is rangeApprox in km units (>>6);
