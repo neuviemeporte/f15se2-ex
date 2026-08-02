@@ -2043,9 +2043,8 @@ static GLuint s_pageTex;
 static unsigned s_pageKey;
 static int s_pageTexW, s_pageTexH;
 
-/* Fast cache-key fold for framebuffer rows. This runs at render frequency even
- * when the texture remains cached, so process eight bytes per iteration. memcpy
- * keeps the chunk loads valid on platforms that require alignment. */
+/* Check eight image bytes at a time instead of one. memcpy keeps these reads
+ * safe on systems that cannot read an integer from every memory address. */
 static unsigned pageHashBytes(unsigned k, const uint8 *src, size_t size) {
     while (size >= sizeof(uint64)) {
         uint64 chunk;
@@ -2059,9 +2058,8 @@ static unsigned pageHashBytes(unsigned k, const uint8 *src, size_t size) {
     return k;
 }
 
-/* Fold the page's visible output: pixels, palette, show-through rectangles and
- * dimensions. Hashing the small palette avoids a used-colour bitset update for
- * every indexed pixel. */
+/* Include the image, colors, transparent areas, and size. Checking all 256
+ * colors is cheaper than recording which color every pixel uses. */
 static unsigned pageOutputKey(SDL_Surface *page, SDL_Palette *pal) {
     unsigned k = 2166136261u;
     const uint8 *src = (const uint8 *)page->pixels;
@@ -2130,9 +2128,8 @@ static void composePageBackdrop(SDL_Surface *page, int shakeOffset) {
                 uint32 *out = (uint32 *)(s_rgba + (size_t)y * w * 4);
                 for (x = 0; x < w; x++) out[x] = packedPalette[row[x]];
             }
-            /* The page is opaque except for the rectangular windows where the
-             * GL scene shows through. Clear alpha by rectangle instead of
-             * testing every page pixel against every rectangle. */
+            /* Make only the 3D view rectangles transparent. This is faster than
+             * asking every pixel whether it is inside one of those rectangles. */
             for (i = 0; i < s_nShowRects; i++) {
                 const SDL_Rect *r = &s_showRects[i];
                 int x0 = r->x < 0 ? 0 : r->x;

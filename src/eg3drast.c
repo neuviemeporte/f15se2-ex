@@ -147,6 +147,8 @@ static unsigned udiv32by16(unsigned long num, unsigned den) {
  * projects to a large off-screen coord rather than a clamped ±0x7f00. */
 static unsigned long udiv32by16_full(unsigned long num, unsigned den) {
     if (den == 0) return 0xffffffffUL;
+    /* The old code calculated the same result one bit at a time. Keep the
+     * original 32-bit values, but use the CPU's division instruction. */
     return (unsigned long)((uint32)num / (uint32)den);
 }
 
@@ -191,8 +193,8 @@ static int sdiv32by16(long num, int den) {
  * word. Combined with HI16(p<<1) this reproduces fixedMulQ14's Q15 rounding. */
 #define LOCARRY(v) ((((uint16)(v)) & 0x8000u) ? 1 : 0)
 
-/* Signed 16x16 -> 32 multiply. Native targets can perform this directly and
- * `long` can represent every int16 product exactly. */
+/* Keep the original signed 16-bit inputs, but use the CPU's multiplication
+ * instruction instead of building the result one bit at a time. */
 static long imul16(int a, int b) {
     return (long)(int16)a * (long)(int16)b;
 }
@@ -993,8 +995,8 @@ static void rasterizeEdgeSpan(void) {
         int row = g_lineY1;  /* DI = y1*2 in the asm; here row index */
         int rstep = bp >> 1; /* +1 / -1 row */
         int ax = g_lineX1;
-        /* A horizontal edge cannot change rows. The Bresenham loop would visit
-         * every X only to leave the endpoints as this row's span extents. */
+        /* A horizontal edge touches one row, so its endpoints already give us
+         * the full span. There is no need to visit every point between them. */
         if (dyv == 0) {
             if ((uint16)g_lineX1 < (uint16)minB[row]) minB[row] = g_lineX1;
             if ((uint16)g_lineX2 > (uint16)maxB[row]) maxB[row] = g_lineX2;

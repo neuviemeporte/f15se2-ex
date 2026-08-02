@@ -40,6 +40,8 @@ static size_t gfxSoftwarePresentPixelCapacity;
 static uint32 gfxSoftwarePresentPalette[256];
 static int gfxSoftwarePresentPaletteGen = -1;
 
+/* Convert the game's 256-color image to screen pixels. Doing it here lets us
+ * reuse one texture instead of asking SDL to create a new one every frame. */
 static void gfx_expandIndexedSurface(SDL_Surface *surf, uint32 *dst,
                                      const uint32 *palette) {
     int y;
@@ -441,6 +443,7 @@ static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake) {
             gfxSoftwarePresentPixels = pixels;
             gfxSoftwarePresentPixelCapacity = pixelCount;
         }
+        /* Rebuild the color table only when the game's palette changes. */
         if (gfxSoftwarePresentPaletteGen != gfxPaletteGen) {
             for (x = 0; x < 256; x++) {
                 const SDL_Color c = palette->colors[x];
@@ -455,6 +458,8 @@ static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake) {
         uploadPixels = gfxSoftwarePresentPixels;
         uploadPitch = surf->w * (int)sizeof(*gfxSoftwarePresentPixels);
     }
+    /* Reuse the texture unless the image size changes. The title and the game
+     * use different sizes, so each still gets a correctly sized texture. */
     if (!gfxSoftwarePresentTexture || gfxSoftwarePresentTextureW != surf->w ||
         gfxSoftwarePresentTextureH != surf->h) {
         if (gfxSoftwarePresentTexture)
@@ -1267,6 +1272,7 @@ void FAR CDECL gfx_dirtyRect2(const int16 *spanMinBuf, uint16 yMin, uint16 yMax)
             width = (uint16)(LOGICAL_WIDTH - col0);
         rects[rectCount++] = (SDL_Rect){col0, row, width, 1};
     }
+    /* Fill all rows in one SDL call instead of setting every pixel here. */
     if (rectCount != 0)
         SDL_FillSurfaceRects(surf, rects, rectCount, fill);
 }
