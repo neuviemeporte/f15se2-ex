@@ -2202,11 +2202,17 @@ static void composePageBackdrop(SDL_Surface *page, int shakeOffset) {
 }
 
 void r3dgl_present(SDL_Surface *page, int shakeOffset) {
+    int win_w = 0, win_h = 0;
     if (!page || !s_active) return;
     /* Flight frames composed the page backdrop at the main-scene anchor (before the
      * frame's immediate HUD/MFD draws); only pure-2D screens (no 3D pass) compose it
      * here, on top of the black-cleared window. */
     if (!s_sceneRendered && !s_pageComposited) composePageBackdrop(page, shakeOffset);
+    SDL_GetWindowSizeInPixels(s_win, &win_w, &win_h);
+    /* Runtime TTF/OTF text is deliberately kept out of the 320x200 page. Draw it
+     * after both pure-2D and live-3D frames so HUD/menu glyphs are rasterized at
+     * final window resolution instead of being baked tiny and scaled up. */
+    gfx_renderTtfTextOverlayOpenGL(page->w, page->h, win_w, win_h);
     /* Remember whether THIS present carried a live 3D view. gfx_repaint (window
      * expose/resize) re-presents only the page — which would blank the GL 3D (it
      * lives in the framebuffer, not the page) — so on a flight frame it must instead

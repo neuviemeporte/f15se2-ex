@@ -23,6 +23,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Runtime TTF/OTF text is rendered out-of-page at final window resolution, so
+ * transient HUD strings need explicit row invalidation where the original bitmap
+ * renderer relied on the next 320x200 page repaint to erase old pixels. */
+#define HUD_STALL_TEXT_Y 30
+#define HUD_STATUS_TEXT_Y 24
+#define HUD_DIRECTOR_TEXT_Y 90
+#define HUD_TRANSIENT_TEXT_HEIGHT 8
+
 /* Private helpers for this translation unit. */
 void egDrawStringCentered(int16 *, const char *, int, int, int);
 void renderHudFrame();
@@ -42,6 +50,8 @@ void clearStatusPanel(void) {
 
 // ==== seg000:0x8e50 ====
 void renderHudFrame(int unused) {
+    static int hudStatusOverlayVisible{};
+    static int directorOverlayVisible{};
     int climbMarkerY, angleFixed, waypointMarkerX, circleX, angle, circleY, prevX, speedBarLen, prevY, markerX, deltaX, markerY, deltaY;
     char seekerShift;
     // probably x,y
@@ -90,6 +100,11 @@ void renderHudFrame(int unused) {
                 drawViewportLine(242, climbMarkerY - 2, 244, climbMarkerY);
                 drawViewportLine(242, climbMarkerY + 2, 244, climbMarkerY);
             }
+            /* The stall warning blinks on alternating frames. Bitmap text was
+             * naturally erased by the next HUD repaint; TTF overlay records are
+             * persistent, so clear this row before optionally drawing it again. */
+            gfx_invalidateTtfTextOverlayRect(0, HUD_STALL_TEXT_Y, 319,
+                                             HUD_STALL_TEXT_Y + HUD_TRANSIENT_TEXT_HEIGHT);
             // stall warning display
             if (g_knots < g_cornerSpeed && g_groundAltitude != g_viewZ && frameTick & 1) {
                 drawStringActivePage("stall warning", 132, 30, 0xf);
@@ -159,6 +174,7 @@ void renderHudFrame(int unused) {
     }
     if (g_hudMsgTimer != 0 && ((g_viewMode == VIEW_COCKPIT && g_halfScaleRender == 0) || (g_directorMode != 0))) {
         drawStringActivePage(tempString, -(((int16)strlen(tempString) >> 1) - 40) * 4, 24, 0xf);
+        hudStatusOverlayVisible = 1;
         g_hudMsgTimer--;
         if (g_hudMsgTimer == 0) { // cancel pending eject on message disappear
             g_ejectPending = 0;
@@ -166,10 +182,19 @@ void renderHudFrame(int unused) {
         if (g_autopilotEngaged == 1) {
             drawStringActivePage("Press any key to play", 120, 1, g_nightMode != 0 ? 0xe : 0);
         }
+    } else if (hudStatusOverlayVisible) {
+        gfx_invalidateTtfTextOverlayRect(0, HUD_STATUS_TEXT_Y, 319,
+                                         HUD_STATUS_TEXT_Y + HUD_TRANSIENT_TEXT_HEIGHT);
+        hudStatusOverlayVisible = 0;
     }
     if (g_dirMsgTimer != 0 && g_viewMode == VIEW_COCKPIT && g_halfScaleRender == 0) {
         drawStringActivePage(string_3C04A, -(((int16)strlen(string_3C04A) >> 1) - 40) * 4, 90, 0xf);
+        directorOverlayVisible = 1;
         g_dirMsgTimer--;
+    } else if (directorOverlayVisible) {
+        gfx_invalidateTtfTextOverlayRect(0, HUD_DIRECTOR_TEXT_Y, 319,
+                                         HUD_DIRECTOR_TEXT_Y + HUD_TRANSIENT_TEXT_HEIGHT);
+        directorOverlayVisible = 0;
     }
 }
 

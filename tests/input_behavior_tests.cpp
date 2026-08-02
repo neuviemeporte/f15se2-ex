@@ -2,6 +2,7 @@
 #include "egdata.h"
 #include "eginput.h"
 #include "headless.h"
+#include "input.h"
 
 #include <SDL3/SDL.h>
 
@@ -123,6 +124,13 @@ void pushKey(SDL_Scancode scancode, SDL_Keymod modifiers = SDL_KMOD_NONE) {
 void pushMouseMotion() {
     SDL_Event event = {};
     event.type = SDL_EVENT_MOUSE_MOTION;
+    SDL_PushEvent(&event);
+}
+
+void pushText(const char *text) {
+    SDL_Event event = {};
+    event.type = SDL_EVENT_TEXT_INPUT;
+    event.text.text = text;
     SDL_PushEvent(&event);
 }
 
@@ -284,6 +292,46 @@ int main() {
     }
     require(readCount == kRingStoredCapacity,
             "key ring drops overflow after its one-empty-slot capacity");
+
+    input_setMode(INPUT_MODE_MENU);
+    input_ringReset();
+    pushText("\xd0\xba"); /* U+043A CYRILLIC SMALL LETTER KA */
+    char utf8[8] = {};
+    require(input_readMenuTextUtf8(utf8, sizeof(utf8)) == 2,
+            "menu text input preserves a two-byte UTF-8 character");
+    require(SDL_strcmp(utf8, "\xd0\xba") == 0,
+            "menu text ring returns the original UTF-8 bytes");
+    require(!input_menuTextWaiting(),
+            "reading a menu text character consumes exactly one ring entry");
+
+    input_ringReset();
+    pushText("a");
+    require(input_readMenuTextUtf8(utf8, sizeof(utf8)) == 1 &&
+                SDL_strcmp(utf8, "a") == 0,
+            "ASCII text is available through the UTF-8 menu ring");
+    input_discardNextAsciiKey((uint8)'a');
+    require(!input_keyWaiting(),
+            "pilot-name handling can discard the duplicate BIOS ASCII event");
+
+    input_setMode(INPUT_MODE_FLIGHT);
+    input_ringReset();
+    pushText("\xd0\xba");
+    input_pumpEvents();
+    require(!input_menuTextWaiting(),
+            "flight mode ignores composed text events");
+
+    input_setMode(INPUT_MODE_MENU);
+    input_ringReset();
+    pushText("\xd0"); /* truncated two-byte sequence */
+    input_pumpEvents();
+    require(!input_menuTextWaiting(),
+            "menu text input rejects a truncated UTF-8 sequence");
+
+    input_ringReset();
+    pushText("\xc0\x80"); /* overlong encoding of NUL */
+    input_pumpEvents();
+    require(!input_menuTextWaiting(),
+            "menu text input rejects an overlong UTF-8 sequence");
 
     restoreInt9Handler();
     SDL_Quit();

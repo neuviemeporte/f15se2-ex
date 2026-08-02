@@ -18,6 +18,10 @@ void picBlit(SDL_IOStream *handle, int pageIndex);
 
 uint8 picDecodedRowBuf[320] = {};
 
+/* The isolated PIC decoder test does not link gfx_impl.c. Production builds
+ * always resolve this hook to the real retained-text overlay cleanup. */
+void gfx_clearTtfTextOverlay(void) {}
+
 namespace {
 
 // Behavior-sensitive constants are named here or explained at the use site.
