@@ -301,6 +301,9 @@ int main() {
             "udiv32by16 uses the divide trap sentinel for zero denominator");
     require(udiv32by16_full(0x10000UL, 2) == 0x8000UL,
             "udiv32by16_full keeps the full quotient");
+    require(udiv32by16_full(0xffffffffUL, 1) == 0xffffffffUL &&
+                udiv32by16_full(0xffffffffUL, 0xffffU) == 0x10001UL,
+            "udiv32by16_full preserves the complete 32-bit native quotient");
     require(udiv32by16_full(100, 0) ==
                 static_cast<unsigned long>(kUnsignedFullDivideByZeroSentinel),
             "udiv32by16_full preserves the all-bits divide-by-zero value");
@@ -310,6 +313,9 @@ int main() {
             "signed 32/16 helpers apply signs after unsigned division");
     require(imul16(-7, 6) == -42 && lshr_s(-8, 1) == -4,
             "manual multiply and arithmetic shift preserve signed behavior");
+    require(imul16(-32768, 32767) == -1073709056L &&
+                imul16(-32768, -32768) == 1073741824L,
+            "native 16-bit multiply preserves signed boundary products");
 
     require(hsine(0) == 0 &&
                 hcosine(0) == kIdentityQ15 &&
@@ -419,6 +425,18 @@ int main() {
                 g_spanBuf.minX[2] <= 2 &&
                 g_spanBuf.maxX[5] >= 8,
             "rasterizeEdgeSpan records shallow edge extents and dirty rows");
+
+    resetRasterState();
+    g_lineX1 = 3;
+    g_lineY1 = 12;
+    g_lineX2 = 300;
+    g_lineY2 = 12;
+    rasterizeEdgeSpan();
+    require(g_dirtyRectMinY == 12 &&
+                g_dirtyRectMaxY == 12 &&
+                g_spanBuf.minX[12] == 3 &&
+                g_spanBuf.maxX[12] == 300,
+            "rasterizeEdgeSpan records horizontal endpoints without walking every column");
 
     resetRasterState();
     g_lineX1 = 10;

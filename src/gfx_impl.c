@@ -32,6 +32,30 @@
 static SDL_Window *sdlWindow = NULL;
 static SDL_Renderer *sdlRenderer = NULL;
 static bool s_useGL = false; /* OpenGL backend owns the context + present */
+static SDL_Texture *gfxSoftwarePresentTexture;
+static int gfxSoftwarePresentTextureW;
+static int gfxSoftwarePresentTextureH;
+static uint32 *gfxSoftwarePresentPixels;
+static size_t gfxSoftwarePresentPixelCapacity;
+static uint32 gfxSoftwarePresentPalette[256];
+static int gfxSoftwarePresentPaletteGen = -1;
+
+static void gfx_expandIndexedSurface(SDL_Surface *surf, uint32 *dst,
+                                     const uint32 *palette) {
+    int y;
+    for (y = 0; y < surf->h; y++) {
+        const uint8 *src = (const uint8 *)surf->pixels + (size_t)y * surf->pitch;
+        uint32 *dstRow = dst + (size_t)y * surf->w;
+        int x = 0;
+        for (; x + 4 <= surf->w; x += 4) {
+            dstRow[x] = palette[src[x]];
+            dstRow[x + 1] = palette[src[x + 1]];
+            dstRow[x + 2] = palette[src[x + 2]];
+            dstRow[x + 3] = palette[src[x + 3]];
+        }
+        for (; x < surf->w; x++) dstRow[x] = palette[src[x]];
+    }
+}
 
 /* Forward declarations for the page-surface model, used by gfx_videoShutdown
  * before their definitions further down. */
@@ -136,6 +160,13 @@ void gfx_videoShutdown(void) {
         SDL_DestroyPalette(gfxPalette);
         gfxPalette = NULL;
     }
+    if (gfxSoftwarePresentTexture) {
+        SDL_DestroyTexture(gfxSoftwarePresentTexture);
+        gfxSoftwarePresentTexture = NULL;
+    }
+    SDL_free(gfxSoftwarePresentPixels);
+    gfxSoftwarePresentPixels = NULL;
+    gfxSoftwarePresentPixelCapacity = 0;
     if (sdlRenderer) SDL_DestroyRenderer(sdlRenderer);
     if (sdlWindow) SDL_DestroyWindow(sdlWindow);
     SDL_Quit();
@@ -391,14 +422,54 @@ static bool gfxHiResActive = false;
  * logical presentation; we render into the centred dst rect over a black-cleared
  * window. */
 static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake) {
-    SDL_Texture *tex;
     R2DMapping m;
+    const void *uploadPixels;
+    int uploadPitch;
     int win_w, win_h;
     SDL_FRect dst;
+    int x;
     if (!surf || !sdlRenderer) return;
-    tex = SDL_CreateTextureFromSurface(sdlRenderer, surf);
-    if (!tex) return;
-    SDL_SetTextureScaleMode(tex, SDL_SCALEMODE_NEAREST);
+    if (surf->format != SDL_PIXELFORMAT_INDEX8) return;
+    {
+        size_t pixelCount = (size_t)surf->w * (size_t)surf->h;
+        SDL_Palette *palette = SDL_GetSurfacePalette(surf);
+        if (!palette) return;
+        if (pixelCount > gfxSoftwarePresentPixelCapacity) {
+            uint32 *pixels = (uint32 *)SDL_realloc(gfxSoftwarePresentPixels,
+                                                   pixelCount * sizeof(*pixels));
+            if (!pixels) return;
+            gfxSoftwarePresentPixels = pixels;
+            gfxSoftwarePresentPixelCapacity = pixelCount;
+        }
+        if (gfxSoftwarePresentPaletteGen != gfxPaletteGen) {
+            for (x = 0; x < 256; x++) {
+                const SDL_Color c = palette->colors[x];
+                gfxSoftwarePresentPalette[x] = ((uint32)c.r << 16) |
+                                               ((uint32)c.g << 8) |
+                                               (uint32)c.b;
+            }
+            gfxSoftwarePresentPaletteGen = gfxPaletteGen;
+        }
+        gfx_expandIndexedSurface(surf, gfxSoftwarePresentPixels,
+                                 gfxSoftwarePresentPalette);
+        uploadPixels = gfxSoftwarePresentPixels;
+        uploadPitch = surf->w * (int)sizeof(*gfxSoftwarePresentPixels);
+    }
+    if (!gfxSoftwarePresentTexture || gfxSoftwarePresentTextureW != surf->w ||
+        gfxSoftwarePresentTextureH != surf->h) {
+        if (gfxSoftwarePresentTexture)
+            SDL_DestroyTexture(gfxSoftwarePresentTexture);
+        gfxSoftwarePresentTexture = SDL_CreateTexture(sdlRenderer,
+                                                       SDL_PIXELFORMAT_XRGB8888,
+                                                       SDL_TEXTUREACCESS_STREAMING,
+                                                       surf->w, surf->h);
+        if (!gfxSoftwarePresentTexture) return;
+        gfxSoftwarePresentTextureW = surf->w;
+        gfxSoftwarePresentTextureH = surf->h;
+        SDL_SetTextureBlendMode(gfxSoftwarePresentTexture, SDL_BLENDMODE_NONE);
+        SDL_SetTextureScaleMode(gfxSoftwarePresentTexture, SDL_SCALEMODE_NEAREST);
+    }
+    if (!SDL_UpdateTexture(gfxSoftwarePresentTexture, NULL, uploadPixels, uploadPitch)) return;
 
     SDL_GetRenderOutputSize(sdlRenderer, &win_w, &win_h);
     /* Square pixels: the software path presents the 320x200 page uniformly scaled
@@ -415,9 +486,8 @@ static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake) {
     dst.y = (float)m.offY;
     dst.w = (float)surf->w * m.scaleX;
     dst.h = (float)surf->h * m.scaleY;
-    SDL_RenderTexture(sdlRenderer, tex, NULL, &dst);
+    SDL_RenderTexture(sdlRenderer, gfxSoftwarePresentTexture, NULL, &dst);
     SDL_RenderPresent(sdlRenderer);
-    SDL_DestroyTexture(tex);
 }
 
 /* Push a page's surface to the active 2D backend (GL composite or software
@@ -1153,22 +1223,21 @@ void FAR CDECL gfx_dirtyRect2(const int16 *spanMinBuf, uint16 yMin, uint16 yMax)
     const uint16 *maxBuf = (const uint16 *)((const char *)spanMinBuf + 0x1b8);
     uint8 fill = s->fillColor;
     SDL_Surface *surf = ensurePage(0);
-    uint8 *pagePx;
+    SDL_Rect rects[200];
+    int rectCount = 0;
     int16 firstRow = (int16)yMin; /* AX */
     int16 lastRow = (int16)yMax;  /* CX */
     int y;
     if (!surf) return;
-    pagePx = (uint8 *)surf->pixels;
     /* MGRAPHIC slot 0x25: `or ax,ax; js exit` — if firstRow < 0, draw nothing. */
     if (firstRow < 0) return;
     if (lastRow > 199) lastRow = 199; /* rowOffsets[] safety */
     for (y = (int)lastRow; y >= (int)firstRow; y--) {
         uint16 spanLo = minBuf[y];
         uint16 spanHi = maxBuf[y];
-        uint16 width, col;
+        uint16 width;
         uint16 off;
         int row, col0;
-        uint8 *dst;
         /* MGRAPHIC's degenerate-row test is UNSIGNED (`cmp hi,lo; jc skip; ja
          * draw`): skip when hi < lo, draw when hi > lo, and when equal skip only
          * if the column is 0 or 0x13f (else a single pixel). The edge-walker in
@@ -1194,10 +1263,12 @@ void FAR CDECL gfx_dirtyRect2(const int16 *spanMinBuf, uint16 yMin, uint16 yMax)
         row = off / LOGICAL_WIDTH;
         col0 = off % LOGICAL_WIDTH;
         if (row < 0 || row >= surf->h) continue;
-        dst = pagePx + (size_t)row * surf->pitch + col0;
-        for (col = 0; col < width && col0 + (int)col < LOGICAL_WIDTH; col++)
-            dst[col] = fill;
+        if ((int)width > LOGICAL_WIDTH - col0)
+            width = (uint16)(LOGICAL_WIDTH - col0);
+        rects[rectCount++] = (SDL_Rect){col0, row, width, 1};
     }
+    if (rectCount != 0)
+        SDL_FillSurfaceRects(surf, rects, rectCount, fill);
 }
 
 int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx) {
