@@ -111,6 +111,9 @@ void FAR CDECL gfx_copyRect(int srcPage, uint16 srcX, uint16 srcY, int dstPage, 
 void FAR CDECL gfx_dacAnimate();                                                                                                  /* slot 0x2c: DAC palette animation */
 void FAR CDECL gfx_dacCycle();                                                                                                    /* slot 0x2e: DAC fire/colour-cycle animation */
 int FAR CDECL gfx_setFont(uint16 ch, uint16 fontIdx);                                                                             /* slot 0x2f: setup font metrics */
+int gfx_getGlyphAdvance(uint32 codepoint, uint16 fontIdx);                                                                        /* native UTF-aware font metric */
+int gfx_getStringAdvanceUtf8(const char *text, uint16 fontIdx);                                                                   /* native UTF-aware line metric */
+void gfx_invalidateTtfTextOverlayRect(int x1, int y1, int x2, int y2);
 int FAR CDECL gfx_getRowOffset(int y);                                                                                            /* slot 0x3a: returns y*320 */
 /* dseg:0xbe4 */
 void FAR CDECL gfx_setMode13(void);          /* slot 0x3c: switch to 320x200 (lo-res) */

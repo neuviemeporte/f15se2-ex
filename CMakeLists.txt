@@ -101,9 +101,12 @@ set(F15SE2_SOURCES
 
     # Shared file + string helpers
     ${SRC_DIR}/shared/file_io.c
+    ${SRC_DIR}/shared/bitmap_font_replacement.c
+    ${SRC_DIR}/shared/asset_path.c
     ${SRC_DIR}/shared/cleanup.c
     ${SRC_DIR}/shared/drawstr.c
     ${SRC_DIR}/shared/textfmt.c
+    ${SRC_DIR}/shared/utf8.c
     ${SRC_DIR}/shared/filepic.c
 
     # f15 launcher
@@ -209,6 +212,11 @@ find_package(OpenGL REQUIRED)
 # across toolchains (not all fold pthread into libc).
 find_package(Threads REQUIRED)
 
+# TrueType/OpenType font replacements are optional. When FreeType is available,
+# fonts/font_<id>.ttf and .otf are loaded directly by the runtime; otherwise the
+# game still builds and falls back to BDF/PNG/built-in font paths.
+find_package(Freetype QUIET)
+
 #------------------------------------------------------------------------------
 # Sanitizers (GCC/Clang, opt-in). Applied at directory scope so the executable
 # and the tests (which each compile the game code they exercise) are instrumented
@@ -271,6 +279,10 @@ if(AUTOSTART)
     target_compile_definitions(f15se2_core PUBLIC DEBUG_AUTOSTART)
 endif()
 target_link_libraries(f15se2_core PUBLIC SDL3::SDL3 OpenGL::GL)
+if(FREETYPE_FOUND)
+    target_compile_definitions(f15se2_core PUBLIC F15_HAVE_FREETYPE=1)
+    target_link_libraries(f15se2_core PUBLIC Freetype::Freetype)
+endif()
 
 add_executable(f15se2 ${SRC_DIR}/f15.c)
 set_target_properties(f15se2 PROPERTIES OUTPUT_NAME "f15se2-ex")
@@ -461,9 +473,40 @@ add_behavior_test(utility_behavior_tests LINK_CORE)
 add_behavior_test(end_runtime_behavior_tests LINK_CORE)
 add_behavior_test(geometry_behavior_tests LINK_CORE)
 add_behavior_test(file_io_behavior_tests LINK_CORE)
+add_behavior_test(asset_path_behavior_tests LINK_CORE)
+add_behavior_test(bitmap_font_replacement_behavior_tests LINK_CORE)
+if(F15SE2_CONVERTED_ASSETS
+   AND IS_DIRECTORY "${F15SE2_CONVERTED_ASSETS}")
+    add_behavior_test(bitmap_font_full_validation_tests LINK_CORE
+        DEFS F15_CONVERTED_ASSETS="${F15SE2_CONVERTED_ASSETS}")
+    set_tests_properties(bitmap_font_full_validation_tests PROPERTIES
+        LABELS "assets;integration"
+        TIMEOUT 120)
+else()
+    message(STATUS
+        "Skipping bitmap-font full validation: set "
+        "F15SE2_CONVERTED_ASSETS to an existing directory")
+endif()
+add_behavior_test(utf8_behavior_tests SOURCES
+    ${SRC_DIR}/shared/utf8.c)
 add_behavior_test(gameplay_behavior_tests LINK_CORE)
 add_behavior_test(input_behavior_tests LINK_CORE)
 add_behavior_test(gfx_render_behavior_tests LINK_CORE)
+if(FREETYPE_FOUND)
+    find_file(F15_TEST_TTF
+        NAMES DejaVuSans.ttf LiberationSans-Regular.ttf
+        PATHS
+            /usr/share/fonts/truetype/dejavu
+            /usr/share/fonts/truetype/liberation2
+            /usr/share/fonts/truetype/liberation
+            /Library/Fonts
+            C:/Windows/Fonts
+    )
+    if(F15_TEST_TTF)
+        add_behavior_test(ttf_font_behavior_tests LINK_CORE
+            DEFS F15_TEST_TTF_PATH="${F15_TEST_TTF}")
+    endif()
+endif()
 add_behavior_test(view_behavior_tests LINK_CORE)
 add_behavior_test(egsys_internal_behavior_tests LINK_CORE)
 add_behavior_test(start_runtime_behavior_tests SOURCES
