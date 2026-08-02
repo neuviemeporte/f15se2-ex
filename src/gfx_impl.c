@@ -1270,7 +1270,7 @@ void FAR CDECL gfx_dirtyRect2(const int16 *spanMinBuf, uint16 yMin, uint16 yMax)
         if (row < 0 || row >= surf->h) continue;
         if ((int)width > LOGICAL_WIDTH - col0)
             width = (uint16)(LOGICAL_WIDTH - col0);
-        rects[rectCount++] = (SDL_Rect){col0, row, width, 1};
+        rects[rectCount++] = SDL_Rect{col0, row, width, 1};
     }
     /* Fill all rows in one SDL call instead of setting every pixel here. */
     if (rectCount != 0)
