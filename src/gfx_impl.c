@@ -35,19 +35,17 @@ static bool s_useGL = false; /* OpenGL backend owns the context + present */
 static SDL_Texture *gfxSoftwarePresentTexture;
 static int gfxSoftwarePresentTextureW;
 static int gfxSoftwarePresentTextureH;
-static uint32 *gfxSoftwarePresentPixels;
-static size_t gfxSoftwarePresentPixelCapacity;
 static uint32 gfxSoftwarePresentPalette[256];
 static int gfxSoftwarePresentPaletteGen = -1;
 
-/* Convert the game's 256-color image to screen pixels. Doing it here lets us
- * reuse one texture instead of asking SDL to create a new one every frame. */
-static void gfx_expandIndexedSurface(SDL_Surface *surf, uint32 *dst,
+/* Convert the game's 256-color image directly into the reusable texture. This
+ * avoids copying a second full-screen buffer into the texture every frame. */
+static void gfx_expandIndexedSurface(SDL_Surface *surf, void *pixels, int dstPitch,
                                      const uint32 *palette) {
     int y;
     for (y = 0; y < surf->h; y++) {
         const uint8 *src = (const uint8 *)surf->pixels + (size_t)y * surf->pitch;
-        uint32 *dstRow = dst + (size_t)y * surf->w;
+        uint32 *dstRow = (uint32 *)((uint8 *)pixels + (size_t)y * dstPitch);
         int x = 0;
         for (; x + 4 <= surf->w; x += 4) {
             dstRow[x] = palette[src[x]];
@@ -166,9 +164,6 @@ void gfx_videoShutdown(void) {
         SDL_DestroyTexture(gfxSoftwarePresentTexture);
         gfxSoftwarePresentTexture = NULL;
     }
-    SDL_free(gfxSoftwarePresentPixels);
-    gfxSoftwarePresentPixels = NULL;
-    gfxSoftwarePresentPixelCapacity = 0;
     if (sdlRenderer) SDL_DestroyRenderer(sdlRenderer);
     if (sdlWindow) SDL_DestroyWindow(sdlWindow);
     SDL_Quit();
@@ -425,39 +420,13 @@ static bool gfxHiResActive = false;
  * window. */
 static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake) {
     R2DMapping m;
-    const void *uploadPixels;
-    int uploadPitch;
+    void *texturePixels;
+    int texturePitch;
     int win_w, win_h;
     SDL_FRect dst;
     int x;
     if (!surf || !sdlRenderer) return;
     if (surf->format != SDL_PIXELFORMAT_INDEX8) return;
-    {
-        size_t pixelCount = (size_t)surf->w * (size_t)surf->h;
-        SDL_Palette *palette = SDL_GetSurfacePalette(surf);
-        if (!palette) return;
-        if (pixelCount > gfxSoftwarePresentPixelCapacity) {
-            uint32 *pixels = (uint32 *)SDL_realloc(gfxSoftwarePresentPixels,
-                                                   pixelCount * sizeof(*pixels));
-            if (!pixels) return;
-            gfxSoftwarePresentPixels = pixels;
-            gfxSoftwarePresentPixelCapacity = pixelCount;
-        }
-        /* Rebuild the color table only when the game's palette changes. */
-        if (gfxSoftwarePresentPaletteGen != gfxPaletteGen) {
-            for (x = 0; x < 256; x++) {
-                const SDL_Color c = palette->colors[x];
-                gfxSoftwarePresentPalette[x] = ((uint32)c.r << 16) |
-                                               ((uint32)c.g << 8) |
-                                               (uint32)c.b;
-            }
-            gfxSoftwarePresentPaletteGen = gfxPaletteGen;
-        }
-        gfx_expandIndexedSurface(surf, gfxSoftwarePresentPixels,
-                                 gfxSoftwarePresentPalette);
-        uploadPixels = gfxSoftwarePresentPixels;
-        uploadPitch = surf->w * (int)sizeof(*gfxSoftwarePresentPixels);
-    }
     /* Reuse the texture unless the image size changes. The title and the game
      * use different sizes, so each still gets a correctly sized texture. */
     if (!gfxSoftwarePresentTexture || gfxSoftwarePresentTextureW != surf->w ||
@@ -474,7 +443,24 @@ static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake) {
         SDL_SetTextureBlendMode(gfxSoftwarePresentTexture, SDL_BLENDMODE_NONE);
         SDL_SetTextureScaleMode(gfxSoftwarePresentTexture, SDL_SCALEMODE_NEAREST);
     }
-    if (!SDL_UpdateTexture(gfxSoftwarePresentTexture, NULL, uploadPixels, uploadPitch)) return;
+    {
+        SDL_Palette *palette = SDL_GetSurfacePalette(surf);
+        if (!palette) return;
+        /* Rebuild the color table only when the game's palette changes. */
+        if (gfxSoftwarePresentPaletteGen != gfxPaletteGen) {
+            for (x = 0; x < 256; x++) {
+                const SDL_Color c = palette->colors[x];
+                gfxSoftwarePresentPalette[x] = ((uint32)c.r << 16) |
+                                               ((uint32)c.g << 8) |
+                                               (uint32)c.b;
+            }
+            gfxSoftwarePresentPaletteGen = gfxPaletteGen;
+        }
+    }
+    if (!SDL_LockTexture(gfxSoftwarePresentTexture, NULL, &texturePixels, &texturePitch)) return;
+    gfx_expandIndexedSurface(surf, texturePixels, texturePitch,
+                             gfxSoftwarePresentPalette);
+    SDL_UnlockTexture(gfxSoftwarePresentTexture);
 
     SDL_GetRenderOutputSize(sdlRenderer, &win_w, &win_h);
     /* Square pixels: the software path presents the 320x200 page uniformly scaled
