@@ -193,6 +193,7 @@ int bitmapFontReplacementGet(unsigned font_id, unsigned cell_width,
     font = &g_fonts[font_id];
     if (!font->tried) {
         font->tried = 1;
+        /* Prefer the editable BDF. Try the PNG font sheet only if no BDF loads. */
         if (replacementPath(font_id, "bdf", path, sizeof(path))) {
             if (parseBdf(path, height, &font->bitmaps, &font->widths)) {
                 LogInfo(("asset replacement: loaded bitmap font %u from %s",
@@ -202,9 +203,8 @@ int bitmapFontReplacementGet(unsigned font_id, unsigned cell_width,
                          font_id, path));
             }
         }
-        if (!font->bitmaps
-/* Resolve one optional BDF or PNG font replacement using the shared asset search rules. */
-            && replacementPath(font_id, "png", path, sizeof(path))) {
+        if (!font->bitmaps &&
+            replacementPath(font_id, "png", path, sizeof(path))) {
             if (parsePng(path, cell_width, height, original_widths,
                          &font->bitmaps, &font->widths)) {
                 LogInfo(("asset replacement: loaded bitmap font %u from %s",
