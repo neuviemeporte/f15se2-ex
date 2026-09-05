@@ -459,7 +459,7 @@ printMissionAgain:
 }
 
 int16 pollMenuInput() {
-    uint16 key;
+    uint16 key = 0;
     char repeatHold;
     int joy1;
     int joy0;
@@ -500,6 +500,8 @@ int16 pollMenuInput() {
         key = misc_getKey();
     } else if (joy0 == 1) {
         key = KEYCODE_ENTER;
+    } else if (joy1 == 1) {
+        key = KEYCODE_ESC;
     } else if (joyAxes[1] < JOY_DEADZONE_LO) {
         key = KEYCODE_UPARROW;
         joyRepeatFlag = 1;
