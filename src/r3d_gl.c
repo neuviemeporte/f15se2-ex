@@ -169,16 +169,6 @@ static void addShowRect(int x, int y, int w, int h) {
     s_nShowRects++;
 }
 
-/* Is page-space pixel (x,y) inside any show-through rect? */
-static int inShowRect(int x, int y) {
-    int i;
-    for (i = 0; i < s_nShowRects; i++) {
-        const SDL_Rect *r = &s_showRects[i];
-        if (x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + r->h)
-            return 1;
-    }
-    return 0;
-}
 static float s_proj[16];     /* column-major GL projection for the active scene */
 static int s_sceneVp[4];     /* window-px viewport/scissor of the active 3D scene, for
                               * re-establishing the scene state in gl_endScene */
@@ -2047,33 +2037,38 @@ void r3dgl_drawImageWindowBoxX(R2DImage *img, float boxLeftX) {
 }
 
 /* The retained page as a persistent GL texture + the dirty key it was built for.
- * Re-uploaded ONLY when its visible output could have changed (below), so the page
- * is NOT re-converted/re-uploaded every frame — the flight fire-palette cycle bumps
- * the global palette generation every frame but touches only its 9 fire entries, so
- * a cockpit that doesn't use them stays cached. */
+ * Re-uploaded only when the indexed page, palette, show-through rectangles or
+ * dimensions change, rather than being converted and uploaded every frame. */
 static GLuint s_pageTex;
 static unsigned s_pageKey;
 static int s_pageTexW, s_pageTexH;
 
-/* FNV-1a fold of the page's exact visible output: the pixel indices, the palette
- * RGB of ONLY the indices actually present (so fire-cycle changes to unused entries
- * don't force a re-upload), the show-through rects (they set the alpha), and the
- * page size. A change in any of these — and nothing else — re-uploads the texture. */
+/* Check eight image bytes at a time instead of one. memcpy keeps these reads
+ * safe on systems that cannot read an integer from every memory address. */
+static unsigned pageHashBytes(unsigned k, const uint8 *src, size_t size) {
+    while (size >= sizeof(uint64)) {
+        uint64 chunk;
+        SDL_memcpy(&chunk, src, sizeof(chunk));
+        k = (k ^ (unsigned)chunk) * 16777619u;
+        k = (k ^ (unsigned)(chunk >> 32)) * 2246822519u;
+        src += sizeof(chunk);
+        size -= sizeof(chunk);
+    }
+    while (size-- != 0) k = (k ^ *src++) * 16777619u;
+    return k;
+}
+
+/* Include the image, colors, transparent areas, and size. Checking all 256
+ * colors is cheaper than recording which color every pixel uses. */
 static unsigned pageOutputKey(SDL_Surface *page, SDL_Palette *pal) {
     unsigned k = 2166136261u;
-    unsigned used[8] = {0, 0, 0, 0, 0, 0, 0, 0};
     const uint8 *src = (const uint8 *)page->pixels;
-    int pitch = page->pitch, x, y, i;
+    int pitch = page->pitch, y, i;
     for (y = 0; y < page->h; y++) {
         const uint8 *row = src + (size_t)y * pitch;
-        for (x = 0; x < page->w; x++) {
-            uint8 idx = row[x];
-            k = (k ^ idx) * 16777619u;
-            used[idx >> 5] |= 1u << (idx & 31);
-        }
+        k = pageHashBytes(k, row, (size_t)page->w);
     }
     for (i = 0; i < 256 && i < pal->ncolors; i++) {
-        if (!(used[i >> 5] & (1u << (i & 31)))) continue;
         k = (k ^ (unsigned)pal->colors[i].r) * 16777619u;
         k = (k ^ (unsigned)pal->colors[i].g) * 16777619u;
         k = (k ^ (unsigned)pal->colors[i].b) * 16777619u;
@@ -2117,18 +2112,34 @@ static void composePageBackdrop(SDL_Surface *page, int shakeOffset) {
         if (!ensureRgbaScratch(w * h * 4)) { s_nShowRects = 0; return; }
         src = (const uint8 *)page->pixels;
         pitch = page->pitch;
-        for (y = 0; y < h; y++) {
-            const uint8 *row = src + (size_t)y * pitch;
-            uint8 *out = s_rgba + (size_t)y * w * 4;
-            for (x = 0; x < w; x++) {
-                uint8 idx = row[x];
-                SDL_Color c = pal->colors[idx];
-                out[x * 4 + 0] = c.r;
-                out[x * 4 + 1] = c.g;
-                out[x * 4 + 2] = c.b;
-                /* Transparent inside the 3D viewport rect(s) so the GL 3D beneath
-                 * shows; opaque everywhere else (cockpit/panel). */
-                out[x * 4 + 3] = inShowRect(x, y) ? 0 : 255;
+        {
+            uint32 packedPalette[256];
+            int i;
+            for (i = 0; i < 256; i++) {
+                SDL_Color c = pal->colors[i];
+                uint8 *rgba = (uint8 *)&packedPalette[i];
+                rgba[0] = c.r;
+                rgba[1] = c.g;
+                rgba[2] = c.b;
+                rgba[3] = 255;
+            }
+            for (y = 0; y < h; y++) {
+                const uint8 *row = src + (size_t)y * pitch;
+                uint32 *out = (uint32 *)(s_rgba + (size_t)y * w * 4);
+                for (x = 0; x < w; x++) out[x] = packedPalette[row[x]];
+            }
+            /* Make only the 3D view rectangles transparent. This is faster than
+             * asking every pixel whether it is inside one of those rectangles. */
+            for (i = 0; i < s_nShowRects; i++) {
+                const SDL_Rect *r = &s_showRects[i];
+                int x0 = r->x < 0 ? 0 : r->x;
+                int y0 = r->y < 0 ? 0 : r->y;
+                int x1 = r->x + r->w > w ? w : r->x + r->w;
+                int y1 = r->y + r->h > h ? h : r->y + r->h;
+                for (y = y0; y < y1; y++) {
+                    uint8 *alpha = s_rgba + ((size_t)y * w + x0) * 4 + 3;
+                    for (x = x0; x < x1; x++, alpha += 4) *alpha = 0;
+                }
             }
         }
         if (!s_pageTex) glGenTextures(1, &s_pageTex);

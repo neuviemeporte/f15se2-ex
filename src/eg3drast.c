@@ -146,21 +146,10 @@ static unsigned udiv32by16(unsigned long num, unsigned den) {
  * downstream Cohen-Sutherland clip works in 32-bit), so a near-plane vertex
  * projects to a large off-screen coord rather than a clamped ±0x7f00. */
 static unsigned long udiv32by16_full(unsigned long num, unsigned den) {
-    unsigned long rem = 0;
-    unsigned long q = 0;
-    int i;
     if (den == 0) return 0xffffffffUL;
-    for (i = 0; i < 32; i++) {
-        rem = rem << 1;
-        if (num & 0x80000000UL) rem |= 1;
-        num = num << 1;
-        q = q << 1;
-        if (rem >= (unsigned long)den) {
-            rem -= den;
-            q |= 1;
-        }
-    }
-    return q;
+    /* The old code calculated the same result one bit at a time. Keep the
+     * original 32-bit values, but use the CPU's division instruction. */
+    return (unsigned long)((uint32)num / (uint32)den);
 }
 
 /* Signed full-precision 32/16 divide (no saturation). */
@@ -204,27 +193,10 @@ static int sdiv32by16(long num, int den) {
  * word. Combined with HI16(p<<1) this reproduces fixedMulQ14's Q15 rounding. */
 #define LOCARRY(v) ((((uint16)(v)) & 0x8000u) ? 1 : 0)
 
-/* signed 16x16 -> 32 multiply, shift-add (no __aNlmul). */
+/* Keep the original signed 16-bit inputs, but use the CPU's multiplication
+ * instruction instead of building the result one bit at a time. */
 static long imul16(int a, int b) {
-    unsigned long aa, p = 0;
-    unsigned ub;
-    int neg = 0, i;
-    if (a < 0) {
-        neg ^= 1;
-        a = -a;
-    }
-    if (b < 0) {
-        neg ^= 1;
-        b = -b;
-    }
-    aa = (unsigned)a;
-    ub = (unsigned)b;
-    for (i = 0; i < 16; i++) {
-        if (ub & 1) p += aa;
-        ub >>= 1;
-        aa = aa << 1;
-    }
-    return neg ? -(long)p : (long)p;
+    return (long)(int16)a * (long)(int16)b;
 }
 
 /* arithmetic right shift of a long by n (only >>1 is inline in MSC 5.1). */
@@ -1023,6 +995,13 @@ static void rasterizeEdgeSpan(void) {
         int row = g_lineY1;  /* DI = y1*2 in the asm; here row index */
         int rstep = bp >> 1; /* +1 / -1 row */
         int ax = g_lineX1;
+        /* A horizontal edge touches one row, so its endpoints already give us
+         * the full span. There is no need to visit every point between them. */
+        if (dyv == 0) {
+            if ((uint16)g_lineX1 < (uint16)minB[row]) minB[row] = g_lineX1;
+            if ((uint16)g_lineX2 > (uint16)maxB[row]) maxB[row] = g_lineX2;
+            return;
+        }
         if (dyv < dxv) {
             /* shallow (dx > |dy|): step X each iteration, step row on carry */
             int cx = dxv, bx = -((dxv + 1) >> 1), si = dyv;
