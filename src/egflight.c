@@ -780,9 +780,25 @@ static int32 eyeFromQ8(long q8, int16 *frac) {
     return (int32)(q8 >> 8);
 }
 
+void computeTrackingCameraAngles(int32 targetX, int32 targetY, int16 targetAlt,
+                                 int32 viewX, int32 viewY, int16 viewAlt,
+                                 int16 *heading, int16 *pitch) {
+    enum { WORLD_Y_EXTENT = 0x100000 };
+    int32 dx = targetX - viewX;
+    /* Target Y is a world coordinate, while viewY is the renderer's inverted
+     * coordinate. Convert them to the same space before taking the delta. */
+    int32 dy = targetY - (WORLD_Y_EXTENT - viewY);
+    int32 range = rangeApprox32(dx, dy);
+
+    /* Fine world deltas exceed int16 on normal maps. computeBearing32 scales
+     * both components equally, preserving the angle without truncation. */
+    *heading = computeBearing32(dx, -dy);
+    *pitch = -computeBearing32((int32)targetAlt - viewAlt, range);
+}
+
 // something to do with view switching?
 void renderFrame() {
-    int16 camDist, savedCamDist, range, camOffset, dx, dy, tmp;
+    int16 camDist, savedCamDist, camOffset, tmp;
     g_camEyeX = g_viewTargetX = g_ViewX;
     g_camEyeY = g_ViewY;
     g_viewTargetY = 0x100000 - g_ViewY;
@@ -903,23 +919,9 @@ void renderFrame() {
             if (g_autopilotEngaged != 0 && g_directorEventDeadline == -1) camDist = 6;
         }
         if (g_directorMode == 0) camDist = savedCamDist;
-        /* Derive the tracking-camera heading and pitch from FINE world coords —
-         * both the fine target position and the fine player position (g_ViewX/Y),
-         * not the coarse map coords (g_viewX_/g_viewY_) which step 32 fine units
-         * at a time and made the whole world "earthquake" around a tracked target.
-         * computeBearing is scale-invariant, so the angles are identical to the
-         * original coarse formula but with ~32x less quantization jitter. range is
-         * computed inline (rangeApprox would saturate its 0x7fff cap on fine
-         * deltas) and kept in the same scale as the altitude delta so the pitch
-         * ratio is unchanged. */
-        dx = (int)(g_viewTargetX - g_ViewX);
-        dy = (int)(g_viewTargetY - g_ViewY);
-        {
-            int adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
-            range = adx > ady ? adx + (ady >> 1) : ady + (adx >> 1);
-        }
-        g_viewHeading = computeBearing(dx, -dy);
-        g_viewPitch = -computeBearing(g_viewTargetAlt - g_viewZ, range);
+        computeTrackingCameraAngles((int32)g_viewTargetX, (int32)g_viewTargetY,
+                                    g_viewTargetAlt, g_ViewX, g_ViewY, g_viewZ,
+                                    &g_viewHeading, &g_viewPitch);
         g_viewRoll = 0;
         camOffset = cosMul(g_viewPitch, 0x18 << camDist);
         if (g_viewTargetObj & 0x60 || g_directorMode != 0) {
