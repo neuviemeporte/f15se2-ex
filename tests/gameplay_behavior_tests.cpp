@@ -156,6 +156,10 @@ int main() {
     g_eventLogCount = 9;
     g_ejectState = 1;
     g_ejectPending = 1;
+    g_slowMotionMode = 2;
+    g_playerPlaneFlags = 0x1000;
+    g_autopilotEngaged = 1;
+    g_autopilotAltitude = 1200;
     g_inLandingCorridor = 0;
     g_landingDoneFlag = 0;
     g_landingTimer = 1;
@@ -182,6 +186,9 @@ int main() {
             "mission reset clears stale resupply counters and HUD messages");
     require(g_ejectState == 0 && g_ejectPending == 0 && g_eventLogCount == 0,
             "mission reset clears previous outcome state");
+    require(g_slowMotionMode == 1 && g_playerPlaneFlags == 0 &&
+                g_autopilotEngaged == 0 && g_autopilotAltitude == 0,
+            "mission reset clears acceleration, training, and autopilot state");
     require(g_missionEndedFlag[0] == 0 && g_missionEndedFlag[1] == 0 &&
                 g_viewMode == VIEW_COCKPIT && g_directorMode == 0 &&
                 g_directorEventDeadline == -1,

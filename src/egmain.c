@@ -35,6 +35,10 @@ void resetMissionRuntimeState(void) {
     g_eventLogCount = 0;
     g_ejectState = 0;
     g_ejectPending = 0;
+    g_slowMotionMode = 1;
+    g_playerPlaneFlags = 0;
+    g_autopilotEngaged = 0;
+    g_autopilotAltitude = 0;
     g_inLandingCorridor = 1;
     g_landingDoneFlag = 1;
     g_landingTimer = 0;
