@@ -25,21 +25,40 @@
 void drawCockpit();
 void runGameSession();
 
-// ==== seg000:0x10 ====
-int egame_main(void) {
-    /* Per-mission state reset (persists across missions in the merged build).
-     * g_initPhase=0 re-arms the init block; the indicator colour trackers (+7 of
-     * the four rects at [3..22]) must match the cockpit base colour (3). The view
-     * selector and director camera must start in the cockpit, not last mission's view. */
+/* Restore mutable EGAME globals that the DOS executable reinitialized whenever
+ * START launched it for a new mission. The native port keeps EGAME in the same
+ * process, so leaving these values intact can make a new ground start look like
+ * the final frame of the previous mission's landing sequence. */
+void resetMissionRuntimeState(void) {
     g_initPhase = 0;
     g_missionEndedFlag[0] = g_missionEndedFlag[1] = 0;
     g_eventLogCount = 0;
     g_ejectState = 0;
     g_ejectPending = 0;
+    g_slowMotionMode = 1;
+    g_playerPlaneFlags = 0;
+    g_autopilotEngaged = 0;
+    g_autopilotAltitude = 0;
+    g_inLandingCorridor = 1;
+    g_landingDoneFlag = 1;
+    g_landingTimer = 0;
+    g_autoLandingActive = 0;
+    g_resupplyCount = 1;
+    g_hudMsgTimer = 0;
+    g_dirMsgTimer = 0;
+    tempString[0] = '\0';
     g_viewMode = VIEW_COCKPIT;
     g_directorMode = 0;
     g_directorEventDeadline = -1;
-    g_tacmapIndicators[7] = g_tacmapIndicators[12] = g_tacmapIndicators[17] = g_tacmapIndicators[22] = 3;
+    g_tacmapIndicators[7] = 3;
+    g_tacmapIndicators[12] = 3;
+    g_tacmapIndicators[17] = 3;
+    g_tacmapIndicators[22] = 3;
+}
+
+// ==== seg000:0x10 ====
+int egame_main(void) { /* GCOVR_EXCL_LINE: interactive entry point */
+    resetMissionRuntimeState(); /* GCOVR_EXCL_LINE: reset body is covered directly */
     installCBreakHandler();
     if (commData->setupUseJoy == 1) {
         copyJoystickData(commData->joyData);
