@@ -107,7 +107,7 @@ static void renderGridTile(int lod, int tileX, int tileY, int gridX, int gridY, 
             g_modelStreamPtr = g_world3dData + buf3d3[g_curTileEntry->shape];
         }
         {
-            R3DSubmit obj = {g_modelStreamPtr, 0, 0, 0,
+            R3DSubmit obj = {g_modelStreamPtr, -1, NULL, 0, 0, 0,
                              g_curTileEntry->x, g_curTileEntry->y, g_curTileEntry->z};
             r3d_submit(&obj);
         }
@@ -219,7 +219,7 @@ void projectObjects(int16 heading, int16 rangeGate, int32 worldX, int32 worldY, 
                             g_modelStreamPtr = g_world3dData + buf3d3[g_curTileEntry->shape];
                         }
                         {
-                            R3DSubmit obj = {g_modelStreamPtr, 0, 0, 0,
+                            R3DSubmit obj = {g_modelStreamPtr, -1, NULL, 0, 0, 0,
                                              g_curTileEntry->x, g_curTileEntry->y, g_curTileEntry->z};
                             r3d_submit(&obj);
                         }
@@ -232,7 +232,7 @@ void projectObjects(int16 heading, int16 rangeGate, int32 worldX, int32 worldY, 
                         g_modelStreamPtr = g_world3dData + buf3d3[g_curTileEntry->shape];
                         g_objColorBase = 0x400;
                         {
-                            R3DSubmit obj = {g_modelStreamPtr, 0, 0, 0,
+                            R3DSubmit obj = {g_modelStreamPtr, -1, NULL, 0, 0, 0,
                                              g_curTileEntry->x, g_curTileEntry->y, g_curTileEntry->z};
                             r3d_submit(&obj);
                         }
