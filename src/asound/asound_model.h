@@ -155,6 +155,8 @@ extern const AsoundU8 asound_release_voice2[];
 extern const AsoundU8 asound_release_voice3[];
 extern const AsoundU8 asound_release_voice4[];
 extern const AsoundU8 asound_release_voice5[];
+size_t asound_intro_voice_length(int voice);
+size_t asound_release_voice_length(int voice);
 
 void asound_log_init(AsoundEventLog *log, AsoundEvent *events, size_t capacity);
 int asound_log_push(AsoundEventLog *log, AsoundEventType type, AsoundU8 voice,
