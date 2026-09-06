@@ -200,8 +200,8 @@ counterMore1k:
     missionTarget2X = worldObjects[targets[1].targetIdx].x_coord;
     missionTarget2Y = worldObjects[targets[1].targetIdx].y_coord;
     if (missionPick == 2) {
-        missionTarget2X += (rand() & 0x1000) - 0x800;
-        missionTarget2Y += (rand() & 0x1000) - 0x800;
+        missionTarget2X += (gameRand15() & 0x1000) - 0x800;
+        missionTarget2Y += (gameRand15() & 0x1000) - 0x800;
     }
     if (targets[0].missionCode & 0x10) {
         missionTargetX = ((missionTargetX >> 0xa) << 0xa) + 0x200;

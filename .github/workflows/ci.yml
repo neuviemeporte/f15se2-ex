@@ -27,6 +27,13 @@ jobs:
             build: cmake --build build --config Release --parallel
             test: ctest --test-dir build -C Release --output-on-failure
 
+          - name: Windows MSVC x64 Blackbox
+            os: windows-latest
+            configure: cmake -S . -B build -G "Visual Studio 18 2026" -A x64 -DBLACKBOX_AUTO_RECORD=ON
+            build: cmake --build build --config RelWithDebInfo --parallel
+            test: ctest --test-dir build -C RelWithDebInfo --output-on-failure
+            package: true
+
           - name: macOS Clang
             os: macos-latest
             configure: cmake -S . -B build
@@ -55,6 +62,51 @@ jobs:
 
       - name: Test
         run: ${{ matrix.test }}
+
+      - name: Package Windows blackbox build
+        if: matrix.package == true
+        shell: pwsh
+        run: |
+          $dist = "build/f15se2-ex-windows-blackbox"
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+          Copy-Item "build/RelWithDebInfo/f15se2-ex.exe" $dist
+          if (Test-Path "build/RelWithDebInfo/f15se2-ex.pdb") {
+            Copy-Item "build/RelWithDebInfo/f15se2-ex.pdb" $dist
+          }
+          $sdl = Get-ChildItem build -Recurse -Filter SDL3.dll |
+            Where-Object { $_.FullName -match 'RelWithDebInfo' } |
+            Select-Object -First 1
+          if (-not $sdl) {
+            throw "SDL3.dll was not produced"
+          }
+          Copy-Item $sdl.FullName $dist
+          Copy-Item "docs/blackbox_debugging.md" $dist
+          @"
+          F-15 SE2 deterministic blackbox test build
+
+          Keep f15se2-ex.exe and SDL3.dll in the same directory.
+
+          Run:
+            f15se2-ex.exe --game C:\path\to\F15
+
+          This build automatically records the session to _blackbox.rec in the
+          current working directory. Rename or move that file before the next
+          run if you want to preserve it.
+
+          Send developers:
+            - _blackbox.rec
+            - the approximate displayed blackbox position where the problem occurs
+            - a description of expected and actual behavior
+
+          See blackbox_debugging.md for replay and diagnostic commands.
+          "@ | Set-Content "$dist/README.txt"
+
+      - name: Upload Windows blackbox build
+        if: matrix.package == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: f15se2-ex-windows-blackbox
+          path: build/f15se2-ex-windows-blackbox
 
   coverage:
     name: Coverage

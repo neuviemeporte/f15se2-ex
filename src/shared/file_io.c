@@ -3,6 +3,7 @@
  */
 
 #include "inttype.h"
+#include "blackbox_io.h"
 #include "log.h"
 #include <SDL3/SDL.h>
 #include <quickdigest5.hpp>
@@ -62,13 +63,15 @@ static string resolveCasePath(const char *filename, const bool require = false) 
 SDL_IOStream *openFile(const char *filename, int mode) {
     (void)mode; /* the resident open service only distinguished read vs. write;
                  * every openFile caller in the game opens an asset for reading */
-    return SDL_IOFromFile(resolveCasePath(filename).c_str(), "rb");
+    const string path = resolveCasePath(filename);
+    return blackbox_openReadPath(filename, path.c_str());
 }
 
 /* Create or truncate a file for writing. Returns the stream, or NULL on failure. */
 SDL_IOStream *createFile(const char *filename, int attr) {
     (void)attr;
-    return SDL_IOFromFile(resolveCasePath(filename).c_str(), "wb");
+    const string path = resolveCasePath(filename);
+    return blackbox_openWritePath(filename, path.c_str());
 }
 
 void fileClose(SDL_IOStream *io) {

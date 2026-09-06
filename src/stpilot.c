@@ -301,6 +301,8 @@ void pilotNameInput(int16 *page, int a, int b, int c, struct Pilot *pilot) {
 void loadHallfame(void) {
     int slotIdx;
     SDL_IOStream *handle;
+    selectedPilotIdx = 0;
+    memset(hallfameBuf, 0, HALLFAME_RECORDSZ * HALLFAME_SLOTS);
     handle = openFile("HallFame", 0);
     fileRead(&selectedPilotIdx, 2, 1, handle);
     slotIdx = 0;

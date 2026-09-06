@@ -73,6 +73,20 @@ void fillPageRaw(int page, uint8 color) {
         std::memset(px + (size_t)y * pitch, color, kLogicalWidth);
 }
 
+uint32 pageHash(int page) {
+    uint32 hash = 2166136261u;
+    int pitch = 0;
+    const uint8 *pixels = gfx_pagePixels(page, &pitch);
+    for (int y = 0; y < kLogicalHeight; y++) {
+        const uint8 *row = pixels + (size_t)y * pitch;
+        for (int x = 0; x < kLogicalWidth; x++) {
+            hash ^= row[x];
+            hash *= 16777619u;
+        }
+    }
+    return hash;
+}
+
 // ---- gfx_pagePixels + page-1 aliasing -------------------------------------
 void test_pagePixels_and_alias() {
     int pitch0 = 0, pitch1 = 0, pitch2 = 0;
@@ -285,6 +299,22 @@ void test_setFont() {
     require(w > 0 && w <= 32, "a proportional font returns a positive bounded advance");
 }
 
+// ---- Bitmap glyph rasterization -------------------------------------------
+void test_drawStringBitmapBits() {
+    static const uint32 kFont1AGoldenHash = 0x1f66d074u;
+    int16 params[11] = {};
+    params[0] = 2;
+    params[2] = 7;
+    params[4] = 10;
+    params[5] = 20;
+    params[6] = 1;
+
+    fillPageRaw(2, 0);
+    gfx_drawString(params, "A");
+    require(pageHash(2) == kFont1AGoldenHash,
+            "font rasterization consumes each packed glyph bit exactly once");
+}
+
 // ---- gfx_calcRowAddr / gfx_getRowOffset / blitOffset round-trip -----------
 void test_rowAddrAndBlitOffset() {
     require(gfx_getRowOffset(0) == 0 && gfx_getRowOffset(5) == 5 * kLogicalWidth,
@@ -395,6 +425,7 @@ int main() {
     test_drawLine();
     test_dirtyRect2();
     test_setFont();
+    test_drawStringBitmapBits();
     test_rowAddrAndBlitOffset();
     test_dacPalette();
     test_goldenComposedScene();

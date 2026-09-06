@@ -1,16 +1,22 @@
 #include "egcode.h"
 #include "inttype.h"
+#include "shared/blackbox.h"
+#include "shared/blackbox_wait.h"
 
 #include <SDL3/SDL_timer.h>
 
 #include <cstdlib>
+#include <cstdio>
 #include <iostream>
 
-uint8 timerCounter = 0;
-uint8 timerCounter2 = 0;
-uint8 timerCounter3 = 0;
-uint8 timerCounter4 = 0;
-uint8 timerHandlerInstalled = 0;
+/* The LINK_CORE test uses the live timer globals defined by stdata.c. Keep
+ * declarations here because the translated data headers expose only the subset
+ * used by original modules. */
+extern uint8 timerCounter;
+extern uint8 timerCounter2;
+extern uint8 timerCounter3;
+extern uint8 timerCounter4;
+extern uint8 timerHandlerInstalled;
 
 namespace {
 
@@ -27,7 +33,10 @@ enum SharedTimerOriginalConstant : int {
     kTestFailureExitCode = 1,
 };
 
+constexpr const char *kRecordPath = "shared-timer-record-test.bb";
+
 int g_hookCalls = 0;
+int g_waitPolls = 0;
 
 void require(bool condition, const char *message) {
     if (!condition) {
@@ -52,6 +61,12 @@ void far testTickHook(void) {
     ++g_hookCalls;
 }
 
+bool pollTimerWait() {
+    ++g_waitPolls;
+    timerPump();
+    return false;
+}
+
 int main() {
     resetTimerState();
     setTimerTickHook(testTickHook);
@@ -69,6 +84,58 @@ int main() {
             "timerYield/timerPump advance all original timer counters together");
     require(g_hookCalls == timerCounter,
             "timerPump invokes the original per-tick hook once per advanced tick");
+
+    resetTimerState();
+    require(blackbox_startDebug(BLACKBOX_DEFAULT_SEED) != 0,
+            "timer test can enable deterministic blackbox time");
+    require(blackbox_usesVirtualTime() != 0,
+            "debug mode owns the deterministic virtual clock");
+    setTimerTickHook(testTickHook);
+    setTimerIrqHandler();
+    timerPump();
+    require(blackbox_tick() == 1 && timerCounter == 1 && timerCounter2 == 1 &&
+                timerCounter3 == 1 && timerCounter4 == 1 && g_hookCalls == 1,
+            "blackbox timer pump advances exactly one deterministic tick and hook");
+    blackbox_shutdown();
+
+    resetTimerState();
+    require(blackbox_startRecord(kRecordPath, BLACKBOX_DEFAULT_SEED) != 0,
+            "timer test can enable blackbox recording");
+    {
+        const uint8 hallFameFixture = 0;
+        blackbox_captureMutableFile("HallFame", &hallFameFixture, 1);
+    }
+    require(blackbox_usesVirtualTime() == 0,
+            "recording leaves tick production on the native clock");
+    setTimerTickHook(testTickHook);
+    setTimerIrqHandler();
+    g_waitPolls = 0;
+    require(blackbox_virtualWait(kTargetTicks, 0, pollTimerWait) != 0,
+            "recording uses the deterministic polling wait path");
+    const uint8 recordedTicks = timerCounter;
+    const int recordedWaitPolls = g_waitPolls;
+    require(timerCounter > 0 && blackbox_tick() == timerCounter &&
+                g_hookCalls == timerCounter &&
+                timerNowNs() == blackbox_timerNowNs() &&
+                recordedWaitPolls > recordedTicks,
+            "recording preserves zero-tick polls on the deterministic simulation clock");
+    restoreTimerIrqHandler();
+    blackbox_shutdown();
+
+    resetTimerState();
+    require(blackbox_startReplay(kRecordPath) != 0,
+            "timer test can replay the native timer schedule");
+    setTimerTickHook(testTickHook);
+    setTimerIrqHandler();
+    g_waitPolls = 0;
+    require(blackbox_virtualWait(kTargetTicks, 0, pollTimerWait) != 0,
+            "replay follows the recorded polling wait path");
+    require(timerCounter == recordedTicks && blackbox_tick() == recordedTicks &&
+                g_hookCalls == recordedTicks && g_waitPolls == recordedWaitPolls,
+            "replay consumes zero and nonzero timer pumps at the recorded polls");
+    restoreTimerIrqHandler();
+    blackbox_shutdown();
+    std::remove(kRecordPath);
 
     resetTimerState();
     setTimerTickHook(testTickHook);

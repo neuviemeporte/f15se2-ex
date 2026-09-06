@@ -21,6 +21,8 @@ option(UBSAN "Build with UndefinedBehaviorSanitizer" OFF)
 # `ctest` produces .gcda data that gcovr turns into a report (see the `coverage`
 # target). Used by CI to upload to Codecov.
 option(COVERAGE "Build with gcov code-coverage instrumentation" OFF)
+option(BLACKBOX_AUTO_RECORD
+    "Record to _blackbox.rec by default when no blackbox mode is selected" OFF)
 
 # When ON, skip the interactive menus and drop straight into a hardcoded
 # mission (egame). Handy for iterating on the flight code without clicking
@@ -98,6 +100,14 @@ set(F15SE2_SOURCES
     ${SRC_DIR}/shared/ovlimpl.c
     ${SRC_DIR}/shared/picimpl.c
     ${SRC_DIR}/shared/timer.c
+    ${SRC_DIR}/shared/blackbox.c
+    ${SRC_DIR}/shared/blackbox_diag.c
+    ${SRC_DIR}/shared/blackbox_snapshot.c
+    ${SRC_DIR}/shared/blackbox_cli.c
+    ${SRC_DIR}/shared/blackbox_gl.c
+    ${SRC_DIR}/shared/blackbox_io.c
+    ${SRC_DIR}/shared/blackbox_state.c
+    ${SRC_DIR}/shared/blackbox_wait.c
 
     # Shared file + string helpers
     ${SRC_DIR}/shared/file_io.c
@@ -275,6 +285,12 @@ target_link_libraries(f15se2_core PUBLIC SDL3::SDL3 OpenGL::GL)
 add_executable(f15se2 ${SRC_DIR}/f15.c)
 set_target_properties(f15se2 PROPERTIES OUTPUT_NAME "f15se2-ex")
 target_link_libraries(f15se2 PRIVATE f15se2_core)
+if(BLACKBOX_AUTO_RECORD)
+    target_compile_definitions(f15se2 PRIVATE F15_BLACKBOX_AUTO_RECORD)
+else()
+    target_compile_definitions(f15se2 PRIVATE
+        $<$<CONFIG:Debug>:F15_BLACKBOX_AUTO_RECORD>)
+endif()
 
 # Autogenerate header file with version string
 add_custom_target(GenerateVersionHeader ALL
@@ -449,6 +465,10 @@ add_behavior_test(load_behavior_tests SOURCES
     ${SRC_DIR}/eg3dload.c ${SRC_DIR}/egmath.c ${SRC_DIR}/egdata.c
     ${SRC_DIR}/egfarbuf.c)
 add_behavior_test(shared_timer_behavior_tests LINK_CORE)
+add_behavior_test(blackbox_behavior_tests LINK_CORE)
+add_behavior_test(blackbox_validation_tests LINK_CORE)
+add_behavior_test(blackbox_gl_behavior_tests SOURCES ${SRC_DIR}/shared/blackbox_gl.c)
+add_behavior_test(r3d_dispatch_behavior_tests SOURCES ${SRC_DIR}/r3d.c)
 add_behavior_test(shared_runtime_behavior_tests SOURCES
     ${SRC_DIR}/shared/cleanup.c ${SRC_DIR}/shared/drawstr.c)
 add_behavior_test(eg3drast_behavior_tests LINK_CORE)
@@ -476,8 +496,9 @@ add_behavior_test(eg3drast_internal_behavior_tests SOURCES ${SRC_DIR}/egdata.c)
 add_behavior_test(start_behavior_tests LINK_CORE)
 add_behavior_test(log_behavior_tests LINK_CORE)
 add_behavior_test(vgapal_behavior_tests SOURCES ${SRC_DIR}/vgapal.c DEFS main=vgapal_program_main)
-
-
+add_test(NAME blackbox_inspect_tool_tests
+    COMMAND python3 ${TEST_DIR}/blackbox_inspect_tool_tests.py
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/blackbox_inspect.py)
 #------------------------------------------------------------------------------
 # Coverage/inventory audits (opt-in custom targets; not part of `ctest`).
 #------------------------------------------------------------------------------

@@ -2,6 +2,8 @@
 #include "egdata.h"
 #include "eginput.h"
 #include "headless.h"
+#include "input.h"
+#include "shared/blackbox.h"
 
 #include <SDL3/SDL.h>
 
@@ -284,6 +286,23 @@ int main() {
     }
     require(readCount == kRingStoredCapacity,
             "key ring drops overflow after its one-empty-slot capacity");
+
+    resetInputState();
+    std::remove("blackbox-dump-0.txt");
+    std::remove("blackbox-dump-0.json");
+    require(blackbox_startDebug(BLACKBOX_DEFAULT_SEED),
+            "diagnostic shortcut fixture starts deterministic debug mode");
+    pushKey(SDL_SCANCODE_F10, SDL_KMOD_CTRL);
+    input_pumpEvents();
+    FILE *textDump = std::fopen("blackbox-dump-0.txt", "rb");
+    FILE *jsonDump = std::fopen("blackbox-dump-0.json", "rb");
+    require(textDump && jsonDump && kbhit() == 0,
+            "Ctrl+F10 writes diagnostics without entering the game key ring");
+    std::fclose(textDump);
+    std::fclose(jsonDump);
+    blackbox_shutdown();
+    std::remove("blackbox-dump-0.txt");
+    std::remove("blackbox-dump-0.json");
 
     restoreInt9Handler();
     SDL_Quit();
