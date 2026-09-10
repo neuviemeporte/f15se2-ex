@@ -454,6 +454,33 @@ void gfx_freeSpriteBuf(int handle) {
  * clears it when the title is dismissed. */
 static bool gfxHiResActive = false;
 
+static bool gfx_setDirectFBMode(int width, int height) {
+    int count = 0;
+    SDL_DisplayMode **modes = SDL_GetFullscreenDisplayModes(
+        SDL_GetDisplayForWindow(sdlWindow), &count);
+    const SDL_DisplayMode *best = NULL;
+    for (int i = 0; modes && i < count; ++i) {
+        const SDL_DisplayMode *mode = modes[i];
+        /* 640x350 may be planar-only. A 640x480 INDEX8 VESA mode can
+         * contain the title without losing pixels or changing its palette. */
+        if (mode->format == SDL_PIXELFORMAT_INDEX8 && mode->w == width &&
+            mode->h >= height && (!best || mode->h < best->h))
+            best = mode;
+    }
+    bool selected = best && SDL_SetWindowFullscreenMode(sdlWindow, best);
+    SDL_free(modes);
+    if (!selected || !SDL_SyncWindow(sdlWindow)) return false;
+
+    /* The old framebuffer and its palette belong to the previous mode. */
+    SDL_DestroyWindowSurface(sdlWindow);
+    SDL_Surface *surface = SDL_GetWindowSurface(sdlWindow);
+    if (!surface || surface->format != SDL_PIXELFORMAT_INDEX8 ||
+        surface->w != width || surface->h < height) return false;
+    if (gfxPalette) SDL_SetSurfacePalette(surface, gfxPalette);
+    SDL_ClearSurface(surface, 0, 0, 0, 1);
+    return true;
+}
+
 /* Bring up the window-surface present: request the native-resolution INDEX8
  * fullscreen mode (mode 13h on DOS) and adopt its window surface, presenting with
  * SDL_UpdateWindowSurface (a straight VRAM copy + VGA DAC program) instead of the
@@ -539,6 +566,7 @@ static void gfx_presentDirectFB(SDL_Surface *page, int shake) {
     if (!page) return;
     ws = SDL_GetWindowSurface(sdlWindow);
     if (!ws || ws->format != SDL_PIXELFORMAT_INDEX8) return;
+    if (gfxPalette) SDL_SetSurfacePalette(ws, gfxPalette);
 
     w = page->w < ws->w ? page->w : ws->w;
     h = page->h < ws->h ? page->h : ws->h;
@@ -548,6 +576,8 @@ static void gfx_presentDirectFB(SDL_Surface *page, int shake) {
 
     sp = (const Uint8 *)page->pixels;
     dp = (Uint8 *)ws->pixels;
+    /* Centre a 350-line title in a taller VESA mode. */
+    dp += (size_t)((ws->h - h) / 2) * ws->pitch;
     for (y = 0; y < h; y++)
         SDL_memcpy(dp + (size_t)y * ws->pitch,
                    sp + (size_t)y * page->pitch + shake, (size_t)copyw);
@@ -776,15 +806,21 @@ static void initRowOffsets(void) {
  * SDL. This is also the lo-res restore after the (possibly hi-res) title. */
 void FAR CDECL gfx_setMode13(void) {
     initRowOffsets();
+    if (s_directFB && gfxHiResActive &&
+        !gfx_setDirectFBMode(LOGICAL_WIDTH, LOGICAL_HEIGHT))
+        LogCritical(("Cannot restore 320x200 framebuffer: %s", SDL_GetError()));
     gfxHiResActive = false;
     gfx_getState()->modeFlag = 1;
 }
 
-/* Title-screen hi-res: switch to the 640x350 title surface. Both backends scale
- * whatever surface they're handed to the window via the shared r2d mapping (which
- * derives the virtual size from the surface), so this just flags hi-res; the
- * present picks up the 640x350 hi-res surface from gfx_presentHiRes. */
+/* Desktop renderers scale the title surface. The DOS framebuffer instead needs
+ * an actual display-mode change before it can accept a 640-wide image. */
 bool video_setHiRes(void) {
+    if (s_directFB && !gfx_setDirectFBMode(HIRES_WIDTH, HIRES_HEIGHT)) {
+        if (!gfx_setDirectFBMode(LOGICAL_WIDTH, LOGICAL_HEIGHT))
+            LogCritical(("Cannot restore title fallback mode: %s", SDL_GetError()));
+        return false;
+    }
     gfxHiResActive = true;
     return true;
 }
