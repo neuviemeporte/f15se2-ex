@@ -21,6 +21,90 @@ Development journal: https://neuviemeporte.github.io/category/f15-se2
 
 The entire game is playable, rendering and input handling is ported to SDL, sound works using Adlib emulation through [Nuked-OPL3](https://github.com/nukeykt/Nuked-OPL3) and joystick/gamepad input is supported (though not configurable right now). Multiple improvements have been implemented including high resolution and widescreen support with some bugs from the original having been fixed too. Work is ongoing to add more features and eliminate bugs.
 
+## Controls mapping
+
+Linux/SDL supplies calibrated axis values; no in-game calibration is needed.
+Mapped gamepads retain their existing layout. Other joysticks get these defaults,
+limited to the buttons actually available:
+
+| Button | Action |
+| --- | --- |
+| 1 | Fire cannon |
+| 2 | Fire missile |
+| 3 | Countermeasures: alternate chaff, flare, one per press |
+| 4 | Cycle Sidewinder, medium-range missile, Maverick |
+| 5 | Increase thrust, when no throttle axis is configured |
+| 6 | Decrease thrust, when no throttle axis is configured |
+| 7 | Toggle landing gear |
+| 8 | Toggle autopilot |
+| 9 | Next target |
+| 10 | Cycle cockpit / external follow / dynamic / side views |
+
+On Linux, an axis reported by the driver as throttle is assigned automatically,
+regardless of joystick model. If this metadata is unavailable (including on
+other platforms), extra axes are not guessed: set `F15_JOY_THROTTLE_AXIS=3`
+to use the third axis, or `0` to
+disable it. Axes 1/2 remain roll/pitch. Throttle covers 0-100%; keyboard
+afterburner remains available. Set `F15_JOY_THROTTLE_INVERT=0` to reverse the
+default lever direction. Keyboard controls remain available on smaller sticks.
+
+Button overrides are `F15_JOY_MISSILE`, `F15_JOY_COUNTERMEASURE`,
+`F15_JOY_CANNON`, `F15_JOY_WEAPON`, `F15_JOY_THRUST_UP`, and
+`F15_JOY_THRUST_DOWN`, `F15_JOY_GEAR`, `F15_JOY_AUTOPILOT`,
+`F15_JOY_TARGET`, and `F15_JOY_VIEW`.
+Values are one-based physical button numbers; `0`
+disables a binding. Assign distinct buttons to avoid overlapping actions.
+For example, `F15_JOY_CANNON=2 F15_JOY_MISSILE=1 ./build/f15se2-ex --game /path/to/game`
+exchanges missile and cannon buttons. These settings apply to the active raw
+joystick, not mapped gamepads.
+
+At startup, Controls Setup shows a scrolling list of flight actions using the
+original bitmap fonts, even without a joystick. Existing keyboard shortcuts are
+the defaults, including modifier chords and arrow/keypad steering. Cycle weapon,
+cycle view, and alternating countermeasures have no keyboard shortcut until assigned.
+
+- Up/down arrows or the stick select an action; left/right arrows select the
+  keyboard or joystick column.
+- In the keyboard column, press Enter, then the desired key or modifier chord.
+  Escape can also be assigned. Modifier keys alone are not assignments;
+  Alt+Enter remains reserved for fullscreen. Losing window focus cancels capture.
+- Press a raw joystick button to assign it to the selected action. Pressing its
+  current assignment again clears it. Assigning an occupied key or button swaps
+  the two actions.
+- Delete clears the selected column. Reset Defaults restores keyboard shortcuts
+  and the active stick's default buttons; Continue saves the result.
+- Continue is selected initially: Enter or any raw joystick button saves and
+  plays. Escape also finishes setup. If saving fails, Continue again plays unsaved.
+
+Mapped gamepads retain their existing flight layout. Menu navigation and
+pilot-name typing are not remapped. Training-only actions still require training
+mode, and legacy calibration remains a no-op with SDL-calibrated devices.
+
+Button mappings are saved per SDL device GUID and control counts in SDL's user
+settings directory (`f15se2-ex/joystick`), not in the game-assets directory.
+Identical devices with the same GUID and counts share a profile. Set
+`F15_JOY_CONFIG_DIR` to choose another directory. The text format uses one-based
+button numbers (zero disables an action). Loading applies defaults, then saved
+bindings, then explicit environment overrides. Invalid files leave defaults
+unchanged. Throttle-axis selection remains automatic or environment-configured.
+Keyboard bindings use a separate `keyboard.txt` in the same directory and apply
+across devices. The file stores SDL physical scancodes and modifier masks, not
+localized text. Reset Defaults does not change throttle-axis configuration.
+
+Bluetooth remotes reported by SDL as keyboards use the keyboard column, including
+media keys, Select and Back when delivered as SDL scancodes. Select confirms and
+Back exits in menus; while capturing a binding they are assigned instead.
+Choose Continue to save, then the next startup restores the mapping. Unnamed
+scancodes are displayed as `Key <number>`; events without a scancode are ignored.
+Android TV may reserve Home, Power, volume or vendor-specific buttons before SDL
+receives them. Such buttons cannot be assigned here. Remotes reported as mapped
+gamepads still use the unchanged gamepad layout described above. This desktop PR
+alone does not add an Android build or change Android's event forwarding.
+
+In the other menus, move the stick to select, press physical button 1 to
+confirm, or button 2 to go back. These menu controls are independent of the
+flight assignments. Pilot-name text entry still uses the keyboard.
+
 ## Screenshots
 
 <div align="center">

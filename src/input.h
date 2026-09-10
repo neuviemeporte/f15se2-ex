@@ -37,6 +37,9 @@ void input_pumpEvents(void);
 
 /* --- BIOS-style key ring (AH = scan code, AL = ASCII), shared by all phases - */
 void input_ringReset(void);  /* drop any queued keys, recentre stick */
+/* Setup reads physical joystick controls itself; keep keyboard/window events
+ * active without also translating those controls into menu commands. */
+void input_setJoystickSetup(bool active);
 bool input_keyWaiting(void); /* true when a key word is queued */
 uint16 input_readKey(void);  /* blocking pop: pump + wait, then return */
 

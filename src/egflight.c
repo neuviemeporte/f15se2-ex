@@ -19,6 +19,7 @@
 #include "comm.h"
 #include "eginput.h"
 #include "input.h"
+#include "joystick.h"
 
 #include <dos.h>
 #include <stdio.h>
@@ -99,6 +100,23 @@ void stepFlightModel(void) {
 
     while (kbhit()) {
         egReadKey(); // Flush keyboard buffer
+    }
+
+    /* Raw-stick commands bypass the keyboard flush above. Reuse the existing
+     * dispatch so keyboard and joystick actions have identical game effects. */
+    if (keyScancode == 0) {
+        keyScancode = joy_flightCommand(missileSpecIndex, g_viewMode);
+        if (keyScancode != 0 && g_autopilotEngaged == 1) {
+            g_directorMode = g_autopilotEngaged = g_viewMode = VIEW_COCKPIT;
+        }
+    }
+    {
+        const int throttle = joy_throttleChange();
+        if (throttle >= 0 && g_inputDisabled == 0) {
+            g_setThrust = throttle;
+            UpdateThrottleState();
+            if (throttle > 0) g_playerPlaneFlags &= ~8;
+        }
     }
 
     // Main key dispatch logic
