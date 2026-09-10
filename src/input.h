@@ -35,6 +35,15 @@ bool input_preferGamepad(void);
  * controls for the current mode. Every key-wait loop funnels through this. */
 void input_pumpEvents(void);
 
+/* Synthetic BIOS-style word queued for a left click in menu mode. */
+#define INPUT_MENU_MOUSE_CLICK 0x7f00
+
+/*
+ * Consume the most recent menu click in logical 320x200 coordinates.
+ * Returns false when no unconsumed click is available.
+ */
+bool input_takeMenuClick(int *x, int *y);
+
 /* --- BIOS-style key ring (AH = scan code, AL = ASCII), shared by all phases - */
 void input_ringReset(void);  /* drop any queued keys, recentre stick */
 bool input_keyWaiting(void); /* true when a key word is queued */

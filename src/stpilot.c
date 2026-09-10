@@ -3,11 +3,13 @@
 #include "stdata.h"
 #include "stgen.h"
 #include "stmissn.h"
+#include "stoptions.h"
 #include "stpilot.h"
 #include "stsprit.h"
 #include "sttypes.h"
 #include "const.h"
 #include "gfx.h"
+#include "input.h"
 #include "slot.h"
 #include "comm.h"
 #include "offsets.h"
@@ -92,6 +94,7 @@ void displayPilots(void) {
     } while (++pilotIdx < HALLFAME_SLOTS);
     screenDesc.color = COLOR_WHITE;
     drawStringCentered(pageNumPtr, "Use SELECTOR to choose pilot,  ESC to enter new pilot.", 0, 192, 320);
+    stOptionsDrawGear(screenBuf);
     gfx_commitPage();
 }
 
@@ -185,6 +188,18 @@ void processPilotInput() {
             xPos = (selectedPilotIdx < PILOTS_PER_COLUMN) ? PILOT_COL_LEFT : PILOT_COL_RIGHT;
             yPos = ((selectedPilotIdx & (PILOTS_PER_COLUMN - 1)) * PILOT_ROW_HEIGHT) + PILOT_TOP_MARGIN;
             gfx_switchColor(screenBuf, xPos, yPos, xPos + PILOT_ENTRY_WIDTH, yPos + PILOT_NAME_HEIGHT, COLOR_LIGHTGRAY, COLOR_WHITE);
+            break;
+        case INPUT_MENU_MOUSE_CLICK: {
+            int mouseX;
+            int mouseY;
+            if (input_takeMenuClick(&mouseX, &mouseY) &&
+                stOptionsGearHit(mouseX, mouseY)) {
+                pilotSelectFlag = 0;
+                stOptionsShow(hallfameBuf[selectedPilotIdx].name);
+                pilotSelectFlag = 1;
+            }
+            break;
+        }
         }
 }
 

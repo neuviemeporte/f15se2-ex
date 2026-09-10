@@ -2,6 +2,7 @@
 #include "eg3dmap.h"
 #include "egcode.h"
 #include "egcombat.h"
+#include "game_options.h"
 #include "egdata.h"
 #include "egframe.h"
 #include "egkeys.h"
@@ -641,6 +642,7 @@ int16 markTargetReached(int16 targetIdx) {
 extern int16 randomRange(int16);
 void bombTarget(void) {
     int16 hit;
+    if (gameOptionsEnabled(GAME_OPTION_NO_DAMAGE)) return;
     if (!(g_playerPlaneFlags & 0x1000) && g_autopilotEngaged != -1) {
         hit = 0;
         goto check;
@@ -678,7 +680,8 @@ void fireMissile() {
     if (spec == 0) return;
     if (spec == -1) return;
 
-    missleSpec[missileSpecIndex].ammo--;
+    if (!gameOptionsEnabled(GAME_OPTION_INFINITE_WEAPONS))
+        missleSpec[missileSpecIndex].ammo--;
 
     if (g_hudVisible != 0) {
         setDrawColor(COLOR_BLACK);
