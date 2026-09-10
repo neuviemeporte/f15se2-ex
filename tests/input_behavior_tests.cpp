@@ -2,6 +2,7 @@
 #include "egdata.h"
 #include "eginput.h"
 #include "headless.h"
+#include "input.h"
 
 #include <SDL3/SDL.h>
 
@@ -123,6 +124,17 @@ void pushKey(SDL_Scancode scancode, SDL_Keymod modifiers = SDL_KMOD_NONE) {
 void pushMouseMotion() {
     SDL_Event event = {};
     event.type = SDL_EVENT_MOUSE_MOTION;
+    SDL_PushEvent(&event);
+}
+
+void pushMenuClick(float x, float y, Uint8 button = SDL_BUTTON_LEFT,
+                   SDL_MouseID mouse = 0) {
+    SDL_Event event = {};
+    event.type = SDL_EVENT_MOUSE_BUTTON_UP;
+    event.button.x = x;
+    event.button.y = y;
+    event.button.button = button;
+    event.button.which = mouse;
     SDL_PushEvent(&event);
 }
 
@@ -253,6 +265,32 @@ int main() {
     require(egReadKey() == kBiosEscape,
             "egReadKey blocks until a key is ready, BIOS-read style");
     delayedKey.join();
+
+    resetInputState();
+    input_setMode(INPUT_MODE_MENU);
+    pushMenuClick(30, 40);
+    pushMenuClick(200, 150);
+    require(input_keyWaiting(), "mouse releases queue menu input");
+    int x = 0, y = 0;
+    require(input_readKey() == INPUT_KEY_MENU_POINTER &&
+            input_takeMenuPointer(&x, &y) && x == 30 && y == 40,
+            "first click retains its coordinates when another click is queued");
+    require(!input_takeMenuPointer(&x, &y), "click coordinates are consumed once");
+    require(input_readKey() == INPUT_KEY_MENU_POINTER &&
+            input_takeMenuPointer(&x, &y) && x == 200 && y == 150,
+            "second click retains its own coordinates");
+    pushMenuClick(-1, 40);
+    pushMenuClick(320, 40);
+    pushMenuClick(30, 40, SDL_BUTTON_RIGHT);
+    pushMenuClick(30, 40, SDL_BUTTON_LEFT, SDL_TOUCH_MOUSEID);
+    require(!input_keyWaiting(), "outside, right and synthetic touch clicks are ignored");
+    pushMenuClick(30, 40);
+    require(input_readKey() == INPUT_KEY_MENU_POINTER, "click can be read before reset");
+    input_ringReset();
+    require(!input_takeMenuPointer(&x, &y), "reset discards unconsumed coordinates");
+    input_setMode(INPUT_MODE_FLIGHT);
+    pushMenuClick(30, 40);
+    require(!input_keyWaiting(), "mouse releases do not affect flight controls");
 
     // The flight pause loop must ignore another Alt-P and block for a real
     // resume key without advancing simulation timing while paused.

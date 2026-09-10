@@ -18,6 +18,7 @@
 #include "const.h"
 #include "gfx.h"
 #include "joystick.h"
+#include "r2d.h"
 #include <SDL3/SDL.h>
 
 /* Game tick clock (timer.c); pumped here so the window stays responsive and the
@@ -60,6 +61,10 @@ bool input_preferGamepad(void) { return g_lastWasGamepad && joy_connected(); }
  * (function keys, arrows), so the layout has to match INT 16h. */
 #define KEY_RING 32
 static uint16 keyRing[KEY_RING];
+/* Coordinates travel with their key-ring slot, not with the latest SDL click. */
+static int pointerX[KEY_RING], pointerY[KEY_RING];
+static int currentPointerX = 0, currentPointerY = 0;
+static bool pointerPending = false;
 static int ringHead = 0, ringTail = 0;
 
 static void ringPush(uint16 word) {
@@ -71,6 +76,7 @@ static void ringPush(uint16 word) {
 
 void input_ringReset(void) {
     ringHead = ringTail = 0;
+    pointerPending = false;
     g_joyRawX = 0x80;
     g_joyRawY = 0x80;
 }
@@ -88,8 +94,21 @@ uint16 input_readKey(void) {
         input_pumpEvents();
     }
     word = keyRing[ringHead];
+    pointerPending = word == INPUT_KEY_MENU_POINTER;
+    if (pointerPending) {
+        currentPointerX = pointerX[ringHead];
+        currentPointerY = pointerY[ringHead];
+    }
     ringHead = (ringHead + 1) % KEY_RING;
     return word;
+}
+
+bool input_takeMenuPointer(int *x, int *y) {
+    if (!pointerPending) return false;
+    if (x) *x = currentPointerX;
+    if (y) *y = currentPointerY;
+    pointerPending = false;
+    return true;
 }
 
 /* --- keyboard translation --------------------------------------------------
@@ -696,6 +715,24 @@ static void pollGamepadMenu(void) {
 
 /* --- the single event pump ------------------------------------------------- */
 
+/* SDL mouse coordinates use window units, not drawable pixels. Using window
+ * dimensions here also handles high-DPI displays without a second scale factor.
+ * Menus use the square-pixel R2D mapping, including its letterbox offsets. */
+static void queueMenuPointer(const SDL_MouseButtonEvent *event) {
+    SDL_Window *window = SDL_GetWindowFromID(event->windowID);
+    int width = LOGICAL_WIDTH, height = LOGICAL_HEIGHT;
+    R2DMapping mapping = {};
+    if (window && !SDL_GetWindowSize(window, &width, &height)) return;
+    if (width <= 0 || height <= 0 || (ringTail + 1) % KEY_RING == ringHead) return;
+    r2d_computeMapping(LOGICAL_WIDTH, LOGICAL_HEIGHT, width, height, 1, &mapping);
+    const float x = (event->x - mapping.offX) / mapping.scaleX;
+    const float y = (event->y - mapping.offY) / mapping.scaleY;
+    if (x < 0 || x >= LOGICAL_WIDTH || y < 0 || y >= LOGICAL_HEIGHT) return;
+    pointerX[ringTail] = (int)x;
+    pointerY[ringTail] = (int)y;
+    ringPush(INPUT_KEY_MENU_POINTER);
+}
+
 void input_pumpEvents(void) {
     SDL_Event ev;
     /* Every key-polling wait loop funnels through here, so advance the game
@@ -710,6 +747,11 @@ void input_pumpEvents(void) {
          * game as keystrokes. Only after this does the pump feed context input
          * (flight controls / menu navigation / skip-screen). */
         switch (ev.type) {
+        case SDL_EVENT_MOUSE_BUTTON_UP:
+            if (g_mode == INPUT_MODE_MENU && ev.button.button == SDL_BUTTON_LEFT &&
+                ev.button.which != SDL_TOUCH_MOUSEID)
+                queueMenuPointer(&ev.button);
+            break;
         case SDL_EVENT_QUIT:
             /* A window close is an app-level quit intent, not a keystroke (the
              * "press any key to advance" screens would otherwise eat it as

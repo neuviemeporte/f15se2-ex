@@ -112,6 +112,7 @@ set(F15SE2_SOURCES
     ${SRC_DIR}/log.c
     ${SRC_DIR}/gfx_impl.c
     ${SRC_DIR}/joystick.c
+    ${SRC_DIR}/menu_pointer.c
     ${SRC_DIR}/hdsprite.c
 
     # start
@@ -468,6 +469,8 @@ target_compile_options(signed_ratio_behavior_tests PRIVATE
 add_behavior_test(file_io_behavior_tests LINK_CORE)
 add_behavior_test(gameplay_behavior_tests LINK_CORE)
 add_behavior_test(input_behavior_tests LINK_CORE)
+add_behavior_test(menu_pointer_behavior_tests LINK_CORE)
+set_tests_properties(menu_pointer_behavior_tests PROPERTIES TIMEOUT 20)
 add_behavior_test(gfx_render_behavior_tests LINK_CORE)
 add_behavior_test(view_behavior_tests LINK_CORE)
 add_behavior_test(egsys_internal_behavior_tests LINK_CORE)

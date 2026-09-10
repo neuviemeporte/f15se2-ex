@@ -139,6 +139,33 @@ void test_debriefAircraftName() {
             "debrief renderer completes the aircraft-shot-down event path");
 }
 
+void test_debriefPointerButtons() {
+    cursorX = 12;
+    cursorY = 34;
+    inputChanged = 0;
+    enterPressed = 0;
+
+    require(applyDebriefPointer(250, 164, &debriefMenuItems[0]) == 1,
+            "debrief pointer identifies the exit button");
+    require(cursorX == 250 && cursorY == 164 && inputChanged == 1 && enterPressed == 0,
+            "first debrief pointer release selects a different button");
+
+    inputChanged = 0;
+    require(applyDebriefPointer(250, 164, &debriefMenuItems[1]) == 1,
+            "debrief pointer identifies the current button");
+    require(inputChanged == 0 && enterPressed == 1,
+            "second debrief pointer release confirms the current button");
+
+    cursorX = 12;
+    cursorY = 34;
+    inputChanged = 0;
+    enterPressed = 0;
+    require(applyDebriefPointer(100, 100, &debriefMenuItems[0]) == -1,
+            "debrief pointer ignores releases outside its buttons");
+    require(cursorX == 12 && cursorY == 34 && inputChanged == 0 && enterPressed == 0,
+            "an outside debrief release leaves menu state unchanged");
+}
+
 // ---- gfx_switchColor selective recolour -----------------------------------
 void test_switchColor() {
     int16 pageDesc = 2;
@@ -418,6 +445,7 @@ int main() {
     test_pagePixels_and_alias();
     test_clearRect();
     test_debriefAircraftName();
+    test_debriefPointerButtons();
     test_switchColor();
     test_copyRect();
     test_blitSprite();

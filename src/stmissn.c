@@ -16,6 +16,7 @@
 #include "stsprit.h"
 #include "sttypes.h"
 #include "hdsprite.h"
+#include "menu_pointer.h"
 #include "r2d.h"
 
 #include <stdio.h>
@@ -242,6 +243,7 @@ selectTheater:
 
 int missionMenuSelect(const char **names, const char **desc, const char *title, int selection) {
     int yPos, row, action;
+    int pointerSelection = -1;
     enableHighlight = 1;
     page1Desc.color = COLOR_BLUE;
     drawStringCentered(page1NumPtr, title, 113, 14, 185);
@@ -266,7 +268,9 @@ int missionMenuSelect(const char **names, const char **desc, const char *title, 
     }
     do {
     again:
-        if ((action = pollMenuInput()) != KEYCODE_ENTER) {
+        action = menu_missionPointerInput(pollMenuInput(), &selection, &pointerSelection);
+        if (!action) goto again;
+        if (action != KEYCODE_ENTER) {
             if (action == KEYCODE_UPARROW) {
                 if (selection > 0) {
                     timerCounter3 = 6;

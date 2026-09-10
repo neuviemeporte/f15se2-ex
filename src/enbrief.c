@@ -13,6 +13,7 @@
 #include "eninput.h"
 #include "entext.h"
 #include "hdsprite.h"
+#include "input.h"
 
 /* Private helpers for this translation unit. */
 int mapToScreenY(unsigned char mapCoord);
@@ -210,6 +211,28 @@ int isPointInRect(const MenuItem *p) {
         return 0;
 }
 
+/* Apply a released pointer to the debrief menu. A release on another item
+ * moves the legacy cursor so selectMenuItem() performs its normal selection
+ * transition; a release on the current item is the pointer equivalent of
+ * Enter. Releases outside both labels are ignored. */
+int applyDebriefPointer(int x, int y, const MenuItem *currentItem) {
+    const int debriefButtonCount = 2; /* Repeat mission and continue. */
+    for (int idx = 0; idx < debriefButtonCount; idx++) {
+        const MenuItem *item = &debriefMenuItems[idx];
+        if (x >= item->hitX1 && x <= item->hitX2 &&
+            y >= item->hitY1 && y <= item->hitY2) {
+            cursorX = x;
+            cursorY = y;
+            if (item == currentItem)
+                enterPressed = 1;
+            else
+                inputChanged = 1;
+            return idx;
+        }
+    }
+    return -1;
+}
+
 /*static*/ void processDebriefInput(const int16 *cursorBounds, const MenuItem *menuItem) {
     int fromColor;
     int toColor;
@@ -304,6 +327,13 @@ int isPointInRect(const MenuItem *p) {
             keycode = KEYCODE_DNARROW;
             joyRepeatFlag = 1;
         }
+    }
+
+    if (keycode == INPUT_KEY_MENU_POINTER) {
+        int pointerX = 0;
+        int pointerY = 0;
+        if (input_takeMenuPointer(&pointerX, &pointerY))
+            applyDebriefPointer(pointerX, pointerY, menuItem);
     }
 
     /* process key */

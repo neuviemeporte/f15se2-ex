@@ -7,6 +7,8 @@
 void animateFlightPath(int16 *gfxPage);
 void debriefPresent(void); /* compose+present the debrief map (HD-aware map, path, markers) */
 void menuLabelsReset(void);
+/* Select or confirm a debrief item from a logical 320x200 pointer release. */
+int applyDebriefPointer(int x, int y, const MenuItem *currentItem);
 long calcMissionScore(int param);
 void processMenuItems(MenuItem *items, int unused, int itemCount, int cursorStartX, int cursorStartY, int16 *gfxPage);
 int selectMenuItem(MenuItem *items, int unused, int itemCount, int16 *inputState, int16 *gfxPage);

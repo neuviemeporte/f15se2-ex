@@ -169,6 +169,13 @@ MSVC works too:
 
 With this, I run e.g. `cmake --preset windows-clang` followed by `cmake --build build` to obtain `build/f15se2.exe`. 
 
+## Mouse menu controls
+
+In pilot and mission selection, click an entry to highlight it, then click it
+again to confirm. In debriefing, click a different button to select it or click
+the selected button to confirm. Existing keyboard and gamepad controls remain
+available. Pilot-name entry still uses the keyboard; flight controls are unchanged.
+
 ## Running
 
 After building, either drop the resulting binary into a directory with the game assets, use the `--game` command line option or the `F15SE2_DIR` environmental variable to set the assets' location. The game checks MD5 checksums on all asset files to make sure they are not corrupted, and will not start unless all files from the original game match up.

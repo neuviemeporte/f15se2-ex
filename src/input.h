@@ -24,6 +24,11 @@ typedef enum {
 void input_setMode(InputMode mode);
 InputMode input_getMode(void);
 
+/* Private menu event, outside the BIOS scancode range; no printable low byte. */
+enum { INPUT_KEY_MENU_POINTER = 0xff00 };
+/* Consume coordinates belonging to the most recently read pointer event. */
+bool input_takeMenuPointer(int *x, int *y);
+
 /* True when the gamepad/joystick should drive flight controls rather than the
  * keyboard: a device is connected and was used more recently than the keyboard.
  * Pressing a key hands control back to the keyboard, moving the stick takes it
