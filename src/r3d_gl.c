@@ -24,7 +24,11 @@
  * have no 3D pass and composite the page at present instead.
  */
 #include <SDL3/SDL.h>
+#ifdef __EMSCRIPTEN__
+#include "r3d_gles_compat.h"
+#else
 #include <SDL3/SDL_opengl.h>
+#endif
 
 #include "r3d.h"
 #include "r3d_gl.h"
@@ -77,6 +81,11 @@ static const int GL_MSAA_SAMPLES = 4;
 int r3dgl_msaaSamples(void) { return GL_MSAA_SAMPLES; }
 
 void r3dgl_setGLAttributes(int msaaSamples) {
+#ifdef __EMSCRIPTEN__
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+#endif
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     /* 8-bit stencil (D24S8, universal on GL 1.1) — the shadow pass masks each covered
      * pixel so a self-overlapping silhouette blends exactly once. */
@@ -97,7 +106,16 @@ int r3dgl_initContext(SDL_Window *win) {
     }
     SDL_GL_MakeCurrent(win, s_ctx);
     SDL_GL_SetSwapInterval(1);
+#ifdef __EMSCRIPTEN__
+    if (!r3dgles_compatInit()) {
+        SDL_GL_DestroyContext(s_ctx);
+        s_ctx = NULL;
+        return 0;
+    }
+    s_glFogCoordf = r3dgles_fogCoordf;
+#else
     s_glFogCoordf = (void (*)(GLfloat))SDL_GL_GetProcAddress("glFogCoordf");
+#endif
     if (GL_MSAA_SAMPLES > 0) glEnable(GL_MULTISAMPLE); /* no-op if the format has 0 samples */
     {
         GLint depthBits = 0, stencilBits = 0, samples = 0;

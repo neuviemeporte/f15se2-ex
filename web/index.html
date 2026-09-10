@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>F-15 Strike Eagle II | Browser flight</title>
+<style>
+:root { color-scheme: dark; --ink:#dfebe3; --panel:#162925; --accent:#e9be69; }
+* { box-sizing:border-box; }
+body { margin:0; background:radial-gradient(ellipse at top,#29483e,#0c1516 75%); color:var(--ink); font:16px Georgia,serif; min-height:100vh; }
+main { max-width:1100px; margin:auto; padding:24px; }
+h1 { margin:0; font-size:clamp(24px,4vw,42px); font-weight:normal; }
+.eyebrow { color:var(--accent); letter-spacing:.16em; font:12px monospace; }
+.toolbar { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin:20px 0; }
+button,select,.import { background:var(--panel); border:1px solid #749086; color:var(--ink); padding:10px 14px; font:inherit; border-radius:3px; }
+button:not(:disabled),.import { cursor:pointer; }
+button:disabled { opacity:.4; }
+input { max-width:240px; }
+#screen { background:#000; border:1px solid #486359; }
+canvas { display:block; width:100%; height:auto; aspect-ratio:4/3; outline:none; touch-action:none; }
+#screen:fullscreen { display:grid; place-items:center; }
+#screen:fullscreen canvas { width:auto; height:100%; max-width:100%; }
+#status { min-height:1.5em; color:var(--accent); }
+small { display:block; line-height:1.6; max-width:80ch; }
+</style>
+<main>
+<p class="eyebrow">BROWSER FLIGHT / LOCAL ASSETS</p>
+<h1>F-15 Strike Eagle II</h1>
+<div class="toolbar">
+<label class="import">Game folder <input id="files" type="file" webkitdirectory multiple disabled></label>
+<button id="start" disabled>Start flight</button>
+<button id="save" disabled>Save to browser</button>
+<button id="backup" disabled>Export pilot file</button>
+<button id="fullscreen">Fullscreen</button>
+</div>
+<p id="status" role="status">Loading browser runtime...</p>
+<div id="screen"><canvas id="canvas" tabindex="0" width="960" height="720"></canvas></div>
+<p><small>Select the folder containing your original DOS game files. Files stay on this device; nothing is uploaded. ZIP archives must be extracted first. Keyboard, mouse and browser-supported gamepads use the game's controls. Click the canvas to focus it.</small></p>
+<small>Saves belong to this browser and website address. Private browsing, clearing site data or storage eviction can remove them. Export your pilot file as a backup. Reload this page to restart.</small>
+</main>
+<script src="f15se2-ex.js"></script>
+<script src="launcher.js"></script>
+</html>

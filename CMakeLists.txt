@@ -4,6 +4,10 @@ project(F15SE2-EX
     LANGUAGES C CXX
 )
 
+if(EMSCRIPTEN)
+    include(cmake/wasm.cmake)
+endif()
+
 #==============================================================================
 # Options
 #==============================================================================
@@ -57,6 +61,9 @@ else()
             UPDATE_DISCONNECTED TRUE
         )
         FetchContent_MakeAvailable(SDL3)
+        if(EMSCRIPTEN)
+            f15_patch_sdl_missing_axes("${sdl3_SOURCE_DIR}")
+        endif()
     else()
         # DOWNLOAD_DEPENDENCIES is off: a system SDL3 is mandatory.
         find_package(SDL3 3.4.0 REQUIRED CONFIG COMPONENTS SDL3)
@@ -187,6 +194,10 @@ set(END_SOURCES
     ${SRC_DIR}/endata.c
 )
 
+if(EMSCRIPTEN)
+    list(APPEND EGAME_SOURCES ${SRC_DIR}/r3d_gles_compat.c ${SRC_DIR}/web_runtime.c)
+endif()
+
 list(APPEND F15SE2_SOURCES ${EGAME_SOURCES})
 list(APPEND F15SE2_SOURCES ${END_SOURCES})
 
@@ -203,11 +214,15 @@ set_source_files_properties(
 
 # OpenGL for the GL 3D backend (r3d_gl.c). The immediate-mode 1.x path needs only
 # the base GL library; SDL3 supplies the GL headers and context management.
-find_package(OpenGL REQUIRED)
+if(NOT EMSCRIPTEN)
+    find_package(OpenGL REQUIRED)
+endif()
 
 # Some tests use std::thread; link a threads library explicitly so it resolves
 # across toolchains (not all fold pthread into libc).
-find_package(Threads REQUIRED)
+if(NOT EMSCRIPTEN)
+    find_package(Threads REQUIRED)
+endif()
 
 #------------------------------------------------------------------------------
 # Sanitizers (GCC/Clang, opt-in). Applied at directory scope so the executable
@@ -270,7 +285,10 @@ target_compile_definitions(f15se2_core PUBLIC DEBUG)
 if(AUTOSTART)
     target_compile_definitions(f15se2_core PUBLIC DEBUG_AUTOSTART)
 endif()
-target_link_libraries(f15se2_core PUBLIC SDL3::SDL3 OpenGL::GL)
+target_link_libraries(f15se2_core PUBLIC SDL3::SDL3)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(f15se2_core PUBLIC OpenGL::GL)
+endif()
 
 add_executable(f15se2 ${SRC_DIR}/f15.c)
 set_target_properties(f15se2 PROPERTIES OUTPUT_NAME "f15se2-ex")
@@ -369,6 +387,11 @@ if(WIN32)
             $<TARGET_FILE_DIR:f15se2>
         )
     endif()
+endif()
+
+if(EMSCRIPTEN)
+    f15_configure_browser(f15se2)
+    return() # Browser assets are imported locally; native tests stay below.
 endif()
 
 # HD assets (optional high-res sprite art, GPU backends only) live in assets/ and are
