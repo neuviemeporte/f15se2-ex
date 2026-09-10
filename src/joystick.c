@@ -73,6 +73,24 @@ static void joy_close(void) {
  * joystick. No-op when a device is already active. */
 static void joy_open(SDL_JoystickID id) {
     if (g_devId) return;
+#ifdef __DJGPP__
+    /* Temporary workaround: https://github.com/libsdl-org/SDL/issues/16289
+     * Revisit after updating SDL; retain the DOS fire/menu button bindings.
+     * SDL's DOS driver exposes two axes and four buttons. Its generic gamepad
+     * mapping invents trigger axes 4/5: their missing-axis value becomes 16383,
+     * above our fire threshold. Map physical buttons to triggers instead;
+     * this also preserves the menu pump's confirm/cancel handling. */
+    char guid[33] = {0};
+    char mapping[256] = {0};
+    SDL_GUIDToString(SDL_GetJoystickGUIDForID(id), guid, sizeof(guid));
+    SDL_snprintf(mapping, sizeof(mapping),
+                 "%s,DOS Gameport Joystick,leftx:a0,lefty:a1,"
+                 "righttrigger:b0,lefttrigger:b1,x:b2,y:b3,", guid);
+    if (SDL_AddGamepadMapping(mapping) < 0) {
+        LogInfo(("joystick: DOS mapping failed: %s", SDL_GetError()));
+        return;
+    }
+#endif
     if (SDL_IsGamepad(id)) {
         g_pad = SDL_OpenGamepad(id);
         if (g_pad) {
