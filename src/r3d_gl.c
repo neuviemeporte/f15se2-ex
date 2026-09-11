@@ -1504,6 +1504,7 @@ static GLuint imageTexture(R2DImage *img, SDL_Palette *pal, int palGen) {
     const uint8 *src;
     uint8 *rgba;
     int sw, sh, pitch, x, y;
+    uint32 packedRgbaPalette[256];
 
     if (!surf) return 0;
     sw = surf->w;
@@ -1531,17 +1532,21 @@ static GLuint imageTexture(R2DImage *img, SDL_Palette *pal, int palGen) {
     if (!rgba) return 0;
     src = (const uint8 *)surf->pixels;
     pitch = surf->pitch;
+    /* Fill each native word by bytes so its in-memory order is RGBA on either
+     * endian. The conversion loop can then use one lookup and one store. */
+    for (int paletteIndex = 0; paletteIndex < 256; ++paletteIndex) {
+        SDL_Color color = pal->colors[paletteIndex];
+        uint8 *rgbaBytes = (uint8 *)&packedRgbaPalette[paletteIndex];
+        rgbaBytes[0] = color.r;
+        rgbaBytes[1] = color.g;
+        rgbaBytes[2] = color.b;
+        rgbaBytes[3] = paletteIndex == 0 ? 0 : 255;
+    }
     for (y = 0; y < sh; y++) {
-        const uint8 *row = src + y * pitch;
-        uint8 *out = rgba + y * sw * 4;
-        for (x = 0; x < sw; x++) {
-            uint8 idx = row[x];
-            SDL_Color c = pal->colors[idx];
-            out[x * 4 + 0] = c.r;
-            out[x * 4 + 1] = c.g;
-            out[x * 4 + 2] = c.b;
-            out[x * 4 + 3] = (idx == 0) ? 0 : 255;
-        }
+        const uint8 *sourceRow = src + y * pitch;
+        uint32 *destinationPixels = (uint32 *)(rgba + (size_t)y * sw * 4);
+        for (x = 0; x < sw; x++)
+            destinationPixels[x] = packedRgbaPalette[sourceRow[x]];
     }
     if (!tex) glGenTextures(1, &tex);
     glBindTexture(GL_TEXTURE_2D, tex);

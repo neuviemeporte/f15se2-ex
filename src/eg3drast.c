@@ -118,26 +118,17 @@ static struct EdgeRec *erec(int i) {
 static struct EdgeRec g_clipVtx;
 
 /* ===================================================================== */
-/* Manual 32/16 divides (no long runtime helper; shift-by-1 / mask only).*/
+/* 32/16 divides preserve the original numerator width and trap values. */
 /* Saturate to +/-0x7f00 on overflow, matching the egseg1 INT0 stubs.    */
 /* ===================================================================== */
-static unsigned udiv32by16(unsigned long num, unsigned den) {
-    unsigned long rem = 0;
-    unsigned long q = 0;
-    int i;
-    if (den == 0) return 0x7f00;
-    for (i = 0; i < 32; i++) {
-        rem = rem << 1;
-        if (num & 0x80000000UL) rem |= 1;
-        num = num << 1;
-        q = q << 1;
-        if (rem >= (unsigned long)den) {
-            rem -= den;
-            q |= 1;
-        }
-    }
-    if (q > 0x7fffUL) q = 0x7f00;
-    return (unsigned)q;
+static unsigned udiv32by16(unsigned long numerator, unsigned denominator) {
+    const unsigned maxQuotient = 0x7fffU;
+    const unsigned saturatedQuotient = 0x7f00U;
+    unsigned quotient;
+
+    if (denominator == 0) return saturatedQuotient;
+    quotient = (uint32)numerator / denominator;
+    return quotient > maxQuotient ? saturatedQuotient : quotient;
 }
 
 /* Full-precision unsigned 32/16 divide: returns the complete 32-bit quotient,
