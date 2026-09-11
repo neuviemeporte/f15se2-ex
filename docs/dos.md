@@ -6,7 +6,7 @@
 
 You need your own original F-15 Strike Eagle II game files. They are not
 included in the download. Extract the DOS ZIP into a writable directory
-alongside those files, keeping `CWSDPMI.EXE` beside `F15SE2EX.EXE`, then run:
+alongside those files, then run:
 
 ```text
 F15SE2EX.EXE
@@ -21,70 +21,46 @@ F15SE2EX.EXE --game C:\F15
 Use `--nointro` to skip the logo/intro sequence. Back up your pilot records
 before testing: the game writes to its normal game-data directory.
 
-For DOSBox on Linux, with the executable and game files in separate folders:
+This is a 32-bit DJGPP build; it needs a DPMI host and VGA/VESA graphics.
+DOS itself doesn't provide a DPMI host, so get CWSDPMI (the
+`csdpmi7b.zip` binary package from https://sandmann.dotster.com/cwsdpmi/ or the
+DJGPP `v2misc` directory on any DJGPP mirror) and put `CWSDPMI.EXE` next to
+`F15SE2EX.EXE`. A Windows 9x DOS box already provides DPMI.
+
+Sound uses the `BLASTER` environment variable to find your Sound
+Blaster-compatible card. Emulators usually set it already; otherwise set it to
+match your card's jumpers or setup utility, typically in `AUTOEXEC.BAT`:
 
 ```text
-mount c /path/to/dos-release
-mount d /path/to/original-game
-c:
-F15SE2EX.EXE --game D:/
+SET BLASTER=A220 I5 D1 H5 T6
 ```
 
-This is a 32-bit DJGPP build; it needs a DPMI host and VGA/VESA graphics. Configure `BLASTER` for your Sound Blaster-compatible card on real hardware.
+`A` is the I/O port, `I` the IRQ, `D` the 8-bit DMA channel, `H` the 16-bit
+DMA channel (Sound Blaster 16 only) and `T` the card type (6 = Sound Blaster 16).
 
 ## Controls and audio
 
-Connect the joystick before starting DOSBox. The DOS driver exposes two axes
+Connect the joystick before launching the game. The DOS driver exposes two axes
 and four buttons; the X/Y axes steer, button 1 fires the cannon, and button 2
 fires missiles. Those two buttons also confirm/cancel menu choices.
 Buttons 3 and 4 retain afterburner and weapon-cycle actions respectively.
 Keyboard controls are unchanged.
 
-Explicit joystick calibration is not included yet. The SDL DOS driver
-currently learns its axis range while the stick moves.
+The joystick calibrates itself: there is no calibration screen to sit
+through. Move the stick around its full range once and the game learns its
+limits.
 
-FM music and effects use AdLib-compatible hardware registers on DOS rather
-than software OPL synthesis. Digitized speech still uses SDL's Sound Blaster
-audio output. This is a game-side DOS backend, not an SDL workaround.
-
-## Temporary SDL workarounds
-
-- Audio starvation: `cmake/patch_sdl_dos_audio.cmake` adds a cooperative yield
-  even when the audio ring has free space. Tracked by
-  https://github.com/libsdl-org/SDL/pull/16288.
-- Joystick mapping: `src/joystick.c` supplies bindings for the controls the
-  DOS driver actually exposes. The generic mapping otherwise reads missing
-  trigger axes as half-pressed. Tracked by
-  https://github.com/libsdl-org/SDL/issues/16289.
-
-Neither upstream fix is assumed to be available merely because it was
-reported. When updating SDL, check the linked changes, test idle joystick
-input and slow audio mixing, then remove the superseded workarounds.
+A Sound Blaster or compatible card is required for music, effects and speech.
 
 ## Build
 
-With DJGPP's cross-compilers on `PATH` and a DJGPP CMake toolchain file:
+With DJGPP's cross-compilers on `PATH`:
 
 ```sh
 cmake -S . -B build-dos \
-  -DCMAKE_TOOLCHAIN_FILE=/path/to/i586-pc-msdosdjgpp.cmake \
+  -DCMAKE_TOOLCHAIN_FILE=cmake/i586-pc-msdosdjgpp.cmake \
   -DCMAKE_BUILD_TYPE=Release -DDOWNLOAD_DEPENDENCIES=ON
 cmake --build build-dos -j4
 ```
 
-The output is `build-dos/f15se2ex.exe`. Build output and original game assets
-must not be committed. The release's source archive includes dependency
-sources and additional instructions for rebuilding without fetching them.
-
-## Redistribution
-
-The binary ZIP includes the game's MIT license and the SDL, Nuked OPL3 and
-QuickDigest5 licenses. The accompanying source archive contains the matching
-game and dependency source used to build the binary, including the SDL patch.
-QuickDigest5 is GPLv3 and Nuked OPL3 is LGPLv2.1; preserve those terms when
-redistributing the linked build. This does not grant rights to original
-commercial game assets.
-
-CWSDPMI release 7 is included unmodified with its documentation. You have the
-right to receive its source and binary updates:
-https://sandmann.dotster.com/cwsdpmi/
+The output is `build-dos/f15se2ex.exe`.
