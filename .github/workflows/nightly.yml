@@ -1,0 +1,112 @@
+name: Nightly packages
+
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - '.github/workflows/nightly.yml'
+      - 'cmake/PackageRuntime.cmake'
+      - 'CMakeLists.txt'
+      - 'docs/nightly.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux-x86_64
+          - os: windows-2025-vs2026
+            platform: windows-x86_64
+          - os: macos-15
+            platform: macos-arm64
+          - os: macos-15-intel
+            platform: macos-x86_64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev libx11-dev libxext-dev \
+            libxcursor-dev libxi-dev libxfixes-dev libxrandr-dev libxss-dev \
+            libxtst-dev libwayland-dev wayland-protocols libegl1-mesa-dev libgles2-mesa-dev
+      - name: Configure Release build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_DISABLE_FIND_PACKAGE_SDL3=ON -DSDL_SHARED=ON -DSDL_STATIC=OFF
+      - name: Build and test
+        run: |
+          cmake --build build --config Release --parallel 2
+          ctest --test-dir build -C Release --output-on-failure --timeout 120 --no-tests=error
+      - name: Install runtime
+        run: cmake --install build --config Release --component Runtime --prefix stage/f15se2-ex
+      - name: Smoke test installed executable
+        working-directory: stage/f15se2-ex
+        run: ./f15se2-ex --help
+      - name: Archive
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          git rev-parse HEAD > stage/f15se2-ex/COMMIT.txt
+          cd stage
+          cmake -E tar cf "../f15se2-ex-${PLATFORM}.zip" --format=zip f15se2-ex
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ matrix.platform }}
+          path: f15se2-ex-${{ matrix.platform }}.zip
+          if-no-files-found: error
+          retention-days: 7
+      - name: Preserve failing test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-tests-${{ matrix.platform }}
+          path: build/Testing/Temporary/
+
+  release:
+    needs: package
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: nightly-*
+          path: packages
+          merge-multiple: true
+      - name: Publish dated prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          cd packages
+          sha256sum ./*.zip > SHA256SUMS.txt
+          tag="nightly-$(date -u +%Y%m%d)-${COMMIT:0:7}"
+          printf 'Automated build of %s. See COMMIT.txt in each archive.\n\nOriginal game data is required and is not included. Packages are unsigned.\n' "$COMMIT" > notes.md
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" ./*.zip SHA256SUMS.txt --clobber
+          else
+            gh release create "$tag" ./*.zip SHA256SUMS.txt --target "$COMMIT" \
+              --prerelease --latest=false --title "$tag" --notes-file notes.md
+          fi

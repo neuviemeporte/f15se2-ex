@@ -388,6 +388,8 @@ add_custom_command(
 )
 add_custom_target(mirror_assets ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/assets.stamp)
 
+include(cmake/PackageRuntime.cmake)
+
 #==============================================================================
 # Behavior tests
 #==============================================================================
