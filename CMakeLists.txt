@@ -74,12 +74,16 @@ else()
         message(STATUS "System SDL3 not found, building it from source")
         include(FetchContent)
         if(F15_DOS)
-            # DOS support landed after 3.4.12; pin the commit that carries the DOS
-            # video/timer/audio backends and the DJGPP toolchain.
+            # DOS support isn't in a release yet; pin a main commit that carries the
+            # DOS video/timer/audio backends and the DJGPP toolchain, the audio
+            # ring-buffer fairness fix (PR #16288), the direct gameport joystick
+            # read (the BIOS INT 15h axis read it replaces cost tens of
+            # milliseconds per call on real hardware), and the gamepad fix that
+            # ignores axes a joystick doesn't have (issue #16289).
             FetchContent_Declare(
                 SDL3
-                URL "https://github.com/libsdl-org/SDL/archive/e442a9a5e1d6eb2621e9206f5176c53b0d034e09.tar.gz"
-                URL_HASH SHA256=8ebc84ff04c076c0e6249c885fc1efc6dc5f13a411b31de8621478646ff76bcf
+                URL "https://github.com/libsdl-org/SDL/archive/56a72f8c869fd5ebd69c1bd4ba7abcdf0b7b83b4.tar.gz"
+                URL_HASH SHA256=09917d28b4b9e49c68fc4b21a64491429c650dd96c20a28b8eb472f57f517c37
                 UPDATE_DISCONNECTED TRUE
             )
         else()
@@ -97,12 +101,21 @@ else()
     endif()
 endif()
 
+# FM synthesis. DOS writes the AdLib register stream straight to the OPL at 388h
+# that every Sound Blaster carries. Elsewhere there is no OPL chip, so the stream
+# is synthesized (Nuked-OPL3) and mixed into the PCM output.
+if(F15_DOS)
+    set(FM_EMULATION OFF)
+else()
+    set(FM_EMULATION ON)
+endif()
+
 # Nuked-OPL3: the YM3812/OPL2 emulator that turns the ported AdLib driver's
 # register state into PCM. Header-light (opl3.c/.h), no CMake of its own, so we
-# just pull the sources and compile opl3.c into the target (as C). Only needed by
-# the real audio backend, so skip the fetch entirely when AUDIO is off.
+# just pull the sources and compile opl3.c into the target (as C). Only needed
+# when FM is synthesized, so skip the fetch otherwise.
 include(FetchContent)
-if(AUDIO)
+if(AUDIO AND FM_EMULATION)
     FetchContent_Declare(
         nuked_opl3
         GIT_REPOSITORY "https://github.com/nukeykt/Nuked-OPL3.git"
@@ -303,9 +316,9 @@ endif()
 set(F15SE2_CORE_SOURCES ${F15SE2_SOURCES})
 list(REMOVE_ITEM F15SE2_CORE_SOURCES ${SRC_DIR}/f15.c)
 
-# opl3.c (the OPL emulator) is only pulled in by the real audio backend.
+# opl3.c (the OPL emulator) is only pulled in when FM is synthesized.
 set(AUDIO_SOURCES "")
-if(AUDIO)
+if(AUDIO AND FM_EMULATION)
     list(APPEND AUDIO_SOURCES ${nuked_opl3_SOURCE_DIR}/opl3.c)
 endif()
 
@@ -324,8 +337,9 @@ target_include_directories(f15se2_core PRIVATE
     ${SRC_DIR}/asound
     ${quick_digest5_SOURCE_DIR}/include
 )
-if(AUDIO)
+if(AUDIO AND FM_EMULATION)
     target_include_directories(f15se2_core PRIVATE ${nuked_opl3_SOURCE_DIR})
+    target_compile_definitions(f15se2_core PRIVATE F15_FM_EMULATION=1)
 endif()
 # Keep the log.h diagnostics live (the Log* macros compile out without DEBUG).
 target_compile_definitions(f15se2_core PUBLIC DEBUG)

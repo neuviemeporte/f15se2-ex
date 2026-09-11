@@ -581,7 +581,6 @@ static void gfx_presentDirectFB(SDL_Surface *page, int shake) {
     for (y = 0; y < h; y++)
         SDL_memcpy(dp + (size_t)y * ws->pitch,
                    sp + (size_t)y * page->pitch + shake, (size_t)copyw);
-
     SDL_UpdateWindowSurface(sdlWindow);
 }
 
