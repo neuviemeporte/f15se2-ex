@@ -5,6 +5,8 @@
  * writes to OPL ports 388h/389h, the decoded driver/asopl shadow state is
  * flushed into a Nuked-OPL3 (YM3812/OPL2) emulator and rendered to PCM on an SDL
  * audio thread. Digitized voice cues (F15DGTL.BIN) are mixed in as raw PCM.
+ * On DOS (FM_EMULATION=OFF) the shadow is written to the real OPL at 388h
+ * instead and only the voice cues are rendered to PCM.
  *
  * The game-facing audio_* slot ABI (slot.h) maps by name onto the model's
  * sound_driver_* entry points. The audio thread runs the sequencer at 60 Hz (the
@@ -16,11 +18,15 @@
 
 #include "asound_model.h"
 #include "asopl.h"
+#if F15_FM_EMULATION
 /* opl3.h has no extern "C" guard of its own; this TU compiles as C++ but opl3.c
  * is built as C, so the declarations must use C linkage to match. */
 extern "C" {
 #include "opl3.h"
 }
+#else
+#include "asound_dos_opl.h"
+#endif
 
 #include <stdint.h>
 
@@ -37,7 +43,9 @@ extern "C" {
 #define ASND_CHUNK 512      /* max frames generated per inner loop pass */
 
 static AsoplState g_opl; /* OPL register shadow (event -> regs) */
+#if F15_FM_EMULATION
 static opl3_chip g_chip; /* Nuked-OPL3 synthesis state */
+#endif
 static SDL_AudioStream *g_stream;
 static SDL_Mutex *g_lock;
 static AsoundU8 g_hwShadow[ASOPL_REGISTER_COUNT]; /* last value written to chip */
@@ -57,6 +65,12 @@ static const double g_samplesPerTick = (double)ASND_OUT_RATE / (double)ASND_TICK
 
 /* ---- OPL shadow -> chip --------------------------------------------------- */
 
+static void asnd_resetChip(void) {
+#if F15_FM_EMULATION
+    OPL3_Reset(&g_chip, ASND_OUT_RATE);
+#endif
+}
+
 static void asnd_invalidateHwShadow(void) {
     for (int r = 0; r < ASOPL_REGISTER_COUNT; r++) g_hwShadow[r] = 0xff;
 }
@@ -66,7 +80,11 @@ static void asnd_syncChip(void) {
     for (int r = 0; r < ASOPL_REGISTER_COUNT; r++) {
         AsoundU8 v = asopl_get_register(&g_opl, (AsoundU8)r);
         if (g_hwShadow[r] == v) continue;
+#if F15_FM_EMULATION
         OPL3_WriteReg(&g_chip, (uint16_t)r, v);
+#else
+        asnd_writeDosOpl((unsigned char)r, v);
+#endif
         g_hwShadow[r] = v;
     }
 }
@@ -151,7 +169,12 @@ static void SDLCALL asnd_callback(void *user, SDL_AudioStream *stream,
         if (chunk > (int)g_tickAccum) chunk = (int)g_tickAccum;
         if (chunk > ASND_CHUNK) chunk = ASND_CHUNK;
 
+#if F15_FM_EMULATION
         OPL3_GenerateStream(&g_chip, buf, (uint32_t)chunk);
+#else
+        /* The chip produces the FM itself; only digitized speech needs PCM. */
+        SDL_memset(buf, 0, chunk * 2 * sizeof(Sint16));
+#endif
         asnd_mixSample(buf, chunk);
         g_tickAccum -= chunk;
         SDL_UnlockMutex(g_lock);
@@ -185,7 +208,7 @@ static void asnd_openDevice(void) {
     /* Make the synth valid before the callback can fire: a zeroed opl3_chip has
      * rateratio 0 and OPL3_GenerateStream would divide by zero. */
     asopl_init(&g_opl);
-    OPL3_Reset(&g_chip, ASND_OUT_RATE);
+    asnd_resetChip();
     asnd_invalidateHwShadow();
     g_tickAccum = g_samplesPerTick;
     SDL_ResumeAudioStreamDevice(g_stream);
@@ -199,7 +222,7 @@ static void asnd_resetSynth(AsoundU16 setupValue) {
     asopl_init(&g_opl);
     asopl_set_drone_pitch(&g_opl, 0);
     asopl_set_drone_enable(&g_opl, 0);
-    OPL3_Reset(&g_chip, ASND_OUT_RATE);
+    asnd_resetChip();
     asnd_invalidateHwShadow();
     asnd_syncChip();
     g_smpActive = false;
@@ -222,7 +245,7 @@ int FAR CDECL audio_shutdown(void) {
     SDL_LockMutex(g_lock);
     sound_driver_shutdown();
     asopl_reset(&g_opl);
-    OPL3_Reset(&g_chip, ASND_OUT_RATE);
+    asnd_resetChip();
     asnd_invalidateHwShadow();
     asnd_syncChip();
     g_smpActive = false;
@@ -283,7 +306,7 @@ int FAR CDECL audio_playIntro(void) {
     /* silence the chip (adlib_reset_state) */
     SDL_LockMutex(g_lock);
     asopl_reset(&g_opl);
-    OPL3_Reset(&g_chip, ASND_OUT_RATE);
+    asnd_resetChip();
     asnd_invalidateHwShadow();
     asnd_syncChip();
     g_smpActive = false;

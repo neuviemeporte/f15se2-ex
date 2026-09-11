@@ -21,6 +21,9 @@ void gfx_videoShutdown(void);
 /* Toggle borderless-desktop fullscreen (bound to Alt+Enter in the input pump). */
 void gfx_toggleFullscreen(void);
 
+/* Toggle the upper-left FPS counter overlay (bound to Alt+P in the input pump). */
+void gfx_toggleFps(void);
+
 /* Re-present the current visible frame. The input pump calls this on window
  * events (resize / fullscreen toggle / expose) so the image is redrawn even on
  * a static screen that is blocked in a key-wait and produces no game frame. */

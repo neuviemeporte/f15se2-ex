@@ -12,7 +12,9 @@
  * list is never empty-handed. init() must be idempotent — it may be probed more
  * than once (forced-but-unavailable falls through to the full probe). */
 static const R3DBackend *const g_backendList[] = {
+#ifdef ENABLE_OPENGL1
     &r3d_glBackend,
+#endif
     &r3d_softwareBackend,
 };
 #define R3D_BACKEND_COUNT ((int)(sizeof g_backendList / sizeof *g_backendList))

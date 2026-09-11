@@ -57,12 +57,33 @@ static void gfx_expandIndexedSurface(SDL_Surface *surf, void *pixels, int dstPit
     }
 }
 
+/* Direct-framebuffer present: blit the paletted page straight into the window
+ * surface (INDEX8 / mode 13h) and let SDL push it to VRAM + program the VGA DAC,
+ * skipping the SDL_Renderer + per-frame texture upload. Used on fixed-resolution
+ * targets with no compositor/scaling (DOS); desktop keeps the renderer for its
+ * resizable, scaled window. */
+static bool s_directFB = false;
+/* Software frame pacer for the no-vsync direct-FB present (DOS): pads each frame to
+ * the slowest recent frame's wall time so delivery is even. s_paceCapNs != 0 forces
+ * a fixed cap (F15_FPS_CAP) instead of the adaptive target. */
+static bool s_pace = false;
+static Uint64 s_paceCapNs = 0;
+
+/* FPS overlay (toggle: Alt+P, handled in input.c). Frames are counted per present
+ * in gfx_presentPage; the shown value refreshes ~2x/second so it reads steady. It's
+ * drawn into the page's upper-left, so it composites through whatever backend is
+ * active. */
+static bool s_showFps = false;
+static int  s_fpsValue = 0;
+
 /* Forward declarations for the page-surface model, used by gfx_videoShutdown
  * before their definitions further down. */
 static GfxState FAR *gfx_getState(void);
 static SDL_Palette *gfxPalette; /* shared 256-entry VGA DAC palette */
 static int gfxPaletteGen;       /* bumped on every palette-entry change (cache invalidation) */
 static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake);
+static void gfx_presentDirectFB(SDL_Surface *surf, int shake);
+static bool gfx_initDirectFB(void);
 static void gfx_swLine(int x1, int y1, int x2, int y2, int color);
 static void gfx_swPoint(int x, int y, int color);
 static void gfx_swImage(struct R2DImage *img, int srcX, int srcY, int w, int h,
@@ -73,6 +94,13 @@ static void gfx_swImage(struct R2DImage *img, int srcX, int srcY, int w, int h,
 void gfx_videoInit(void) {
     if (!SDL_Init(SDL_INIT_VIDEO))
         LogCritical(("SDL_Init failed: %s", SDL_GetError()));
+
+    /* Start with the FPS overlay already on when F15_SHOW_FPS is set (Alt+P toggles
+     * it at runtime regardless). */
+    {
+        const char *e = SDL_getenv("F15_SHOW_FPS");
+        if (e && *e && *e != '0') s_showFps = true;
+    }
 
     /* The OpenGL 3D backend (r3d_gl.c) presents through a GL context rather than
      * an SDL_Renderer (the two can't share a window). When it's selected, request
@@ -85,6 +113,7 @@ void gfx_videoInit(void) {
     r2d_registerSoftwarePrims(gfx_swLine, gfx_swPoint);
     r2d_registerSoftwareImage(gfx_swImage);
 
+#ifdef ENABLE_OPENGL1
     s_useGL = r3dgl_wantGL();
 
     /* GL path: request the framebuffer attributes (incl. MSAA) before window
@@ -110,10 +139,18 @@ void gfx_videoInit(void) {
             break;
         }
     }
+#endif /* ENABLE_OPENGL1 */
 
     if (!sdlWindow) {
+#ifdef __DJGPP__
+        /* DOS: raw VGA/VESA, no compositor or window scaling — create the window at
+         * the native 320x200 page size and go fullscreen so it lands on mode 13h. */
+        sdlWindow = SDL_CreateWindow("F-15 SE2 EX " F15_VERSION, LOGICAL_WIDTH,
+                                     LOGICAL_HEIGHT, SDL_WINDOW_FULLSCREEN);
+#else
         sdlWindow = SDL_CreateWindow("F-15 SE2 EX " F15_VERSION, INITIAL_WINDOW_WIDTH,
                                      INITIAL_WINDOW_HEIGHT, SDL_WINDOW_RESIZABLE);
+#endif
         if (!sdlWindow)
             LogCritical(("Window creation failed: %s", SDL_GetError()));
     }
@@ -123,6 +160,14 @@ void gfx_videoInit(void) {
     SDL_StartTextInput(sdlWindow);
 
     if (s_useGL) return;
+
+    /* Prefer the direct-framebuffer present on a fixed-resolution target (no
+     * SDL_Renderer, no per-frame texture upload). Falls through to the renderer if
+     * a native-resolution INDEX8 window surface can't be obtained. */
+    if (gfx_initDirectFB()) {
+        s_directFB = true;
+        return;
+    }
 
     sdlRenderer = SDL_CreateRenderer(sdlWindow, NULL);
     if (!sdlRenderer)
@@ -409,6 +454,136 @@ void gfx_freeSpriteBuf(int handle) {
  * clears it when the title is dismissed. */
 static bool gfxHiResActive = false;
 
+static bool gfx_setDirectFBMode(int width, int height) {
+    int count = 0;
+    SDL_DisplayMode **modes = SDL_GetFullscreenDisplayModes(
+        SDL_GetDisplayForWindow(sdlWindow), &count);
+    const SDL_DisplayMode *best = NULL;
+    for (int i = 0; modes && i < count; ++i) {
+        const SDL_DisplayMode *mode = modes[i];
+        /* 640x350 may be planar-only. A 640x480 INDEX8 VESA mode can
+         * contain the title without losing pixels or changing its palette. */
+        if (mode->format == SDL_PIXELFORMAT_INDEX8 && mode->w == width &&
+            mode->h >= height && (!best || mode->h < best->h))
+            best = mode;
+    }
+    bool selected = best && SDL_SetWindowFullscreenMode(sdlWindow, best);
+    SDL_free(modes);
+    if (!selected || !SDL_SyncWindow(sdlWindow)) return false;
+
+    /* The old framebuffer and its palette belong to the previous mode. */
+    SDL_DestroyWindowSurface(sdlWindow);
+    SDL_Surface *surface = SDL_GetWindowSurface(sdlWindow);
+    if (!surface || surface->format != SDL_PIXELFORMAT_INDEX8 ||
+        surface->w != width || surface->h < height) return false;
+    if (gfxPalette) SDL_SetSurfacePalette(surface, gfxPalette);
+    SDL_ClearSurface(surface, 0, 0, 0, 1);
+    return true;
+}
+
+/* Bring up the window-surface present: request the native-resolution INDEX8
+ * fullscreen mode (mode 13h on DOS) and adopt its window surface, presenting with
+ * SDL_UpdateWindowSurface (a straight VRAM copy + VGA DAC program) instead of the
+ * SDL_Renderer texture-upload path. Gated to DOS; elsewhere this returns false and
+ * the caller keeps the SDL_Renderer (which scales the resizable desktop window).
+ *
+ * Present pacing: the direct-framebuffer hint skips SDL's vsync wait (which is
+ * pathologically slow under DOSBox — it collapsed the frame rate), so the loop runs
+ * free. That surfaces the fixed-timestep sim's per-frame step-count variance (0 vs 1
+ * step, and a step costs real time) as judder when the render is cheap (low detail /
+ * high fps). Instead of vsync we pace the loop ourselves (gfx_paceFrame): each frame
+ * is padded to the slowest recent frame's wall time, so delivery is even without
+ * capping throughput below what the scene can sustain. */
+static bool gfx_initDirectFB(void) {
+#ifdef __DJGPP__
+    SDL_DisplayID disp;
+    SDL_DisplayMode **modes;
+    int i, n = 0, cap;
+    SDL_Surface *ws;
+    const char *capEnv;
+
+    /* Fast present: copy system RAM straight to VRAM, no per-frame texture upload.
+     * Must be set before the first SDL_GetWindowSurface. */
+    SDL_SetHint(SDL_HINT_DOS_ALLOW_DIRECT_FRAMEBUFFER, "1");
+
+    /* Pin the 320x200 INDEX8 (mode 13h) fullscreen mode so the window surface comes
+     * back paletted rather than as a truecolor VESA mode. */
+    disp = SDL_GetDisplayForWindow(sdlWindow);
+    modes = SDL_GetFullscreenDisplayModes(disp, &n);
+    if (modes) {
+        for (i = 0; i < n; i++) {
+            if (modes[i]->w == LOGICAL_WIDTH && modes[i]->h == LOGICAL_HEIGHT &&
+                modes[i]->format == SDL_PIXELFORMAT_INDEX8) {
+                SDL_SetWindowFullscreenMode(sdlWindow, modes[i]);
+                break;
+            }
+        }
+        SDL_free(modes);
+    }
+    SDL_SetWindowFullscreen(sdlWindow, true);
+    SDL_SyncWindow(sdlWindow);
+
+    ws = SDL_GetWindowSurface(sdlWindow);
+    if (!ws) {
+        LogWarn(("direct FB: SDL_GetWindowSurface failed: %s", SDL_GetError()));
+        return false;
+    }
+    if (ws->format != SDL_PIXELFORMAT_INDEX8) {
+        /* The raw page copy assumes one byte per pixel; anything else falls back to
+         * the renderer rather than corrupt the display. */
+        LogWarn(("direct FB: window surface is not INDEX8 (0x%x); using renderer",
+                 (unsigned)ws->format));
+        return false;
+    }
+    /* Share the game's VGA palette so palette changes bump its version and the DOS
+     * driver reprograms the DAC on the next present. */
+    if (!gfxPalette) gfxPalette = gfx_buildPalette();
+    if (gfxPalette) SDL_SetSurfacePalette(ws, gfxPalette);
+
+    /* Even out frame delivery ourselves (no vsync). F15_NO_PACE disables it (raw
+     * throughput, judder); F15_FPS_CAP=<n> forces a fixed cap instead of adaptive. */
+    s_pace = SDL_getenv("F15_NO_PACE") == NULL;
+    capEnv = SDL_getenv("F15_FPS_CAP");
+    cap = capEnv ? SDL_atoi(capEnv) : 0;
+    if (cap > 0) s_paceCapNs = (Uint64)SDL_NS_PER_SECOND / (Uint64)cap;
+    LogInfo(("direct FB present: %dx%d INDEX8, pace=%d cap=%d", ws->w, ws->h, s_pace, cap));
+    return true;
+#else
+    return false;
+#endif
+}
+
+/* Direct-FB present: raw-copy the paletted page into the INDEX8 window surface,
+ * applying the explosion screen-shake as a horizontal source offset, then push it
+ * to VRAM + the DAC. Both surfaces are INDEX8, so this is a straight per-row index
+ * copy — no texture upload, no format conversion. */
+static void gfx_presentDirectFB(SDL_Surface *page, int shake) {
+    SDL_Surface *ws;
+    const Uint8 *sp;
+    Uint8 *dp;
+    int y, w, h, copyw;
+
+    if (!page) return;
+    ws = SDL_GetWindowSurface(sdlWindow);
+    if (!ws || ws->format != SDL_PIXELFORMAT_INDEX8) return;
+    if (gfxPalette) SDL_SetSurfacePalette(ws, gfxPalette);
+
+    w = page->w < ws->w ? page->w : ws->w;
+    h = page->h < ws->h ? page->h : ws->h;
+    if (shake < 0) shake = 0;
+    if (shake > w) shake = w;
+    copyw = w - shake;
+
+    sp = (const Uint8 *)page->pixels;
+    dp = (Uint8 *)ws->pixels;
+    /* Centre a 350-line title in a taller VESA mode. */
+    dp += (size_t)((ws->h - h) / 2) * ws->pitch;
+    for (y = 0; y < h; y++)
+        SDL_memcpy(dp + (size_t)y * ws->pitch,
+                   sp + (size_t)y * page->pitch + shake, (size_t)copyw);
+    SDL_UpdateWindowSurface(sdlWindow);
+}
+
 /* Software present: blit a page surface through the SDL_Renderer (vsync-paced).
  * Registered with r2d (r2d_registerSoftwarePresent) as the software 2D backend's
  * present; r2d_present calls it when GL is not active.
@@ -425,6 +600,7 @@ static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake) {
     int win_w, win_h;
     SDL_FRect dst;
     int x;
+    if (s_directFB) { gfx_presentDirectFB(surf, shake); return; }
     if (!surf || !sdlRenderer) return;
     if (surf->format != SDL_PIXELFORMAT_INDEX8) return;
     /* Reuse the texture unless the image size changes. The title and the game
@@ -481,17 +657,116 @@ static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake) {
     SDL_RenderPresent(sdlRenderer);
 }
 
+/* Toggle the on-screen FPS counter (Alt+P, dispatched from input.c). */
+void gfx_toggleFps(void) { s_showFps = !s_showFps; }
+
+/* Plot one 8x8 glyph (fontdata.h, MSB-first, 1 byte/row) into an INDEX8 surface. */
+static void gfx_plotGlyph(SDL_Surface *s, int x, int y, unsigned char c, Uint8 col) {
+    const uint8 *g;
+    Uint8 *px = (Uint8 *)s->pixels;
+    int row, cx;
+    if (c < 0x20 || c > 0x7f) return;
+    g = g_font1_bitmaps[c - 0x20];
+    for (row = 0; row < 8; row++) {
+        int yy = y + row;
+        if (yy < 0 || yy >= s->h) continue;
+        for (cx = 0; cx < 8; cx++) {
+            int xx = x + cx;
+            if ((g[row] & (0x80 >> cx)) && xx >= 0 && xx < s->w)
+                px[(size_t)yy * s->pitch + xx] = col;
+        }
+    }
+}
+
+/* Stamp "<n> FPS" into the surface's upper-left over a dark box. Palette indices 0
+ * and 15 are black/white in the base VGA table (gfx_setDac keeps 0-15 fixed), so it
+ * stays legible over any scene. */
+static void gfx_drawFpsOverlay(SDL_Surface *s) {
+    char buf[16];
+    Uint8 *px;
+    int i, x, len, boxW, row, col;
+    if (!s || s->format != SDL_PIXELFORMAT_INDEX8) return;
+    SDL_snprintf(buf, sizeof buf, "%d FPS", s_fpsValue);
+    len = (int)SDL_strlen(buf);
+    boxW = len * 6 + 2;
+    px = (Uint8 *)s->pixels;
+    for (row = 0; row < 10 && row < s->h; row++)
+        for (col = 0; col < boxW && col < s->w; col++)
+            px[(size_t)row * s->pitch + col] = 0;
+    x = 1;
+    for (i = 0; i < len; i++) {
+        gfx_plotGlyph(s, x, 1, (unsigned char)buf[i], 15);
+        x += 6;
+    }
+}
+
+/* Pace frame delivery for the no-vsync direct-FB present. Called once per present,
+ * AFTER the present: measure the frame's own work (present-to-present, excluding this
+ * pad), then sleep until the frame occupies `target` — the slowest work time over a
+ * ~1s window (or the fixed F15_FPS_CAP). Padding every frame up to the slowest evens
+ * the cadence the fixed-timestep sim's 0-vs-1-step cost variance would otherwise make
+ * lumpy. On desktop the SDL_Renderer's own vsync paces instead, so s_pace stays off. */
+static void gfx_paceFrame(void) {
+    static Uint64 frameStart = 0;
+    static Uint64 ring[16];
+    static int ringN = 0, ringPos = 0;
+    Uint64 now, target = 0;
+    int i;
+    if (!s_pace) return;
+    now = SDL_GetTicksNS();
+    if (frameStart != 0) {
+        Uint64 elapsed = now - frameStart;
+        if (s_paceCapNs) {
+            target = s_paceCapNs;
+        } else {
+            /* Feed the window (ignore stalls — menu key-waits, level loads — so a
+             * one-off long gap doesn't peg the target and starve the frame rate). */
+            if (elapsed < 200 * SDL_NS_PER_MS) {
+                ring[ringPos] = elapsed;
+                ringPos = (ringPos + 1) % 16;
+                if (ringN < 16) ringN++;
+            }
+            for (i = 0; i < ringN; i++)
+                if (ring[i] > target) target = ring[i];
+        }
+        if (target > elapsed) SDL_DelayNS(target - elapsed);
+    }
+    frameStart = SDL_GetTicksNS();
+}
+
+/* Count one present and refresh s_fpsValue about twice a second. */
+static void gfx_fpsTick(void) {
+    static Uint64 last = 0;
+    static int frames = 0;
+    Uint64 now = SDL_GetTicks();
+    frames++;
+    if (last == 0) { last = now; return; }
+    if (now - last >= 500) {
+        s_fpsValue = (int)((Uint64)frames * 1000 / (now - last));
+        frames = 0;
+        last = now;
+    }
+}
+
 /* Push a page's surface to the active 2D backend (GL composite or software
  * renderer) via the r2d seam (vsync-paced present). */
 static void gfx_presentPage(int page) {
+    gfx_fpsTick();
     /* During the hi-res title, the page-0 framebuffer still holds the prior
      * 320x200 image (e.g. labs.pic). Redirect generic flips/commits to the
      * hi-res title surface so frame-pacing presents don't clobber it. */
     if (gfxHiResActive) {
+        if (s_showFps) gfx_drawFpsOverlay(gfx_getHiResSurface());
         gfx_presentHiRes();
+        gfx_paceFrame();
         return;
     }
-    r2d_present(ensurePage(page), gfx_getState()->shakeOffset);
+    {
+        SDL_Surface *ps = ensurePage(page);
+        if (s_showFps) gfx_drawFpsOverlay(ps);
+        r2d_present(ps, gfx_getState()->shakeOffset);
+        gfx_paceFrame();
+    }
 }
 
 /* Hi-res (640x350) title surface. The EGA-title path (picimpl.c picBlit)
@@ -530,15 +805,21 @@ static void initRowOffsets(void) {
  * SDL. This is also the lo-res restore after the (possibly hi-res) title. */
 void FAR CDECL gfx_setMode13(void) {
     initRowOffsets();
+    if (s_directFB && gfxHiResActive &&
+        !gfx_setDirectFBMode(LOGICAL_WIDTH, LOGICAL_HEIGHT))
+        LogCritical(("Cannot restore 320x200 framebuffer: %s", SDL_GetError()));
     gfxHiResActive = false;
     gfx_getState()->modeFlag = 1;
 }
 
-/* Title-screen hi-res: switch to the 640x350 title surface. Both backends scale
- * whatever surface they're handed to the window via the shared r2d mapping (which
- * derives the virtual size from the surface), so this just flags hi-res; the
- * present picks up the 640x350 hi-res surface from gfx_presentHiRes. */
+/* Desktop renderers scale the title surface. The DOS framebuffer instead needs
+ * an actual display-mode change before it can accept a 640-wide image. */
 bool video_setHiRes(void) {
+    if (s_directFB && !gfx_setDirectFBMode(HIRES_WIDTH, HIRES_HEIGHT)) {
+        if (!gfx_setDirectFBMode(LOGICAL_WIDTH, LOGICAL_HEIGHT))
+            LogCritical(("Cannot restore title fallback mode: %s", SDL_GetError()));
+        return false;
+    }
     gfxHiResActive = true;
     return true;
 }
@@ -569,7 +850,9 @@ void gfx_repaint(void) {
      * the last fully-composited frame, and the next flight frame redraws within a
      * frame, so skip the bare re-present. Pure-2D screens (menus/briefing/debrief,
      * which block in key-waits and produce no frame of their own) still need it. */
+#ifdef ENABLE_OPENGL1
     if (r3dgl_active() && r3dgl_flightLive()) return;
+#endif
     if (g_repaintHook) {
         g_repaintHook();
         return;
