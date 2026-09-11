@@ -276,6 +276,31 @@ add_executable(f15se2 ${SRC_DIR}/f15.c)
 set_target_properties(f15se2 PROPERTIES OUTPUT_NAME "f15se2-ex")
 target_link_libraries(f15se2 PRIVATE f15se2_core)
 
+# Let Release linkers discard unused routines and data from the game library.
+if(
+    CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+    OR
+    (
+        CMAKE_CXX_COMPILER_ID MATCHES "Clang"
+        AND
+        NOT CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC"
+    )
+)
+    target_compile_options(f15se2_core PRIVATE
+        $<$<CONFIG:Release>:-ffunction-sections>
+        $<$<CONFIG:Release>:-fdata-sections>
+    )
+    target_compile_options(f15se2 PRIVATE
+        $<$<CONFIG:Release>:-ffunction-sections>
+        $<$<CONFIG:Release>:-fdata-sections>
+    )
+    if(APPLE)
+        target_link_options(f15se2 PRIVATE $<$<CONFIG:Release>:-Wl,-dead_strip>)
+    else()
+        target_link_options(f15se2 PRIVATE $<$<CONFIG:Release>:-Wl,--gc-sections>)
+    endif()
+endif()
+
 # Autogenerate header file with version string
 add_custom_target(GenerateVersionHeader ALL
     COMMAND ${CMAKE_COMMAND}
