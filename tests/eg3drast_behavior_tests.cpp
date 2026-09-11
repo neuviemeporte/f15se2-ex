@@ -8,6 +8,7 @@
 
 extern int16 g_dirtyRectMinY;
 extern int16 g_dirtyRectMaxY;
+extern int16 g_rotSinYaw;
 void storeObjTransformByOpcode(void);
 
 namespace {
@@ -26,6 +27,10 @@ enum Eg3dRastOriginalConstant : int {
     kDirtyMinSeed = 12,
     kDirtyMaxSeed = 34,
     kZeroAngle = 0,
+    kHalfTableStepAngle = 0x80,
+    kHalfTableStepSine = 0x192,
+    kDescendingHalfStepAngle = 0x4080,
+    kDescendingHalfStepSine = 0x7ffb,
     kQ15CosineZeroProduct = 32766,
     kLodCommandKeepScanning = 0x80,
     kLodCommandIndex1 = 0x81,
@@ -63,7 +68,8 @@ void setLe16(uint8 *p, int value) {
 } // namespace
 
 int main() {
-    int16 matrix[9] = {};
+    // Nonzero sentinels expose missing writes, including off-diagonal zeroes.
+    int16 matrix[9] = {123, 123, 123, 123, 123, 123, 123, 123, 123};
     uint8 modelStream[16] = {};
 
     resetSpanRows();
@@ -75,6 +81,12 @@ int main() {
         require(g_spanBuf.minX[y] == kResetMinX &&
                     g_spanBuf.maxX[y] == kResetMaxX,
                 "resetScanlineSpans resets every row in the dirty range");
+    }
+    for (int y = 0; y < 220; ++y) {
+        if (y >= kDirtyStartRow && y <= kDirtyEndRow) continue;
+        require(g_spanBuf.minX[y] == kDirtyMinSeed &&
+                    g_spanBuf.maxX[y] == kDirtyMaxSeed,
+                "resetScanlineSpans preserves all rows outside the dirty range");
     }
     require(g_spanBuf.minX[kUntouchedRow] == kDirtyMinSeed &&
                 g_spanBuf.maxX[kUntouchedRow] == kDirtyMaxSeed &&
@@ -94,6 +106,16 @@ int main() {
                 matrix[7] == 0 &&
                 matrix[8] == kQ15CosineZeroProduct,
             "buildRotationMatrixFar builds the original identity-ish Q15 zero-angle matrix");
+
+    buildRotationMatrixFar(matrix, kHalfTableStepAngle, kZeroAngle, kZeroAngle);
+    require(g_rotSinYaw == kHalfTableStepSine,
+            "buildRotationMatrixFar interpolates between adjacent sine-table entries");
+    require(matrix[2] == kHalfTableStepSine - 1 && matrix[6] == -kHalfTableStepSine,
+            "buildRotationMatrixFar applies fractional yaw with the expected Q15 rounding");
+
+    buildRotationMatrixFar(matrix, kDescendingHalfStepAngle, kZeroAngle, kZeroAngle);
+    require(g_rotSinYaw == kDescendingHalfStepSine,
+            "buildRotationMatrixFar interpolates descending sine-table entries");
 
     modelStream[0] = kLodCommandKeepScanning;
     modelStream[3] = kFinalDisplayOpcode;
@@ -122,6 +144,18 @@ int main() {
     storeObjTransformByOpcode();
     require(g_objTransform[kTransformIndex] == kSpinAngle,
             "storeObjTransformByOpcode stores spinAngle into opcode low-two-bit transform slot");
+    for (int selected = 0; selected < 4; ++selected) {
+        for (int slot = 0; slot < 4; ++slot) g_objTransform[slot] = 123;
+        modelStream[0] = static_cast<uint8>(0x80 | selected);
+        g_modelStreamPtr = reinterpret_cast<char *>(modelStream);
+        g_spinAngle = -kSpinAngle;
+        storeObjTransformByOpcode();
+        for (int slot = 0; slot < 4; ++slot) {
+            const int expected = slot == selected ? -kSpinAngle : 123;
+            require(g_objTransform[slot] == expected,
+                    "storeObjTransformByOpcode changes only the selected slot");
+        }
+    }
 
     std::cout << "eg3drast_behavior_tests passed\n";
     return 0;

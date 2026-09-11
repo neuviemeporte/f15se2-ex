@@ -211,11 +211,14 @@ void fillPattern(void *ptr, size_t count, int seed) {
 }
 
 void writeInt16(void *ptr, int value) {
-    *static_cast<int16 *>(ptr) = static_cast<int16>(value);
+    const int16 word = static_cast<int16>(value);
+    // Fixture records can start at odd byte offsets.
+    std::memcpy(ptr, &word, sizeof(word));
 }
 
 void writeUint16(void *ptr, unsigned int value) {
-    *static_cast<uint16 *>(ptr) = static_cast<uint16>(value);
+    const uint16 word = static_cast<uint16>(value);
+    std::memcpy(ptr, &word, sizeof(word));
 }
 
 bool hasSuffix(const char *text, const char *suffix) {

@@ -1,0 +1,95 @@
+name: Quality
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sanitizers:
+    name: Address and undefined behavior sanitizers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libgl1-mesa-dev \
+            libx11-dev libxext-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxrandr-dev libxss-dev libxtst-dev libwayland-dev wayland-protocols \
+            libegl1-mesa-dev libgles2-mesa-dev
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DASAN=ON -DUBSAN=ON
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build --output-on-failure --timeout 120 --no-tests=error
+      - name: Preserve diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanitizer-tests
+          path: build/Testing/Temporary/
+          retention-days: 14
+
+  analysis:
+    name: Static analysis and review metrics
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build cppcheck clang-tools-18 libgl1-mesa-dev \
+            libx11-dev libxext-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxrandr-dev libxss-dev libxtst-dev libwayland-dev wayland-protocols \
+            libegl1-mesa-dev libgles2-mesa-dev
+          python -m pip install lizard==1.17.31
+          cppcheck --version
+          clang-check-18 --version
+          lizard --version
+      - name: Configure and generate version header
+        run: |
+          cmake -S . -B build -G Ninja
+          cmake --build build --target GenerateVersionHeader
+      - name: Cppcheck
+        run: python tools/quality/static_analysis.py build --report-only
+      - name: Clang static analyzer
+        run: python tools/quality/static_analysis.py build --tool clang
+      - name: Complexity and dependency reports
+        run: |
+          lizard --csv src > build/quality/complexity.csv
+          cmake --graphviz=build/quality/dependencies.dot -S . -B build
+      - name: Explain report status
+        if: always()
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          Static findings and complexity are advisory while existing findings are triaged.
+          Tool failures fail this job. Download `static-analysis` for cppcheck diagnostics,
+          Clang diagnostics, function complexity, and the CMake target dependency graph.
+          Passing analysis does not replace the contributor policy's code review.
+          EOF
+      - name: Preserve reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-analysis
+          path: |
+            build/quality/cppcheck.xml
+            build/quality/clang.txt
+            build/quality/complexity.csv
+            build/quality/dependencies.dot*
+          retention-days: 14

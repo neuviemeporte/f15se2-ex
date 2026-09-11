@@ -45,6 +45,9 @@ extern char terrainGrid[256];
 extern struct GroundTargetTable g_planeTable;
 extern int16 g_planeCount;
 extern int16 g_planeScanCount;
+extern int16 g_groundUnitCount;
+extern struct FlightUnit flightUnits[];
+extern struct SimObject g_simObjects[];
 
 namespace {
 
@@ -250,6 +253,19 @@ int main() {
     require(isPointInRect(&hitItem) == 1, "isPointInRect includes points inside the rectangle");
     cursorX = 75;
     require(isPointInRect(&hitItem) == 0, "isPointInRect rejects points outside the rectangle");
+    // Test each edge independently: a missing Y check or an exclusive edge
+    // comparison must fail even when the other coordinate is valid.
+    for (auto [x, y, expected] : {
+             std::tuple{30, 30, 1}, std::tuple{50, 30, 1},
+             std::tuple{40, 20, 1}, std::tuple{40, 40, 1},
+             std::tuple{29, 30, 0}, std::tuple{51, 30, 0},
+             std::tuple{40, 19, 0}, std::tuple{40, 41, 0},
+             std::tuple{30, 20, 1}, std::tuple{50, 40, 1}}) {
+        cursorX = x;
+        cursorY = y;
+        require(isPointInRect(&hitItem) == expected,
+                "isPointInRect includes edges and rejects adjacent outside points");
+    }
 
     // --- calcMissionScore: counters, weapon cap, waypoint scale, eject penalty
     resetDebriefState(comm, game);
@@ -298,6 +314,12 @@ int main() {
     require(calcMissionScore(1) == 0, "calcMissionScore floors negative ejected scores before crash penalty");
 
     resetDebriefState(comm, game);
+    comm.weaponCount[0] = 6;
+    flightRecords[0].status = EVENT_AIR_KILL;
+    require(calcMissionScore(0) == 150,
+            "calcMissionScore applies weapon count and air-kill weight independently");
+
+    resetDebriefState(comm, game);
     comm.weaponCount[0] = 2;
     game.difficulty = 0;
     flightRecords[0].status = EVENT_AIR_KILL | STATUS_SECONDARY_HIT;
@@ -323,7 +345,7 @@ int main() {
     // deliberate +2-byte-shifted name-index aliasing (nameIndexLead /
     // secondaryNameIndex). The bulk buffers pass through the g_* views unchanged.
     {
-        std::memset(worldObjects, 0, kPlaneCount * sizeof(struct WorldObject));
+        std::memset(worldObjects, 0, (kPlaneCount + 1) * sizeof(struct WorldObject));
         struct WorldObject orig[kPlaneCount];
         for (int i = 0; i < kPlaneCount; i++) {
             const uint16 base = static_cast<uint16>((i + 1) * 0x100);
@@ -337,10 +359,12 @@ int main() {
             worldObjects[i].objectIdx = static_cast<int16>(base | 8);
             orig[i] = worldObjects[i];
         }
+        worldObjects[kPlaneCount].unitRef = 0x7eed;
         readItemSize = kPlaneCount;
         worldObjectCount = kWorldObjectCount;
         groundUnitCount = kGroundUnitCount;
-        flightUnitCount = 0;
+        flightUnitCount = 3;
+        std::memset(flightUnits, 0x5a, flightUnitCount * sizeof(struct FlightUnit));
         wldReadBuf1[0] = 0x34;
         wldReadBuf1[1] = 0x12;
 
@@ -353,6 +377,10 @@ int main() {
 
         require(g_planeCount == kPlaneCount && g_planeScanCount == kWorldObjectCount,
                 "worldImportToEgame carries plane and scan counts into EGAME");
+        require(g_groundUnitCount == flightUnitCount &&
+                    std::memcmp(g_simObjects, flightUnits,
+                                flightUnitCount * sizeof(struct SimObject)) == 0,
+                "worldImportToEgame copies every flight-unit record into EGAME");
         require(g_planeTable.nameIndexLead == static_cast<int16>(orig[0].unitRef),
                 "worldImportToEgame seeds the +2-shift lead word from the first unitRef");
         for (int i = 0; i < kPlaneCount; i++) {
@@ -374,6 +402,10 @@ int main() {
                 "worldExportToEnd republishes plane count and scan count to END");
         require(worldWaypointCount == 0x1234,
                 "worldExportToEnd recomposes the packed waypoint count word");
+        require(worldSamCount == flightUnitCount &&
+                    std::memcmp(worldSamTable, g_simObjects,
+                                flightUnitCount * sizeof(struct SimObject)) == 0,
+                "worldExportToEnd copies every EGAME ground unit into END");
         for (int i = 0; i < kPlaneCount; i++) {
             require(worldObjects[i].unitRef == orig[i].unitRef &&
                         worldObjects[i].x_coord == orig[i].x_coord &&

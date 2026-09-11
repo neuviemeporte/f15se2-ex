@@ -1,0 +1,15 @@
+# Mutate production code, not assertions or downloaded dependencies.
+includePaths:
+  - '/src/'
+excludePaths:
+  - '/_deps/'
+  - '/tests/'
+  - '/src/generated/'
+  - '/src/compat64/'
+mutators:
+  - cxx_add_to_sub
+  - cxx_sub_to_add
+  - cxx_mul_to_div
+  - cxx_div_to_mul
+  - cxx_eq_to_ne
+  - cxx_ne_to_eq

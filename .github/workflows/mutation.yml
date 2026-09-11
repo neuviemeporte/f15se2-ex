@@ -1,0 +1,62 @@
+name: Mutation tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      test:
+        description: Test executable to measure
+        type: choice
+        default: signed_ratio_behavior_tests
+        options:
+          - signed_ratio_behavior_tests
+          - utility_behavior_tests
+          - eg3drast_behavior_tests
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      MULL_CONFIG: ${{ github.workspace }}/tools/quality/mull.yml
+      TEST_TARGET: ${{ inputs.test }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install matching Clang and Mull
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 cmake ninja-build libgl1-mesa-dev \
+            libx11-dev libxext-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxrandr-dev libxss-dev libxtst-dev libwayland-dev wayland-protocols \
+            libegl1-mesa-dev libgles2-mesa-dev
+          curl --fail --location --retry 3 -o mull.deb https://github.com/mull-project/mull/releases/download/0.34.0/Mull-18-0.34.0-LLVM-18.1.3-ubuntu-amd64-24.04.deb
+          echo 'd2491551b2a9d5b28f896c75278e891f748284b4a2523795c62b5315ad7a9e73  mull.deb' | sha256sum --check
+          sudo apt-get install -y ./mull.deb
+      - name: Build instrumented test
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_BUILD_TYPE=Debug \
+            '-DCMAKE_CXX_FLAGS=-fpass-plugin=/usr/lib/mull-ir-frontend-18 -grecord-command-line -fprofile-instr-generate -fcoverage-mapping'
+          cmake --build build --target "$TEST_TARGET" --parallel 2
+      - name: Check baseline and measure mutants
+        run: |
+          ctest --test-dir build -R "^${TEST_TARGET}$" --output-on-failure --no-tests=error --timeout 120
+          mkdir -p build/quality
+          mull-runner-18 --allow-surviving --workers 2 --timeout 10000 \
+            --reporters Elements --reporters IDE --report-dir build/quality \
+            --report-name mutation "build/$TEST_TARGET" 2>&1 | tee build/quality/mutation.log
+          if grep -q 'No mutants found' build/quality/mutation.log; then
+            echo 'No mutations were exercised; this is not a successful measurement.' >&2
+            exit 1
+          fi
+      - name: Preserve mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-${{ inputs.test }}
+          path: |
+            build/quality/
+            build/Testing/Temporary/
+          retention-days: 14
