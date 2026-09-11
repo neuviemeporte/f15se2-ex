@@ -368,6 +368,21 @@ else()
 endif()
 target_link_libraries(f15se2 PRIVATE f15se2_core)
 
+# Put each routine and object in its own section so the DOS linker can discard
+# unused translated code. This reduces the Release binary without changing the
+# instruction set or tuning for a particular processor.
+if(F15_DOS)
+    target_compile_options(f15se2_core PRIVATE
+        $<$<CONFIG:Release>:-ffunction-sections>
+        $<$<CONFIG:Release>:-fdata-sections>
+    )
+    target_compile_options(f15se2 PRIVATE
+        $<$<CONFIG:Release>:-ffunction-sections>
+        $<$<CONFIG:Release>:-fdata-sections>
+    )
+    target_link_options(f15se2 PRIVATE $<$<CONFIG:Release>:-Wl,--gc-sections>)
+endif()
+
 # Autogenerate header file with version string
 add_custom_target(GenerateVersionHeader ALL
     COMMAND ${CMAKE_COMMAND}

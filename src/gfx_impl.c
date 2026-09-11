@@ -63,9 +63,7 @@ static void gfx_expandIndexedSurface(SDL_Surface *surf, void *pixels, int dstPit
  * targets with no compositor/scaling (DOS); desktop keeps the renderer for its
  * resizable, scaled window. */
 static bool s_directFB = false;
-/* Software frame pacer for the no-vsync direct-FB present (DOS): pads each frame to
- * the slowest recent frame's wall time so delivery is even. s_paceCapNs != 0 forces
- * a fixed cap (F15_FPS_CAP) instead of the adaptive target. */
+/* Optional fixed cap for the no-vsync DOS framebuffer, in nanoseconds per frame. */
 static bool s_pace = false;
 static Uint64 s_paceCapNs = 0;
 
@@ -491,9 +489,7 @@ static bool gfx_setDirectFBMode(int width, int height) {
  * pathologically slow under DOSBox — it collapsed the frame rate), so the loop runs
  * free. That surfaces the fixed-timestep sim's per-frame step-count variance (0 vs 1
  * step, and a step costs real time) as judder when the render is cheap (low detail /
- * high fps). Instead of vsync we pace the loop ourselves (gfx_paceFrame): each frame
- * is padded to the slowest recent frame's wall time, so delivery is even without
- * capping throughput below what the scene can sustain. */
+ * high fps). F15_FPS_CAP optionally limits the presentation rate. */
 static bool gfx_initDirectFB(void) {
 #ifdef __DJGPP__
     SDL_DisplayID disp;
@@ -540,12 +536,21 @@ static bool gfx_initDirectFB(void) {
     if (!gfxPalette) gfxPalette = gfx_buildPalette();
     if (gfxPalette) SDL_SetSurfacePalette(ws, gfxPalette);
 
-    /* Even out frame delivery ourselves (no vsync). F15_NO_PACE disables it (raw
-     * throughput, judder); F15_FPS_CAP=<n> forces a fixed cap instead of adaptive. */
-    s_pace = SDL_getenv("F15_NO_PACE") == NULL;
+    /* A slow frame must not lower the target rate for subsequent frames. */
     capEnv = SDL_getenv("F15_FPS_CAP");
-    cap = capEnv ? SDL_atoi(capEnv) : 0;
-    if (cap > 0) s_paceCapNs = (Uint64)SDL_NS_PER_SECOND / (Uint64)cap;
+    cap = 0;
+    if (capEnv) {
+        char *end = NULL;
+        long parsedCap = SDL_strtol(capEnv, &end, 10);
+        if (end != capEnv && *end == '\0' && parsedCap > 0 &&
+            (Uint64)parsedCap <= SDL_NS_PER_SECOND) {
+            cap = (int)parsedCap;
+        } else {
+            LogWarn(("invalid F15_FPS_CAP '%s'; using uncapped rendering", capEnv));
+        }
+    }
+    s_pace = cap > 0 && SDL_getenv("F15_NO_PACE") == NULL;
+    s_paceCapNs = s_pace ? (Uint64)SDL_NS_PER_SECOND / (Uint64)cap : 0;
     LogInfo(("direct FB present: %dx%d INDEX8, pace=%d cap=%d", ws->w, ws->h, s_pace, cap));
     return true;
 #else
@@ -700,38 +705,26 @@ static void gfx_drawFpsOverlay(SDL_Surface *s) {
     }
 }
 
-/* Pace frame delivery for the no-vsync direct-FB present. Called once per present,
- * AFTER the present: measure the frame's own work (present-to-present, excluding this
- * pad), then sleep until the frame occupies `target` — the slowest work time over a
- * ~1s window (or the fixed F15_FPS_CAP). Padding every frame up to the slowest evens
- * the cadence the fixed-timestep sim's 0-vs-1-step cost variance would otherwise make
- * lumpy. On desktop the SDL_Renderer's own vsync paces instead, so s_pace stays off. */
+/* Apply an explicit fixed frame-rate cap to the no-vsync direct-FB path. */
 static void gfx_paceFrame(void) {
     static Uint64 frameStart = 0;
-    static Uint64 ring[16];
-    static int ringN = 0, ringPos = 0;
-    Uint64 now, target = 0;
-    int i;
-    if (!s_pace) return;
-    now = SDL_GetTicksNS();
-    if (frameStart != 0) {
-        Uint64 elapsed = now - frameStart;
-        if (s_paceCapNs) {
-            target = s_paceCapNs;
-        } else {
-            /* Feed the window (ignore stalls — menu key-waits, level loads — so a
-             * one-off long gap doesn't peg the target and starve the frame rate). */
-            if (elapsed < 200 * SDL_NS_PER_MS) {
-                ring[ringPos] = elapsed;
-                ringPos = (ringPos + 1) % 16;
-                if (ringN < 16) ringN++;
-            }
-            for (i = 0; i < ringN; i++)
-                if (ring[i] > target) target = ring[i];
-        }
-        if (target > elapsed) SDL_DelayNS(target - elapsed);
+    static bool started = false;
+    Uint64 now = 0;
+    if (!s_pace) {
+        started = false;
+        return;
     }
-    frameStart = SDL_GetTicksNS();
+    now = SDL_GetTicksNS();
+    if (started) {
+        /* Recheck after waking: a short sleep must not exceed the requested FPS. */
+        while (now - frameStart < s_paceCapNs) {
+            SDL_DelayNS(s_paceCapNs - (now - frameStart));
+            now = SDL_GetTicksNS();
+        }
+    }
+    /* Start from the actual wake time, so a stall causes no catch-up burst. */
+    frameStart = now;
+    started = true;
 }
 
 /* Count one present and refresh s_fpsValue about twice a second. */
