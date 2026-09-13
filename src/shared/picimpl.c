@@ -126,13 +126,12 @@ static uint16 decodeLZWStep(void) {
     }
 
     /* Traverse dictionary chain */
-    while (dictParent[code] != 0xFFFF && code < 2048 && stackTop < 4096) {
+    while (code < 2048 && dictParent[code] != 0xFFFF && stackTop < 4096) {
         lzwOutBuf[stackTop++] = dictChar[code];
         code = dictParent[code];
     }
-    if (code < 2048) {
-        lzwOutBuf[stackTop++] = dictChar[code];
-    }
+    if (code >= 2048 || stackTop >= 4096) return 0;
+    lzwOutBuf[stackTop++] = dictChar[code];
 
     /* Root character = first char of this string */
     picFirstChar = dictChar[code];
