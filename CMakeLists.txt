@@ -276,6 +276,20 @@ add_executable(f15se2 ${SRC_DIR}/f15.c)
 set_target_properties(f15se2 PROPERTIES OUTPUT_NAME "f15se2-ex")
 target_link_libraries(f15se2 PRIVATE f15se2_core)
 
+# Look for bundled shared libraries (e.g. libSDL3.so / libSDL3.dylib) next to the
+# executable at runtime, so a packaged release is self-contained and does not rely
+# on a system-installed SDL3. On Windows DLLs are found in the exe's directory
+# automatically; this only affects the ELF/Mach-O loaders.
+if(APPLE)
+    set_target_properties(f15se2 PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "@executable_path")
+elseif(UNIX)
+    set_target_properties(f15se2 PROPERTIES
+        BUILD_WITH_INSTALL_RPATH TRUE
+        INSTALL_RPATH "$ORIGIN")
+endif()
+
 # Autogenerate header file with version string
 add_custom_target(GenerateVersionHeader ALL
     COMMAND ${CMAKE_COMMAND}
@@ -527,5 +541,109 @@ if(COVERAGE)
         )
     else()
         message(WARNING "COVERAGE=ON but gcovr not found; the `coverage` target is unavailable")
+    endif()
+endif()
+
+#==============================================================================
+# Install / packaging
+#==============================================================================
+# Lay out a self-contained tree for the release archives (zip / tarball / AppImage
+# / .app). The binary, the HD asset overlays, and the SDL3 shared library all land
+# next to each other so the game is runnable in place. The RPATH set on the f15se2
+# target ($ORIGIN / @executable_path) makes the loader find the bundled SDL3 without
+# any system install. The copyrighted original game data is NOT shipped: the user
+# still points the binary at it with --game or F15SE2_DIR.
+#
+# On Linux we follow the FHS layout linuxdeploy expects for AppImage creation
+# (bin/, lib/, share/), while Windows/macOS keep everything flat in the root so the
+# unzipped folder is directly runnable.
+if(WIN32 OR APPLE)
+    set(F15_INSTALL_BINDIR ".")
+    set(F15_INSTALL_LIBDIR ".")
+    set(F15_INSTALL_ASSETDIR ".")
+else()
+    include(GNUInstallDirs)
+    set(F15_INSTALL_BINDIR "${CMAKE_INSTALL_BINDIR}")
+    set(F15_INSTALL_LIBDIR "${CMAKE_INSTALL_LIBDIR}")
+    set(F15_INSTALL_ASSETDIR "${CMAKE_INSTALL_BINDIR}")
+endif()
+
+install(TARGETS f15se2
+    RUNTIME DESTINATION "${F15_INSTALL_BINDIR}"
+)
+
+# The HD asset overlays, resolved at runtime relative to the executable
+# (SDL_GetBasePath, see hdsprite.c), so they must sit beside the binary.
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets"
+    DESTINATION "${F15_INSTALL_ASSETDIR}"
+)
+
+# Bundle the SDL3 shared library we build/link against. On Windows this is the DLL;
+# on Linux/macOS the versioned .so/.dylib together with the SONAME symlink the loader
+# resolves (libSDL3.so.0). Using the imported target's artifact keeps us correct
+# whether SDL3 was built from source (FetchContent) or found on the system.
+if(TARGET SDL3::SDL3-shared)
+    set(F15_SDL3_TARGET SDL3::SDL3-shared)
+else()
+    set(F15_SDL3_TARGET SDL3::SDL3)
+endif()
+
+get_target_property(F15_SDL3_TYPE ${F15_SDL3_TARGET} TYPE)
+if(F15_SDL3_TYPE STREQUAL "SHARED_LIBRARY")
+    if(WIN32)
+        # Just the DLL next to the exe.
+        install(FILES "$<TARGET_FILE:${F15_SDL3_TARGET}>"
+            DESTINATION "${F15_INSTALL_LIBDIR}"
+        )
+    else()
+        # On ELF/Mach-O we need the real versioned library (libSDL3.so.0.x.y) *and*
+        # the SONAME symlink (libSDL3.so.0) the binary's NEEDED entry refers to.
+        # The right install signature depends on where SDL3 came from:
+        #   * built from source via FetchContent -> a normal target  -> install(TARGETS)
+        #   * found on the system via find_package -> an IMPORTED target
+        #     -> install(IMPORTED_RUNTIME_ARTIFACTS)
+        # Both reproduce the versioned file plus its symlinks.
+        get_target_property(F15_SDL3_IMPORTED ${F15_SDL3_TARGET} IMPORTED)
+        if(F15_SDL3_IMPORTED)
+            install(IMPORTED_RUNTIME_ARTIFACTS ${F15_SDL3_TARGET}
+                LIBRARY DESTINATION "${F15_INSTALL_LIBDIR}"
+                RUNTIME DESTINATION "${F15_INSTALL_LIBDIR}"
+            )
+        else()
+            # An ALIAS (SDL3::SDL3-shared) can't be passed to install(TARGETS); resolve
+            # it to the underlying target name first.
+            get_target_property(F15_SDL3_ALIASED ${F15_SDL3_TARGET} ALIASED_TARGET)
+            if(F15_SDL3_ALIASED)
+                set(F15_SDL3_INSTALL_TARGET ${F15_SDL3_ALIASED})
+            else()
+                set(F15_SDL3_INSTALL_TARGET ${F15_SDL3_TARGET})
+            endif()
+            install(TARGETS ${F15_SDL3_INSTALL_TARGET}
+                LIBRARY DESTINATION "${F15_INSTALL_LIBDIR}"
+                RUNTIME DESTINATION "${F15_INSTALL_LIBDIR}"
+            )
+        endif()
+    endif()
+endif()
+
+# Pull in compiler-runtime DLLs the executable depends on (e.g. llvm-mingw's
+# libc++.dll / libunwind.dll, or the MSVC redistributable) so a fresh Windows box
+# can run the unzipped build without installing a toolchain or redist.
+if(WIN32)
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION "${F15_INSTALL_BINDIR}")
+    set(CMAKE_INSTALL_UCRT_LIBRARIES TRUE)
+    include(InstallRequiredSystemLibraries)
+
+    # llvm-mingw (the toolchain documented in the README) ships libc++ / libunwind as
+    # DLLs next to the compiler; InstallRequiredSystemLibraries doesn't know about
+    # them, so grab them explicitly when present.
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        get_filename_component(F15_COMPILER_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        install(FILES
+            "${F15_COMPILER_DIR}/libc++.dll"
+            "${F15_COMPILER_DIR}/libunwind.dll"
+            DESTINATION "${F15_INSTALL_BINDIR}"
+            OPTIONAL
+        )
     endif()
 endif()

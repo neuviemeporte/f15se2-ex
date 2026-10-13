@@ -173,6 +173,25 @@ With this, I run e.g. `cmake --preset windows-clang` followed by `cmake --build 
 
 After building, either drop the resulting binary into a directory with the game assets, use the `--game` command line option or the `F15SE2_DIR` environmental variable to set the assets' location. The game checks MD5 checksums on all asset files to make sure they are not corrupted, and will not start unless all files from the original game match up.
 
+## Releases
+
+Prebuilt, self-contained packages for Linux, Windows and macOS are produced automatically for every version tag and attached to the corresponding [GitHub Release](https://github.com/neuviemeporte/f15se2-ex/releases):
+
+- **Linux**: an `.AppImage` (portable — `chmod +x` and run) and a `.tar.gz`.
+- **Windows**: a `.zip` with `SDL3.dll` and the compiler runtime DLLs bundled.
+- **macOS**: a `.tar.gz` with `libSDL3.dylib` bundled.
+
+Each package contains the engine and the optional HD asset overlays only. The original F-15 Strike Eagle 2 game data is **not** included (it is copyrighted) and must be supplied separately via `--game <path>` or the `F15SE2_DIR` environment variable, exactly as for a local build. The bundled SDL3 library is found automatically next to the executable (via RPATH on Linux/macOS, the executable directory on Windows), and the HD assets resolve relative to the executable regardless of the working directory.
+
+To cut a release, push a tag of the form `vX.Y.Z`:
+
+```
+$ git tag v1.0.0
+$ git push origin v1.0.0
+```
+
+This triggers the `.github/workflows/release.yml` workflow, which builds all three platforms, packages them, and publishes a GitHub Release with the artifacts attached. The release version string is derived from the tag via `git describe`.
+
 ## Contributor policy
 
 Contributions to this project are very welcome. However, contributors are expected to follow certain rules to keep the project manageable:

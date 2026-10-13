@@ -1,0 +1,322 @@
+name: Release
+
+# Build portable, self-contained packages for Linux, Windows and macOS and attach
+# them to a GitHub Release whenever a version tag (vX.Y.Z) is pushed.
+#
+# Each package bundles the SDL3 shared library and the runtime libraries the binary
+# needs, so a user can unpack and run without installing a toolchain or SDL. The HD
+# asset overlays ship inside the package and are resolved relative to the executable
+# (see hdsprite.c). The original, copyrighted MicroProse game data is NOT included;
+# the user supplies it via --game or the F15SE2_DIR environment variable.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Allow a manual dry run (builds + uploads workflow artifacts, but does not
+  # publish a GitHub Release unless triggered by a tag).
+  workflow_dispatch:
+
+permissions:
+  contents: write        # needed to create the GitHub Release and upload assets
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Linux: build on the oldest supported runner for the widest glibc range, then
+  # produce both a plain tarball and an AppImage (via linuxdeploy).
+  # ---------------------------------------------------------------------------
+  linux:
+    name: Linux x86_64
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # full history so `git describe --tags` works
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build \
+            libx11-dev libxext-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxrandr-dev libxss-dev libxtst-dev \
+            libwayland-dev wayland-protocols \
+            libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev \
+            file wget
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Compute version
+        id: ver
+        run: echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+
+      - name: Stage install tree (AppDir)
+        run: |
+          cmake --install build --prefix "${{ github.workspace }}/AppDir/usr"
+
+      # linuxdeploy walks the binary's NEEDED libraries, copies the non-system
+      # ones (SDL3 and its deps) into the AppDir, patches RPATHs and writes AppRun.
+      # It intentionally excludes libGL / libX11 / libwayland etc., which must come
+      # from the host's graphics stack.
+      - name: Fetch linuxdeploy
+        run: |
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+
+      - name: Create .desktop entry and icon
+        run: |
+          mkdir -p AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
+          cat > AppDir/usr/share/applications/f15se2-ex.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=F-15 Strike Eagle 2
+          Comment=F-15 Strike Eagle 2 source port
+          Exec=f15se2-ex
+          Icon=f15se2-ex
+          Categories=Game;Simulation;
+          Terminal=false
+          EOF
+          # linuxdeploy requires the icon to be exactly square (it validates the pixel
+          # resolution against the hicolor/256x256 dir name). The title screenshot is
+          # 16:9, so fit it into a 256x256 canvas and pad with transparency rather than
+          # stretching it. ImageMagick ships on the GitHub ubuntu runners; install it
+          # defensively in case that changes.
+          icon=AppDir/usr/share/icons/hicolor/256x256/apps/f15se2-ex.png
+          if ! command -v convert >/dev/null 2>&1; then
+            sudo apt-get install -y --no-install-recommends imagemagick
+          fi
+          convert screenshots/title.png \
+            -resize 256x256 \
+            -background none -gravity center -extent 256x256 \
+            "$icon"
+          # Fail early if the icon is not a perfect 256x256 square.
+          dims="$(identify -format '%wx%h' "$icon")"
+          echo "Generated icon: $dims"
+          if [ "$dims" != "256x256" ]; then
+            echo "ERROR: icon is $dims, expected 256x256" >&2
+            exit 1
+          fi
+
+      - name: Build AppImage
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          # CI runners often lack FUSE; make the linuxdeploy AppImage (and the one it
+          # produces) extract-and-run instead of mounting.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          # linuxdeploy resolves the binary's NEEDED libs (libSDL3.so.0) by searching
+          # the loader path. SDL3 is built from source via FetchContent and is not
+          # installed system-wide, so point the resolver at both the staged copy
+          # (AppDir/usr/lib) and the raw build tree, and hand linuxdeploy the real
+          # library explicitly with --library so it deploys it with correct symlinks.
+          sdl_lib="$(find build AppDir -name 'libSDL3.so*' -type f 2>/dev/null | head -n1)"
+          if [ -z "$sdl_lib" ]; then
+            echo "ERROR: could not locate a built libSDL3.so* to bundle" >&2
+            find build AppDir -name 'libSDL3*' 2>/dev/null >&2 || true
+            exit 1
+          fi
+          echo "Bundling SDL3 from: $sdl_lib"
+          export LD_LIBRARY_PATH="$(cd "$(dirname "$sdl_lib")" && pwd):${{ github.workspace }}/AppDir/usr/lib:${LD_LIBRARY_PATH:-}"
+          ./linuxdeploy-x86_64.AppImage \
+            --appdir AppDir \
+            --library "$sdl_lib" \
+            --output appimage \
+            --desktop-file AppDir/usr/share/applications/f15se2-ex.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/f15se2-ex.png
+          # linuxdeploy names the output from the .desktop Name= (e.g.
+          # F-15_Strike_Eagle_2-<ver>-x86_64.AppImage). A bare *.AppImage glob would
+          # also match the linuxdeploy-x86_64.AppImage tool sitting in this dir, so
+          # select the generated artifact explicitly by excluding the tool.
+          mkdir -p dist
+          generated="$(find . -maxdepth 1 -name '*.AppImage' ! -name 'linuxdeploy-*.AppImage' -printf '%f\n' | head -n1)"
+          if [ -z "$generated" ]; then
+            echo "ERROR: no generated .AppImage found" >&2
+            ls -la ./*.AppImage 2>/dev/null >&2 || true
+            exit 1
+          fi
+          echo "Generated AppImage: $generated"
+          mv "./$generated" "dist/f15se2-ex-${VERSION}-linux-x86_64.AppImage"
+
+      - name: Build tarball
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          # A plain, relocatable tarball with a flat layout: the bundled libSDL3 sits
+          # right next to the binary so the $ORIGIN RPATH resolves it with no system
+          # SDL install. (The AppImage uses the FHS tree above; this tarball is the
+          # no-FUSE fallback.)
+          staging="f15se2-ex-${VERSION}-linux-x86_64"
+          mkdir -p "dist/${staging}"
+          cp -a AppDir/usr/bin/. "dist/${staging}/"
+          # Flatten lib/ next to the binary (preserve symlinks with -a).
+          if [ -d AppDir/usr/lib ]; then
+            cp -a AppDir/usr/lib/. "dist/${staging}/"
+          fi
+          cp README.md LICENSE "dist/${staging}/"
+          tar -C dist -czf "dist/${staging}.tar.gz" "${staging}"
+          rm -rf "dist/${staging}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*
+
+  # ---------------------------------------------------------------------------
+  # Windows: build with llvm-mingw (the toolchain documented in the README). The
+  # install step bundles SDL3.dll plus libc++.dll / libunwind.dll so the zip runs
+  # on a clean machine.
+  # ---------------------------------------------------------------------------
+  windows:
+    name: Windows x86_64
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install llvm-mingw
+        shell: pwsh
+        run: |
+          # Resolve the latest llvm-mingw UCRT x86_64 build from the GitHub API so we
+          # don't rely on a hard-coded release tag that may be deleted/rotated.
+          $headers = @{ "User-Agent" = "f15se2-ex-ci" }
+          if ($env:GITHUB_TOKEN) { $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN" }
+          $rel = Invoke-RestMethod -Headers $headers `
+            -Uri "https://api.github.com/repos/mstorsjo/llvm-mingw/releases/latest"
+          $asset = $rel.assets | Where-Object { $_.name -like "*ucrt-x86_64.zip" } | Select-Object -First 1
+          if (-not $asset) { throw "No ucrt-x86_64.zip asset found in latest llvm-mingw release" }
+          Write-Host "Downloading $($asset.name)"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile llvm-mingw.zip
+          Expand-Archive -Path llvm-mingw.zip -DestinationPath C:\llvm-mingw
+          $dir = (Get-ChildItem C:\llvm-mingw -Directory | Select-Object -First 1).FullName
+          "$dir\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_C_COMPILER=clang `
+            -DCMAKE_CXX_COMPILER=clang++
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Compute version
+        id: ver
+        shell: bash
+        run: echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+
+      - name: Stage install tree
+        shell: pwsh
+        run: cmake --install build --prefix "${{ github.workspace }}/stage"
+
+      - name: Package zip
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          Copy-Item README.md, LICENSE stage/
+          $name = "f15se2-ex-$env:VERSION-windows-x86_64"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path stage/* -DestinationPath "dist/$name.zip"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+
+  # ---------------------------------------------------------------------------
+  # macOS: build universal-friendly on the default runner, bundle libSDL3.dylib
+  # with an @executable_path RPATH, ship as a tarball.
+  # ---------------------------------------------------------------------------
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: brew install cmake ninja
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j"$(sysctl -n hw.ncpu)"
+
+      - name: Compute version
+        id: ver
+        run: echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+
+      - name: Stage install tree
+        run: cmake --install build --prefix "${{ github.workspace }}/stage"
+
+      - name: Package tarball
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          arch="$(uname -m)"
+          name="f15se2-ex-${VERSION}-macos-${arch}"
+          cp README.md LICENSE stage/
+          mkdir -p "dist/${name}"
+          cp -a stage/. "dist/${name}/"
+          tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+          rm -rf "dist/${name}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*
+
+  # ---------------------------------------------------------------------------
+  # Publish: gather every platform's artifacts and attach them to the Release.
+  # Only runs for tag pushes (skipped on manual workflow_dispatch dry runs).
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish GitHub Release
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create / update the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            Automated build of `${{ github.ref_name }}`.
+
+            ## Downloads
+            - **Linux**: `.AppImage` (portable, just `chmod +x` and run) or `.tar.gz`
+            - **Windows**: `.zip` (SDL3 + runtime DLLs bundled)
+            - **macOS**: `.tar.gz` (libSDL3 bundled)
+
+            ## Running
+            These packages contain the engine and the optional HD asset overlays only.
+            The original F-15 Strike Eagle 2 game data is **not** included and must be
+            supplied separately. Point the game at it with `--game <path>` or the
+            `F15SE2_DIR` environment variable. See the README for details.

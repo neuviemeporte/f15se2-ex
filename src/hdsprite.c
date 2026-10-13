@@ -8,13 +8,37 @@
  * gauge icon (blitGaugeSprite). Raise for a larger ownship marker. */
 #define RADAR_OWNSHIP_FOOTPRINT 7
 
+/* Resolve an HD asset path to an absolute location next to the executable.
+ *
+ * Callers pass paths relative to the bundled asset tree (e.g. "assets/flight/...").
+ * Packaged builds (zip/tarball/AppImage/.app) are launched from an arbitrary working
+ * directory, so a bare relative path would miss the assets that ship beside the
+ * binary. SDL_GetBasePath() returns the directory the executable lives in (with a
+ * trailing separator); we prefix it so the lookup is location-independent.
+ *
+ * Writes the resolved path into `out` and returns it, or returns the original `path`
+ * unchanged when the base path is unavailable or the prefixed file does not exist
+ * (preserving the historical working-directory-relative behavior, e.g. running the
+ * freshly built binary straight out of the build dir). */
+static const char *resolveAssetPath(const char *path, char *out, size_t outlen) {
+    const char *base = SDL_GetBasePath();
+    if (!base || !base[0]) return path;
+    SDL_snprintf(out, outlen, "%s%s", base, path);
+    /* Only prefer the executable-relative copy if it actually exists; otherwise fall
+     * back to the bare path so a CWD-local assets/ dir still works. */
+    if (!SDL_GetPathInfo(out, NULL)) return path;
+    return out;
+}
+
 /* Load a PNG as an owned RGBA image, or NULL (missing/failed). GPU-gated by callers;
  * a missing asset is normal (the game ships with only the sprites drawn so far). */
 static R2DImage *loadHdPng(const char *path) {
-    SDL_Surface *raw = SDL_LoadPNG(path);
+    char resolved[1024];
+    const char *loadPath = resolveAssetPath(path, resolved, sizeof(resolved));
+    SDL_Surface *raw = SDL_LoadPNG(loadPath);
     SDL_Surface *rgba;
     if (!raw) {
-        LogInfo(("hdsprite: %s not loaded (%s); using legacy art", path, SDL_GetError()));
+        LogInfo(("hdsprite: %s not loaded (%s); using legacy art", loadPath, SDL_GetError()));
         return NULL;
     }
     rgba = (raw->format == SDL_PIXELFORMAT_RGBA32)
@@ -22,7 +46,7 @@ static R2DImage *loadHdPng(const char *path) {
                : SDL_ConvertSurface(raw, SDL_PIXELFORMAT_RGBA32);
     if (rgba != raw) SDL_DestroySurface(raw);
     if (!rgba) return NULL;
-    LogInfo(("hdsprite: loaded %s (%dx%d)", path, rgba->w, rgba->h));
+    LogInfo(("hdsprite: loaded %s (%dx%d)", loadPath, rgba->w, rgba->h));
     return r2d_imageFromSurface(rgba);
 }
 
