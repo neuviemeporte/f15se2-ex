@@ -27,6 +27,18 @@ enum SharedPicImplOriginalConstant : int {
     kPicReadBlockSize = 512,
     kPicHeaderMaxWidthNibbleMode = 0x09,
     kPicHeaderMaxWidthByteMode = 0xF7,
+    // Byte mode with max code width 12: bit7 set (byte mode), -0xF4 == 12.
+    kPicHeaderMaxWidth12ByteMode = 0xF4,
+    kLzwInitialWidth = 9,
+    // Codes needed to grow the dictionary to the 2048-entry cap (12-bit width):
+    // picNextCode runs 256..2048, one add per decoded code.
+    kLzwDictGrowCodes = 1792,
+    // 12-bit codes beyond the 2048-entry dictionary bound.
+    kOobChainCodeA = 3000,
+    kOobChainCodeB = 3001,
+    kTwelveBitWidth = 12,
+    kTallPageRows = 8,
+    kMinStreamBlocks = 4,
     kShowPage = 2,
     kSpriteSegment = 0x2468,
     kRawSegment = 0x1357,
@@ -71,6 +83,7 @@ SDL_Surface g_hiResSurface = {};
 uint8 g_pagePixels[kSurfacePitch] = {};
 uint8 g_spritePixels[kSurfacePitch] = {};
 uint8 g_hiResPixels[kHiResPitch * kHiResProgressRows] = {};
+uint8 g_tallPagePixels[kSurfacePitch * kTallPageRows] = {};
 std::vector<uint8> g_picStream;
 
 SDL_IOStream *fakeHandle(int value) {
@@ -102,8 +115,8 @@ void setupOneRowSurface(SDL_Surface *surface, uint8 *pixels) {
     surface->pixels = pixels;
 }
 
-void appendLzwCodeBits(std::vector<uint8> &bytes, unsigned &bitPos, uint16 code) {
-    for (int bit = 0; bit < 9; ++bit) {
+void appendLzwCodeBitsW(std::vector<uint8> &bytes, unsigned &bitPos, uint16 code, int width) {
+    for (int bit = 0; bit < width; ++bit) {
         if ((code >> bit) & 1U) {
             bytes[bitPos / 8] = static_cast<uint8>(bytes[bitPos / 8] | (1U << (bitPos % 8)));
         }
@@ -112,11 +125,36 @@ void appendLzwCodeBits(std::vector<uint8> &bytes, unsigned &bitPos, uint16 code)
     }
 }
 
+void appendLzwCodeBits(std::vector<uint8> &bytes, unsigned &bitPos, uint16 code) {
+    appendLzwCodeBitsW(bytes, bitPos, code, kLzwInitialWidth);
+}
+
 std::vector<uint8> makePicStream(uint8 headerLowByte, const std::vector<uint16> &codes) {
     std::vector<uint8> bytes(kPicReadBlockSize, 0);
     unsigned bitPos = 8; // Header high byte is the first original LZW data byte.
     bytes[0] = headerLowByte;
     for (uint16 code : codes) appendLzwCodeBits(bytes, bitPos, code);
+    return bytes;
+}
+
+// Byte-mode stream that grows the dictionary to its 2048-entry cap (code width
+// reaches 12), then emits two consecutive codes above the bound. The second
+// makes the KwKwK path chain-walk from picPrevCode == kOobChainCodeA, which
+// indexes dictParent[] out of bounds unless the decoder bounds-checks first.
+std::vector<uint8> makeMalformedDictChainStream() {
+    std::vector<uint8> bytes;
+    bytes.push_back(kPicHeaderMaxWidth12ByteMode);
+    bytes.push_back(0);
+    unsigned bitPos = 8;
+    int width = kLzwInitialWidth;
+    int nextCode = kFirstDictionaryCode;
+    for (int i = 0; i < kLzwDictGrowCodes; ++i) {
+        appendLzwCodeBitsW(bytes, bitPos, kLzwLiteralA, width);
+        if (nextCode < 2048) ++nextCode;
+        if (nextCode > (1 << width) - 1) ++width; // mirrors picMaxCodeAtWidth growth
+    }
+    appendLzwCodeBitsW(bytes, bitPos, kOobChainCodeA, kTwelveBitWidth);
+    appendLzwCodeBitsW(bytes, bitPos, kOobChainCodeB, kTwelveBitWidth);
     return bytes;
 }
 
@@ -293,6 +331,21 @@ int main() {
     require(g_pagePixels[0] == kLzwLiteralA &&
                 g_pagePixels[1] == kLzwLiteralA,
             "showPicFile preserves original LZW KwKwK not-yet-in-dictionary expansion");
+
+    // Malformed dictionary chain: two 12-bit codes >= 2048 walk picPrevCode as
+    // a chain index; without the bounds check that reads dictParent[] OOB.
+    resetPicImplState();
+    showHandle = fakeHandle(11);
+    setupZeroHeightSurface(&g_pageSurface, g_tallPagePixels);
+    g_pageSurface.h = kTallPageRows;
+    g_picStream = makeMalformedDictChainStream();
+    g_sequentialPicStreamReads = true;
+    std::memset(g_tallPagePixels, 0xEE, sizeof(g_tallPagePixels));
+    showPicFile(showHandle, kShowPage);
+    require(g_fileReadCalls >= kMinStreamBlocks &&
+                g_tallPagePixels[0] == kLzwLiteralA &&
+                g_tallPagePixels[kSurfacePitch * 4] == kLzwLiteralA,
+            "showPicFile decodes a malformed deep dictionary chain without OOB access");
 
     resetPicImplState();
     SDL_IOStream *decodeHandle = fakeHandle(2);
