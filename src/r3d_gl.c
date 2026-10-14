@@ -213,6 +213,16 @@ static GlLine s_lines[GL_MAX_LINES];
 static int s_nLine;
 static int s_lineOverflow;
 
+/* Deferred depth-point queue (see flushDepthPoints): a busy far field can
+ * collapse hundreds of submitted objects to dots in one frame, and a
+ * begin/endSmoothPoints pair per dot means hundreds of BLEND/POINT_SMOOTH/
+ * MSAA state toggles plus a draw call each — enough to overflow llvmpipe's
+ * emit queue. Dots accumulate here and draw as one GL_POINTS batch at scene
+ * end (the depth buffer sorts them; draw order between dots is moot). */
+#define GL_MAX_DEPTH_PTS 16384
+static struct { float x, y, depth; int color; } s_depthPts[GL_MAX_DEPTH_PTS];
+static int s_nDepthPts;
+
 /* INDEX8 -> RGBA8888 conversion scratch, shared by the page composite, the sprite
  * textures and the sub-view backdrop snapshot. */
 static uint8 *s_rgba;
@@ -612,6 +622,7 @@ static void gl_beginSubScene(const R3DScene *s) {
     s_subOverflow = 0;
     s_nLine = 0;
     s_lineOverflow = 0;
+    s_nDepthPts = 0; /* drop dots left if a prior scene ended early */
     s_flatN = 0;
     s_mainScene = 0; /* this is the MFD target sub-scene, not the main view */
     s_sceneRendered = 1; /* live 3D is now in the framebuffer; the present must not clear it */
@@ -820,6 +831,7 @@ static void gl_beginScene(const R3DScene *s) {
     s_subOverflow = 0;
     s_nLine = 0;
     s_lineOverflow = 0;
+    s_nDepthPts = 0; /* drop dots left if a prior scene ended early */
     s_flatN = 0; /* model-flatness cache is per-frame (world data may reload) */
     s_mainScene = 1; /* the out-the-window view: gl_endScene composites the page backdrop after it */
     s_sceneRendered = 1;
@@ -930,6 +942,11 @@ static void beginSmoothPoints(void) {
     glEnable(GL_POINT_SMOOTH);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    /* One fixed size for the whole batch — the original drew these as fixed
+     * 1px dots at any range; distance cueing comes from the shade color. A
+     * per-point glPointSize can't sit inside glBegin and forced a pipeline-
+     * state update between dots. */
+    glPointSize(s_pixelScale > 1.0f ? s_pixelScale : 1.0f);
 }
 static void endSmoothPoints(void) {
     glDisable(GL_BLEND);
@@ -937,22 +954,28 @@ static void endSmoothPoints(void) {
     if (GL_MSAA_SAMPLES > 0) glEnable(GL_MULTISAMPLE);
 }
 
-#define GL_POINT_REF_DEPTH 5000.0f /* depthHi at which the point is one logical pixel */
-#define GL_POINT_NEAR_CAP 3.0f     /* max size, in logical pixels, for the nearest points */
-#define GL_POINT_MIN_SIZE 0.5f     /* smallest size; smooth coverage fades it below 1px */
-static void drawDepthPoint(float x, float y, long depth32, int colorIdx) {
-    int depthHi = (int)(depth32 >> 16);
-    float sz;
-    if (depthHi < 1) return; /* behind the near plane */
-    sz = s_pixelScale * (GL_POINT_REF_DEPTH / (float)depthHi);
-    if (sz > GL_POINT_NEAR_CAP * s_pixelScale) sz = GL_POINT_NEAR_CAP * s_pixelScale;
-    if (sz < GL_POINT_MIN_SIZE) sz = GL_POINT_MIN_SIZE;
-    paintBias();
-    glPointSize(sz);
-    glColorIndex(colorIdx);
+static void queueDepthPoint(float x, float y, long depth32, int colorIdx) {
+    if ((int)(depth32 >> 16) < 1) return; /* behind the near plane */
+    if (s_nDepthPts >= GL_MAX_DEPTH_PTS) return;
+    s_depthPts[s_nDepthPts].x = x;
+    s_depthPts[s_nDepthPts].y = y;
+    s_depthPts[s_nDepthPts].depth = (float)depth32 / 65536.0f;
+    s_depthPts[s_nDepthPts].color = colorIdx;
+    s_nDepthPts++;
+}
+static void flushDepthPoints(void) {
+    int i;
+    if (!s_nDepthPts) return;
+    glPolygonOffset(0.0f, 0.0f);
+    beginSmoothPoints();
     glBegin(GL_POINTS);
-    fogVertex(x, y, (float)depth32 / 65536.0f);
+    for (i = 0; i < s_nDepthPts; i++) {
+        glColorIndex(s_depthPts[i].color);
+        fogVertex(s_depthPts[i].x, s_depthPts[i].y, s_depthPts[i].depth);
+    }
     glEnd();
+    endSmoothPoints();
+    s_nDepthPts = 0;
 }
 
 /* Decode + transform + draw one object (painter's order; z-buffer on, GL_LEQUAL,
@@ -993,13 +1016,11 @@ static void drawSub(const GlSub *r) {
     /* POINT (sceneObjPoint): the object origin as one shaded pixel. The origin
      * axes (camBase = screen-X, camX = screen-Y, camY = depth) project exactly as a
      * model vertex at (0,0,0) does — the LOD scale cancels in the perspective ratio,
-     * so no scaleDiv is needed. Sized by distance (drawDepthPoint). */
+     * so no scaleDiv is needed. Drawn as a fixed-size dot (flushDepthPoints). */
     if (l->form == MESH_FORM_POINT) {
         if ((int)(r->camY >> 16) < 1) return; /* g_camTransYHi < 1 cull */
-        beginSmoothPoints();
-        drawDepthPoint((float)r->camBase, (float)r->camX, r->camY,
-                       colorLut[l->pointColor] + GL_NEAR_SHADE);
-        endSmoothPoints();
+        queueDepthPoint((float)r->camBase, (float)r->camX, r->camY,
+                        colorLut[l->pointColor] + GL_NEAR_SHADE);
         return;
     }
 
@@ -1007,7 +1028,6 @@ static void drawSub(const GlSub *r) {
      * vertex transformed by the object matrix (the on-the-fly path's emitModelVertex).
      * No LOD scale (emitModelVertex applies none), so depth feeds glEdgeRunColor raw. */
     if (l->form == MESH_FORM_EDGERUN) {
-        beginSmoothPoints();
         for (i = 0; i < 9; i++) cm[i] = (float)r->combined[i];
         for (i = 0; i < l->nRunRefs; i++) {
             int ref = l->runRefs[i];
@@ -1027,9 +1047,8 @@ static void drawSub(const GlSub *r) {
             depth = 2.0f * (cm[2] * X + cm[5] * Z + cm[8] * Y) + (float)r->camY;
             depthRaw = (long)depth;
             if ((int)(depthRaw >> 16) < 1) continue; /* dHi >= 1 */
-            drawDepthPoint(camX, camY, depthRaw, glEdgeRunColor((int)(depthRaw >> 16)));
+            queueDepthPoint(camX, camY, depthRaw, glEdgeRunColor((int)(depthRaw >> 16)));
         }
-        endSmoothPoints();
         return;
     }
 
@@ -1134,10 +1153,8 @@ static void drawSub(const GlSub *r) {
             }
             if (colorByte < 0 && l->nLines) colorByte = l->lines[0].colorByte;
             if (colorByte >= 0) {
-                beginSmoothPoints();
-                drawDepthPoint((float)r->camBase, (float)r->camX, r->camY,
-                               colorLut[colorByte] + GL_NEAR_SHADE);
-                endSmoothPoints();
+                queueDepthPoint((float)r->camBase, (float)r->camX, r->camY,
+                                colorLut[colorByte] + GL_NEAR_SHADE);
             }
             return;
         }
@@ -1438,6 +1455,10 @@ static void gl_endScene(void) {
     glPolygonOffset(0.0f, 0.0f);
     for (i = 0; i < s_nLine; i++) drawGlLine(&s_lines[i]);
     s_nLine = 0;
+
+    /* Deferred sub-pixel/edge-run dots: one batch, after the world geometry
+     * so the depth buffer sorts them. */
+    flushDepthPoints();
 
     glDisable(GL_FOG);
     s_nSub = 0;
