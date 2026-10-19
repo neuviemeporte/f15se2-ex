@@ -5,7 +5,6 @@
 #include "inttype.h"
 #include "log.h"
 #include <SDL3/SDL.h>
-#include <quickdigest5.hpp>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
@@ -118,73 +117,87 @@ void errorAndExit(const char *msg) {
     exit(1);
 }
 
+/* CRC-32 of a whole file, or false if it can't be read. */
+static bool fileCrc32(const string &path, Uint32 *crc) {
+    size_t size = 0;
+    void *data = SDL_LoadFile(path.c_str(), &size);
+    if (!data) return false;
+    *crc = SDL_crc32(0, data, size);
+    SDL_free(data);
+    return true;
+}
+
+/* The checksums identify the expected v451.03 files; they only need to tell
+ * versions apart, not resist tampering. */
 bool verifyGameAssets() {
     struct Asset {
-        string md5, filename;
+        Uint32 crc;
+        string filename;
     };
     const vector<Asset> assets = {
-        { "3e468dbc9dd2c25a5343e384656d4b87", "15flt.3d3" },
-        { "8a8d0d29a6789de4971a5381cb89a60c", "256left.pic" },
-        { "b6651ea956bec71890bf90de9a31fb1d", "256pit.pic" },
-        { "4c4704170d85e18c842e18b1f438d266", "256rear.pic" },
-        { "d18609791beb5a4b6bbc3c95a49979ee", "256right.pic" },
-        { "fad492070c3afb3a11f32ad266df428d", "adv.pic" },
-        { "f6b8b7b27b1de44282ca04ea6d369ea4", "armpiece.pic" },
-        { "e480cd3510d5895f399e996725a58f6a", "ce.3d3" },
-        { "b726a340b000005fdf501d61eeb57bcd", "ce.3dg" },
-        { "b082fb4983b97804bff002e5824fbc90", "ce.3dt" },
-        { "bacf2b850fcc6b592f92f046c89b15c8", "ceurope.spr" },
-        { "df0d81f834eb7d8eaefb6b14b9728244", "ce.wld" },
-        { "ff1bba14e570245e94e5f1a6186422a3", "cockpit.pic" },
-        { "a490a0bf84b2c36dedab4fee0372bd09", "dbicons.spr" },
-        { "6e26bcc7228da3563f17c1c919e14349", "death.pic" },
-        { "07ae72e86ae2c38cb7293f86cb108e93", "desk.pic" },
-        { "9c66ea28fec0daf5e3f11c28b9d7ffea", "f15dgtl.bin" },
-        { "ac3d782b7a7c446dcf3036d532a3dbae", "f15.spr" },
-        { "887f5679e3a645b2082503ff20fb1aa5", "gulf.wld" },
-        { "537bbf274d79ebaa616f55917d14bf19", "hiscore.pic" },
-        { "0dcf2b5bba17badda50bdf4273285e99", "jp.3d3" },
-        { "e2201bf2eebd8f12859c41676070c4cd", "jp.3dg" },
-        { "210b69b49ea60248ecf229e3a35c7832", "jp.3dt" },
-        { "e2252dea49554e9d51482e6ba0a22a5b", "jp.spr" },
-        { "c499fd1f955fde158159b770eabbc11e", "jp.wld" },
-        { "157e724e8daa31336fe9f06255bd73c4", "labs.pic" },
-        { "0b8866ceaad15bc03bd7897bd84c66d5", "lb.3d3" },
-        { "d10c1d6cc9ade429e6dd81d9f2efc9de", "lb.3dg" },
-        { "73b3bfa86cd57a507a2e1591db45ed76", "lb.3dt" },
-        { "789455e28757793fec416cc444477063", "left.pic" },
-        { "fb234541a8fd588684c80417eebbf729", "libya.spr" },
-        { "34ac7cabf7c200aaffe72cf548978fa8", "libya.wld" },
-        { "335931f93a4a5bb88129ea28ced2ae8c", "me.3d3" },
-        { "ad0dbc926be9758b623995ee70bb777b", "me.3dg" },
-        { "0e5a2dc77f195a8e51976575e7160282", "me.3dt" },
-        { "3f75ad96c4d9c61842d58e087394d968", "medal.pic" },
-        { "8079c4abfa88c04aad08e82908b7554e", "me.spr" },
-        { "1e9407d174654d59a2bd34d5fe052caa", "me.wld" },
-        { "f8ec10b3de5dfd555748497cc5f88f63", "nc.3d3" },
-        { "2534b73170ae55e00b1ecfa706d5e04e", "nc.3dg" },
-        { "ace87d2c23046f0fecf50c04e847ab3c", "nc.3dt" },
-        { "a019f6eade84d4d6a2c8034850979c14", "ncape.spr" },
-        { "4ecabfb63f451c989a51feca22048e19", "nc.wld" },
-        { "fff6a0e3d2d16af739d9a36eb413339f", "persian.spr" },
-        { "570679af0f0bb2d44eb16226d557bbed", "pg.3d3" },
-        { "4cfaf482d83f9a90fe30734e7a701918", "pg.3dg" },
-        { "46ced2bc0128d95674e10521fee61cd4", "pg.3dt" },
-        { "5527467253f038e296fc2519606e38aa", "photo.3d3" },
-        { "fa3efcb64547c7fc73bc165b4d06bbf2", "promo.pic" },
-        { "0bbc6acfeaef8c7988cd5e75aaaf6320", "rear.pic" },
-        { "94190aa3fe2f7de2395b15dab9c04a53", "right.pic" },
-        { "bd7a9c10dcd06fec62af1071a678ad7f", "title16.pic" },
-        { "14c7e302d9ba0b3567196f43b2a914a6", "title640.pic" },
-        { "3e59272aa51365d4c5dc156844f3d4e8", "vn.3d3" },
-        { "f54adf1df9788e90e3408d8609ecd40e", "vn.3dg" },
-        { "31a214ca09ac9c5ea8ab61c2c2358928", "vn.3dt" },
-        { "17e00b718ea797eff553ffca1d3ba2bb", "vn.spr" },
-        { "ed64b9313161e9889454f33f6816ffc9", "vn.wld" },
-        { "0839cb62142b5d3e5058b596ad36fb32", "wall.pic" },
+        { 0x5b2fc572u, "15flt.3d3" },
+        { 0xa50de190u, "256left.pic" },
+        { 0x841495b6u, "256pit.pic" },
+        { 0x33e50d27u, "256rear.pic" },
+        { 0xa39beb5du, "256right.pic" },
+        { 0x27aed3cbu, "adv.pic" },
+        { 0xe10c0debu, "armpiece.pic" },
+        { 0x762acc2eu, "ce.3d3" },
+        { 0xa6972872u, "ce.3dg" },
+        { 0xee653c88u, "ce.3dt" },
+        { 0x461674e6u, "ceurope.spr" },
+        { 0x00f70fa0u, "ce.wld" },
+        { 0x1b969861u, "cockpit.pic" },
+        { 0x0c4fde5du, "dbicons.spr" },
+        { 0x85991f0au, "death.pic" },
+        { 0xa37f389du, "desk.pic" },
+        { 0xd0352920u, "f15dgtl.bin" },
+        { 0x288c54e4u, "f15.spr" },
+        { 0xc514577du, "gulf.wld" },
+        { 0x75550216u, "hiscore.pic" },
+        { 0x87468c74u, "jp.3d3" },
+        { 0xa93ccb53u, "jp.3dg" },
+        { 0x239fb8d8u, "jp.3dt" },
+        { 0xb3983810u, "jp.spr" },
+        { 0xba3816a5u, "jp.wld" },
+        { 0x68dea723u, "labs.pic" },
+        { 0xf5953417u, "lb.3d3" },
+        { 0x8285cd40u, "lb.3dg" },
+        { 0x2288d8dcu, "lb.3dt" },
+        { 0x79c31481u, "left.pic" },
+        { 0xc328bfa9u, "libya.spr" },
+        { 0x2a665c40u, "libya.wld" },
+        { 0xc55bc1c2u, "me.3d3" },
+        { 0x7bf4b034u, "me.3dg" },
+        { 0x78115e59u, "me.3dt" },
+        { 0x8908355au, "medal.pic" },
+        { 0x4ac43598u, "me.spr" },
+        { 0xa3a9725cu, "me.wld" },
+        { 0x1016db22u, "nc.3d3" },
+        { 0x1fe3b150u, "nc.3dg" },
+        { 0xde682916u, "nc.3dt" },
+        { 0xbb30da11u, "ncape.spr" },
+        { 0x365a4956u, "nc.wld" },
+        { 0x91480d33u, "persian.spr" },
+        { 0x85a3fdcbu, "pg.3d3" },
+        { 0x99e5227eu, "pg.3dg" },
+        { 0xf792473bu, "pg.3dt" },
+        { 0x564d4d74u, "photo.3d3" },
+        { 0x7913a4e1u, "promo.pic" },
+        { 0x51000abeu, "rear.pic" },
+        { 0x47f25213u, "right.pic" },
+        { 0x83e54c92u, "title16.pic" },
+        { 0x030ac375u, "title640.pic" },
+        { 0x4111f8a1u, "vn.3d3" },
+        { 0xa4d9a08fu, "vn.3dg" },
+        { 0x655d8a0au, "vn.3dt" },
+        { 0x9876cd2eu, "vn.spr" },
+        { 0x22994f63u, "vn.wld" },
+        { 0x8035b7d3u, "wall.pic" },
     };
     for (const Asset &a : assets) {
         const string pathStr = resolveCasePath(a.filename.c_str(), true);
+        Uint32 crc = 0;
         if (pathStr.empty()) {
             const string msg = "Could not find asset file " + a.filename
                 + " in game directory: " + gamePath.string();
@@ -192,9 +205,11 @@ bool verifyGameAssets() {
                 msg.c_str(), NULL);
             return false;
         }
-        if (QuickDigest5::fileToHash(pathStr) != a.md5) {
+        if (!fileCrc32(pathStr, &crc) || crc != a.crc) {
+            char expected[9];
+            SDL_snprintf(expected, sizeof expected, "%08x", (unsigned)a.crc);
             const string msg = "Checksum mismatch for asset file " + pathStr
-                + ": expected " + a.md5;
+                + ": expected CRC-32 " + expected;
             SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Initialization failed",
                 msg.c_str(), NULL);
             return false;
