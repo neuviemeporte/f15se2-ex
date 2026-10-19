@@ -118,13 +118,6 @@ if(AUDIO AND FM_EMULATION)
     )
     FetchContent_MakeAvailable(nuked_opl3)
 endif()
-FetchContent_Declare(
-    quick_digest5
-    GIT_REPOSITORY "https://github.com/nthnn/QuickDigest5.git"
-    GIT_TAG "1d61aece0e023e4c41cf24547fa1ac2f8028219d"
-    UPDATE_DISCONNECTED TRUE
-)
-FetchContent_MakeAvailable(quick_digest5)
 
 
 #==============================================================================
@@ -307,7 +300,6 @@ endif()
 add_library(f15se2_core STATIC
     ${F15SE2_CORE_SOURCES}
     ${AUDIO_SOURCES}
-    ${quick_digest5_SOURCE_DIR}/src/quickdigest5.cpp
 )
 target_include_directories(f15se2_core BEFORE PUBLIC
     ${SRC_DIR}/compat64
@@ -317,7 +309,6 @@ target_include_directories(f15se2_core BEFORE PUBLIC
 )
 target_include_directories(f15se2_core PRIVATE
     ${SRC_DIR}/asound
-    ${quick_digest5_SOURCE_DIR}/include
 )
 if(AUDIO AND FM_EMULATION)
     target_include_directories(f15se2_core PRIVATE ${nuked_opl3_SOURCE_DIR})
@@ -641,7 +632,7 @@ add_custom_target(source_line_coverage_audit
 # `cmake --build build --target coverage` runs the tests and writes:
 #   build/coverage.xml  - Cobertura XML for Codecov / CI
 #   build/coverage.txt  - human-readable per-file summary
-# Only src/ is measured; vendored SDL / OPL / digest and the tests themselves
+# Only src/ is measured; vendored SDL / OPL and the tests themselves
 # are excluded so the percentage reflects the F-15 rewrite.
 #------------------------------------------------------------------------------
 if(COVERAGE)
