@@ -11,9 +11,8 @@
  * path. The game draws into the 320x200 paletted page surfaces (gfx_impl.c), and
  * the seam owns *how that virtual overlay page reaches the window*. The software
  * backend presents it through SDL_Renderer (letterbox); the GL backend composites
- * it as a flat textured quad over the GL 3D (r3dgl_present). The active 2D backend
- * always matches the active 3D backend: the GL backend owns the window, so the two
- * must agree.
+ * it as a flat textured quad over the GL 3D. Present and the native overlay belong
+ * to the active render backend (R3DBackend), so 2D always matches 3D.
  */
 
 struct SDL_Surface;
@@ -113,7 +112,7 @@ void r2d_blit(struct SDL_Surface *src, int srcX, int srcY,
  * software backend realizes a submission by rasterizing into the page (the
  * low-end/DOS path, via the registered callbacks below). The GL backend draws each
  * submission IMMEDIATELY, directly onto the active framebuffer at its call site
- * (r3dgl_draw*), at **native window resolution** — a crisp vector HUD and sharp
+ * (R2DOverlay), at **native window resolution** — a crisp vector HUD and sharp
  * sprites in true call order (a sprite drawn after a line lands over it), no
  * recording and no present-time replay. Same call sites, the realization is the
  * backend's.
@@ -273,13 +272,35 @@ void r2d_registerImageDestroy(void (*hook)(R2DImage *img));
  * virtual pixels (0-3), applied as a horizontal present offset. */
 void r2d_present(struct SDL_Surface *page, int shakeOffset);
 
-/* Name of the active 2D backend ("opengl1" or "software"); follows the 3D
- * backend. */
-const char *r2d_backendName(void);
-
-/* The software path's SDL_Renderer present lives in gfx_impl.c (it owns the
- * renderer); gfx_impl registers it here at video init so r2d_present can dispatch
- * to it without the renderer leaking into this module. */
-void r2d_registerSoftwarePresent(void (*present)(struct SDL_Surface *page, int shakeOffset));
+/*
+ * Native 2D overlay backend.
+ *
+ * A render backend that can draw the overlay at native window resolution supplies
+ * one of these (R3DBackend.overlay); a backend without one (software) leaves it
+ * NULL and every submission bakes into the 320x200 page instead. Each entry draws
+ * one element straight onto the active framebuffer, in call order. Coordinates are
+ * absolute 320-space; `color` is a VGA palette index. The argument contracts are
+ * those of the matching r2d_submit* above.
+ */
+typedef struct R2DOverlay {
+    /* Open the overlay for this frame: `composePage` is one of R2D_COMPOSE_*. */
+    void (*begin)(int composePage);
+    void (*line)(int x1, int y1, int x2, int y2, int color);
+    void (*point)(int x, int y, int color);
+    void (*rect)(int x0, int y0, int x1, int y1, int color);
+    void (*poly)(const short *xy, int n, int color,
+                 int clipX0, int clipY0, int clipX1, int clipY1);
+    void (*quadF)(const float *xy, int color, int cx0, int cy0, int cx1, int cy1);
+    void (*scopeLine)(float x1, float y1, float x2, float y2, int color,
+                      int cx0, int cy0, int cx1, int cy1, float widthScale);
+    void (*image)(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
+                  int dstX, int dstY, int dstW, int dstH, int key);
+    void (*imageF)(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
+                   float dstX, float dstY, float dstW, float dstH, int key);
+    void (*imageRot)(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
+                     float cx, float cy, float dstW, float dstH, float angleRad, int key);
+    void (*imageWindow)(R2DImage *img);
+    void (*imageWindowBoxX)(R2DImage *img, float boxLeftX);
+} R2DOverlay;
 
 #endif /* R2D_H */

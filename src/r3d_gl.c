@@ -1,7 +1,8 @@
-/* OpenGL 1.x 3D backend — the GPU path.
+/* OpenGL 1.x render backend — the GPU path.
  *
- * Implements the R3DBackend 3D vtable against the *decoded* meshes (r3dmesh.c)
- * and owns the GL context + the 2D-overlay composite. The 3D main view
+ * Implements the R3DBackend vtable against the *decoded* meshes (r3dmesh.c):
+ * window + GL context bring-up, the 3D, the page composite/present and the
+ * native-resolution 2D overlay (R2DOverlay). The 3D main view
  * renders through GL at native window resolution with a real depth buffer and
  * double-sided fill (no back-face cull — cheap on a GPU, fixes over-optimized
  * models). The target-model MFD sub-view (renderScene == 0) also renders through
@@ -16,7 +17,7 @@
  * Pixels may drift from the integer rasterizer; behaviour does not (Q1).
  *
  * Compositing: the 2D overlay draws IMMEDIATELY over the GL 3D at native window
- * resolution, in true call order (r3dgl_draw*, driven from r2d_submit*). The
+ * resolution, in true call order (gl_draw*, driven from r2d_submit*). The
  * retained software page still carries the cockpit/panel + on-change gauges; it is
  * composited once per flight frame as a textured quad at the main-scene anchor
  * (gl_endScene, before the frame's HUD), with the 3D viewport rect(s) made
@@ -27,7 +28,6 @@
 #include <SDL3/SDL_opengl.h>
 
 #include "r3d.h"
-#include "r3d_gl.h"
 #include "r2d.h"
 #include "r3dmesh.h"
 #include "gfx_impl.h"
@@ -58,25 +58,13 @@ static int s_active;
 #endif
 static void (*s_glFogCoordf)(GLfloat);
 
-int r3dgl_wantGL(void) {
-    /* Bring a GL window/context up unless software is explicitly forced — auto,
-     * "gl", and unknown names all prefer GL (an unknown name falls back to the
-     * preference order, which is GL-first). The probe in r3d_init then claims iff
-     * the context actually came up (s_active); if it didn't, gfx_videoInit falls
-     * back to an SDL_Renderer and the software backend claims. Shares
-     * r3d_requestedBackend so the window decision and the probe agree. */
-    const char *want = r3d_requestedBackend();
-    return !want || SDL_strcasecmp(want, "software") != 0;
-}
-
 /* MSAA multisampling for the GL framebuffer. 4x is effectively free on any desktop
  * GPU and noticeably cleans up the flat-shaded polygon edges and the native-res
- * vector HUD. gfx_impl.c retries with 0 if the context won't come up with it. */
+ * vector HUD. gl_init retries with 0 if the context won't come up with it. */
 static const int GL_MSAA_SAMPLES = 4;
 
-int r3dgl_msaaSamples(void) { return GL_MSAA_SAMPLES; }
-
-void r3dgl_setGLAttributes(int msaaSamples) {
+/* Framebuffer attributes; must be set before the window is created. */
+static void setGLAttributes(int msaaSamples) {
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     /* 8-bit stencil (D24S8, universal on GL 1.1) — the shadow pass masks each covered
      * pixel so a self-overlapping silhouette blends exactly once. */
@@ -88,15 +76,15 @@ void r3dgl_setGLAttributes(int msaaSamples) {
 
 static void gl_imageDestroyed(R2DImage *img); /* drop an image's cached texture on release */
 
-int r3dgl_initContext(SDL_Window *win) {
+static int initContext(SDL_Window *win) {
     s_win = win;
     s_ctx = SDL_GL_CreateContext(win);
     if (!s_ctx) {
-        LogCritical(("GL context creation failed: %s", SDL_GetError()));
+        LogWarn(("GL context creation failed: %s", SDL_GetError()));
         return 0;
     }
     SDL_GL_MakeCurrent(win, s_ctx);
-    SDL_GL_SetSwapInterval(1);
+    if (!SDL_GL_SetSwapInterval(1)) gfx_enableFramePacing();
     s_glFogCoordf = (void (*)(GLfloat))SDL_GL_GetProcAddress("glFogCoordf");
     if (GL_MSAA_SAMPLES > 0) glEnable(GL_MULTISAMPLE); /* no-op if the format has 0 samples */
     {
@@ -112,8 +100,6 @@ int r3dgl_initContext(SDL_Window *win) {
     r2d_registerImageDestroy(gl_imageDestroyed);
     return 1;
 }
-
-int r3dgl_active(void) { return s_active; }
 
 /* ---- mesh decode -------------------------------------------------------- */
 
@@ -146,7 +132,7 @@ static int s_mainScene;      /* the current scene is the main out-the-window 3D 
 static int s_glFlightLive;   /* the last present carried a live 3D flight frame (so a bare
                               * gfx_repaint must not blank it by re-presenting only the page) */
 static int s_pageComposited; /* the page backdrop was already laid down this frame (pure-2D
-                              * screens composite it at r3dgl_beginOverlay, under the immediate
+                              * screens composite it at gl_beginOverlay, under the immediate
                               * overlay) so the present must not composite it again on top */
 static int s_wide = -1;      /* widescreen 3D (Hor+): -1 = not yet read from F15_WIDESCREEN */
 
@@ -376,8 +362,32 @@ static void fogVertex(float x, float y, float z) {
 
 static const char *gl_name(void) { return "opengl1"; }
 
-static int gl_init(void) { return s_active; } /* claims iff the context came up */
-static void gl_shutdown(void) {}
+/* Claim iff a GL window + context comes up. MSAA can force a pixel format the
+ * driver can't satisfy, so if the context won't come up we retry once without it
+ * before declining — losing only the anti-aliasing, not the whole backend. */
+static int gl_init(void) {
+    int msaa = GL_MSAA_SAMPLES;
+    for (;;) {
+        setGLAttributes(msaa);
+        SDL_Window *win = gfx_createWindow(SDL_WINDOW_OPENGL);
+        if (win && initContext(win)) return 1;
+        gfx_destroyWindow();
+        if (msaa == 0) {
+            LogWarn(("GL init failed; declining the OpenGL backend"));
+            return 0;
+        }
+        LogWarn(("GL init failed with %dx MSAA; retrying without it", msaa));
+        msaa = 0;
+    }
+}
+
+static void gl_shutdown(void) {
+    r2d_registerImageDestroy(NULL);
+    if (s_ctx) SDL_GL_DestroyContext(s_ctx);
+    s_ctx = NULL;
+    s_win = NULL;
+    s_active = 0;
+}
 
 static R3DMesh gl_registerMesh(R3DMesh raw) { return raw; } /* decoded per submit */
 static void gl_releaseMesh(R3DMesh mesh) { (void)mesh; }
@@ -1454,18 +1464,6 @@ static void gl_endScene(void) {
     }
 }
 
-const R3DBackend r3d_glBackend = {
-    gl_name,
-    gl_init,
-    gl_shutdown,
-    gl_registerMesh,
-    gl_releaseMesh,
-    gl_beginScene,
-    gl_submit,
-    gl_submitLine,
-    gl_endScene,
-};
-
 /* ---- 2D overlay composite + present ------------------------------------ */
 
 /* Set the nearest-filter + clamp parameters shared by the page and sprite
@@ -1555,7 +1553,7 @@ static GLuint imageTexture(R2DImage *img, SDL_Palette *pal, int palGen) {
 
 /* 2D overlay draw context: the virtual->window letterbox (from the shared r2d
  * mapping) plus the screen-shake, shared by every immediate 2D primitive. Set once
- * before the frame's first 2D draw (overlaySetContext); each r3dgl_draw* below reads
+ * before the frame's first 2D draw (overlaySetContext); each gl_draw* below reads
  * it. Drawing a cached texture or a few vector verts is cheap enough to issue every
  * frame, so the only thing cached is the *decode* (imageTexture), never the draw. */
 static struct {
@@ -1578,9 +1576,9 @@ static void overlaySetContext(int virtW, int virtH, int shakeOffset) {
     s_ov.lineW = m.scaleY < 1.0f ? 1.0f : m.scaleY;
 }
 
-void r3dgl_beginOverlay(int composePage) {
+static void gl_beginOverlay(int composePage) {
     /* The flight overlay is authored in the 320x200 virtual box; shake is the live
-     * explosion offset (read once per frame here, applied by every r3dgl_draw*). */
+     * explosion offset (read once per frame here, applied by every gl_draw*). */
     overlaySetContext(LOGICAL_WIDTH, LOGICAL_HEIGHT, gfx_getShakeOffset());
     /* Flight frames render the 3D and composite the page backdrop mid-frame (the
      * gl_endScene anchor) before their immediate HUD draws. Pure-2D screens have no
@@ -1659,7 +1657,7 @@ static void capLineEnds(float ax, float ay, float bx, float by, float w) {
     glEnd();
 }
 
-void r3dgl_drawLine(int x1, int y1, int x2, int y2, int color) {
+static void gl_drawLine(int x1, int y1, int x2, int y2, int color) {
     SDL_Palette *pal = gfx_getPalette();
     SDL_Color c;
     float ax, ay, bx, by;
@@ -1685,7 +1683,7 @@ void r3dgl_drawLine(int x1, int y1, int x2, int y2, int color) {
 
 /* One virtual-pixel cell (scaleX x scaleY) so points keep their footprint at
  * native, non-square size (pitch-ladder marks, submitted text pixels). */
-void r3dgl_drawPoint(int x, int y, int color) {
+static void gl_drawPoint(int x, int y, int color) {
     SDL_Palette *pal = gfx_getPalette();
     SDL_Color c;
     float x0, y0, x1q, y1q;
@@ -1709,7 +1707,7 @@ void r3dgl_drawPoint(int x, int y, int color) {
  * pixel extent (x0..x1, y0..y1). Used for the per-frame MFD backdrops (target-view
  * horizon, radar-scope background) and the damage flash — the fills that must land
  * in true call order under the immediate MFD/scope content instead of baking. */
-void r3dgl_drawRect(int x0, int y0, int x1, int y1, int color) {
+static void gl_drawRect(int x0, int y0, int x1, int y1, int color) {
     SDL_Palette *pal = gfx_getPalette();
     SDL_Color c;
     float qx0, qy0, qx1, qy1;
@@ -1732,7 +1730,7 @@ void r3dgl_drawRect(int x0, int y0, int x1, int y1, int color) {
 /* Filled convex tile face (left-MFD terrain map). Vertices are 320-space x,y pairs
  * submitted UNCLIPPED and scissored to the MFD rect (clipX0,clipY0)-(clipX1,clipY1),
  * half-open, so a face crossing the border fills correctly with a crisp edge. */
-void r3dgl_drawPoly(const short *xy, int n, int color,
+static void gl_drawPoly(const short *xy, int n, int color,
                     int clipX0, int clipY0, int clipX1, int clipY1) {
     SDL_Palette *pal = gfx_getPalette();
     SDL_Color c;
@@ -1751,8 +1749,8 @@ void r3dgl_drawPoly(const short *xy, int n, int color,
 
 /* Fill one float-cornered quad (a rotated, sub-grid font texel of a HUD label),
  * scissored to the half-open clip rect. Cell-corner convention (no +0.5), matching
- * r3dgl_drawPoint's virtual-pixel footprint so rotated labels sit on their lines. */
-void r3dgl_drawQuadF(const float *xy, int color, int cx0, int cy0, int cx1, int cy1) {
+ * gl_drawPoint's virtual-pixel footprint so rotated labels sit on their lines. */
+static void gl_drawQuadF(const float *xy, int color, int cx0, int cy0, int cx1, int cy1) {
     SDL_Palette *pal = gfx_getPalette();
     SDL_Color c;
     int k;
@@ -1772,8 +1770,8 @@ void r3dgl_drawQuadF(const float *xy, int color, int cx0, int cy0, int cx1, int 
  * cut by a GL scissor at the true MFD edge (cx0,cy0)-(cx1,cy1) rather than a
  * geometry clip — a crisp screen-edge cut, not a slanted butt-cap short of it.
  * widthScale multiplies the base per-virtual-pixel line width: the radar/MFD uses
- * 0.5 (thin scope look), the HUD target box 1.0 (full weight, matching r3dgl_drawLine). */
-void r3dgl_drawScopeLine(float x1, float y1, float x2, float y2, int color,
+ * 0.5 (thin scope look), the HUD target box 1.0 (full weight, matching gl_drawLine). */
+static void gl_drawScopeLine(float x1, float y1, float x2, float y2, int color,
                          int cx0, int cy0, int cx1, int cy1, float widthScale) {
     SDL_Palette *pal = gfx_getPalette();
     SDL_Color c;
@@ -1806,7 +1804,7 @@ void r3dgl_drawScopeLine(float x1, float y1, float x2, float y2, int color,
 /* Shrink a device-space rect to the largest centred sub-rect with the source's
  * srcW:srcH aspect (square pixels). HD art is authored square, so it fills its
  * footprint region without the 320-space 4:3 stretch that paletted sprites want
- * (the same rigid-square principle r3dgl_drawImageRot already uses for rotated
+ * (the same rigid-square principle gl_drawImageRot already uses for rotated
  * contacts). Placement still comes from the per-axis footprint mapping; only the
  * art's own grid is left unstretched. */
 static void fitContainSquare(float *x0, float *y0, float *x1, float *y1, int srcW, int srcH) {
@@ -1825,7 +1823,7 @@ static void fitContainSquare(float *x0, float *y0, float *x1, float *y1, int src
  * sub-rect (srcX,srcY,imgW,imgH); destination footprint (dstW,dstH) in 320-space
  * may differ from the source size (a scaled HD sprite). key<0 opaque (blend off,
  * index 0 drawn as its colour); key>=0 transparent on index 0 (baked alpha). */
-void r3dgl_drawImage(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
+static void gl_drawImage(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
                      int dstX, int dstY, int dstW, int dstH, int key) {
     SDL_Palette *pal = gfx_getPalette();
     SDL_Surface *surf = r2d_imageSurface(img);
@@ -1878,12 +1876,12 @@ void r3dgl_drawImage(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
     glDisable(GL_BLEND);
 }
 
-/* Like r3dgl_drawImage but with a fractional 320-space destination: the quad is
+/* Like gl_drawImage but with a fractional 320-space destination: the quad is
  * NOT snapped to whole device pixels, so a sprite whose logical position moves
  * sub-pixel per frame (a radar blip tracking the gliding scope grid) slides
  * smoothly instead of stepping. Texcoords are inset half a source texel so NEAREST
  * still can't bleed across a sprite-sheet cell boundary without the quad snapping. */
-void r3dgl_drawImageF(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
+static void gl_drawImageF(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
                       float dstX, float dstY, float dstW, float dstH, int key) {
     SDL_Palette *pal = gfx_getPalette();
     SDL_Surface *surf = r2d_imageSurface(img);
@@ -1925,13 +1923,13 @@ void r3dgl_drawImageF(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
     glDisable(GL_BLEND);
 }
 
-/* Like r3dgl_drawImageF but the quad is rotated by angleRad (clockwise on screen)
+/* Like gl_drawImageF but the quad is rotated by angleRad (clockwise on screen)
  * about the 320-space centre (cx,cy). Used by the HD radar path so a single base
  * sprite spins smoothly to a contact's heading instead of snapping to one of the
  * atlas's hand-drawn rotation frames. The device-space half-extents use scaleX on
  * both axes so the icon stays rigid (square) as it turns rather than shearing with
  * the non-square 320x200 pixel aspect. */
-void r3dgl_drawImageRot(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
+static void gl_drawImageRot(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
                         float cx, float cy, float dstW, float dstH,
                         float angleRad, int key) {
     SDL_Palette *pal = gfx_getPalette();
@@ -2018,7 +2016,7 @@ static void drawImageWindowFitH(R2DImage *img, float leftWinX) {
 /* Window-filling widescreen 2D art that lives OUTSIDE the 320-space overlay box,
  * scaled to the window height and CENTRED horizontally (sides cropped to fit) — the
  * briefing room backdrop. */
-void r3dgl_drawImageWindow(R2DImage *img) {
+static void gl_drawImageWindow(R2DImage *img) {
     SDL_Surface *surf = r2d_imageSurface(img);
     float dw;
     if (!surf) return;
@@ -2032,7 +2030,7 @@ void r3dgl_drawImageWindow(R2DImage *img) {
  * (the forearm meets the officer's body) yet must sit in the 4:3 menu box they point
  * into. The cel is wider than the legacy arm, so left-aligning tucks the extra width
  * behind the officer while the pointer lands on the menu. */
-void r3dgl_drawImageWindowBoxX(R2DImage *img, float boxLeftX) {
+static void gl_drawImageWindowBoxX(R2DImage *img, float boxLeftX) {
     drawImageWindowFitH(img, ovMapX(boxLeftX));
 }
 
@@ -2212,7 +2210,7 @@ static void composePageBackdrop(SDL_Surface *page, int shakeOffset) {
     glDisable(GL_BLEND);
 }
 
-void r3dgl_present(SDL_Surface *page, int shakeOffset) {
+static void gl_present(SDL_Surface *page, int shakeOffset) {
     if (!page || !s_active) return;
     /* Flight frames composed the page backdrop at the main-scene anchor (before the
      * frame's immediate HUD/MFD draws); only pure-2D screens (no 3D pass) compose it
@@ -2221,7 +2219,7 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
     /* Remember whether THIS present carried a live 3D view. gfx_repaint (window
      * expose/resize) re-presents only the page — which would blank the GL 3D (it
      * lives in the framebuffer, not the page) — so on a flight frame it must instead
-     * leave the last composited frame alone (r3dgl_flightLive). */
+     * leave the last composited frame alone (gl_flightLive). */
     s_glFlightLive = s_sceneRendered;
     s_sceneRendered = 0;
     s_pageComposited = 0;
@@ -2229,4 +2227,34 @@ void r3dgl_present(SDL_Surface *page, int shakeOffset) {
     SDL_GL_SwapWindow(s_win);
 }
 
-int r3dgl_flightLive(void) { return s_glFlightLive; }
+static int gl_flightLive(void) { return s_glFlightLive; }
+
+static const R2DOverlay s_glOverlay = {
+    gl_beginOverlay,
+    gl_drawLine,
+    gl_drawPoint,
+    gl_drawRect,
+    gl_drawPoly,
+    gl_drawQuadF,
+    gl_drawScopeLine,
+    gl_drawImage,
+    gl_drawImageF,
+    gl_drawImageRot,
+    gl_drawImageWindow,
+    gl_drawImageWindowBoxX,
+};
+
+const R3DBackend r3d_glBackend = {
+    gl_name,
+    gl_init,
+    gl_shutdown,
+    gl_registerMesh,
+    gl_releaseMesh,
+    gl_beginScene,
+    gl_submit,
+    gl_submitLine,
+    gl_endScene,
+    gl_present,
+    gl_flightLive,
+    &s_glOverlay,
+};

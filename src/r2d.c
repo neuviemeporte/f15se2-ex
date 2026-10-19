@@ -1,15 +1,12 @@
 /* 2D overlay renderer seam — the present/compose dispatch for the 2D overlay page.
  *
- * Selection follows the active 3D backend rather than re-probing: the GL backend
- * owns the window (it requested an SDL_WINDOW_OPENGL surface instead of an
- * SDL_Renderer), so 2D must composite through GL exactly when 3D does. The
- * software present is provided by gfx_impl.c (which owns the SDL_Renderer) via a
- * registered callback so this module needs no SDL renderer state of its own. */
+ * Present and the native overlay come from the active render backend (r3d.h), so
+ * 2D composites through whatever presents the 3D. With no native overlay (the
+ * software backend) every submission bakes into the page via the rasterizer
+ * gfx_impl.c registers. */
 #include <SDL3/SDL.h>
 #include "r2d.h"
-#ifdef ENABLE_OPENGL1
-#include "r3d_gl.h"
-#endif
+#include "r3d.h"
 
 /* The shared 256-entry VGA palette lives in the software backend (gfx_impl.c).
  * Image blits copy raw indices and never read it, but attaching it keeps an
@@ -142,16 +139,10 @@ void r2d_computeMapping(int virtW, int virtH, int winW, int winH,
     out->offY = (int)((winH - virtH * out->scaleY) * 0.5f);
 }
 
-static void (*s_swPresent)(struct SDL_Surface *page, int shakeOffset);
-
-void r2d_registerSoftwarePresent(void (*present)(struct SDL_Surface *page, int shakeOffset)) {
-    s_swPresent = present;
-}
-
 /* ---- Native 2D overlay layer --------------------------------------------- */
 
 /* On a GL flight frame every 2D submission draws IMMEDIATELY, directly onto the
- * active framebuffer at its call site (r3dgl_draw*), at native window resolution —
+ * active framebuffer at its call site (R2DOverlay), at native window resolution —
  * no recording, no present-time replay. Off a GL frame (software backend, or the
  * pure-2D menu/briefing/debrief screens, which never open a vector frame) the same
  * call bakes into the retained 320x200 page via the registered rasterizer, exactly
@@ -174,12 +165,10 @@ void r2d_registerSoftwareImage(void (*image)(R2DImage *, int, int, int, int, int
 
 void r2d_submitImage(R2DImage *img, int srcX, int srcY, int w, int h,
                      int dstX, int dstY, int key) {
-#ifdef ENABLE_OPENGL1
     if (img && r2d_vectorActive()) {
-        r3dgl_drawImage(img, srcX, srcY, w, h, dstX, dstY, w, h, key); /* 1:1 footprint */
+        r3d_overlay()->image(img, srcX, srcY, w, h, dstX, dstY, w, h, key); /* 1:1 footprint */
         return;
     }
-#endif
     if (s_swImage) s_swImage(img, srcX, srcY, w, h, dstX, dstY, key);
 }
 
@@ -188,17 +177,13 @@ void r2d_submitImageScaled(R2DImage *img, int srcX, int srcY, int srcW, int srcH
     /* GL-only (HD art). Off a vector frame there is no software scaled-blit, so
      * drop — callers fall back to the legacy sprite. */
     if (!img || !r2d_vectorActive()) return;
-#ifdef ENABLE_OPENGL1
-    r3dgl_drawImage(img, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH, key);
-#endif
+    r3d_overlay()->image(img, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH, key);
 }
 
 int r2d_submitImageF(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
                      float dstX, float dstY, float dstW, float dstH, int key) {
     if (!img || !r2d_vectorActive()) return 0;
-#ifdef ENABLE_OPENGL1
-    r3dgl_drawImageF(img, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH, key);
-#endif
+    r3d_overlay()->imageF(img, srcX, srcY, srcW, srcH, dstX, dstY, dstW, dstH, key);
     return 1;
 }
 
@@ -206,84 +191,63 @@ int r2d_submitImageRot(R2DImage *img, int srcX, int srcY, int srcW, int srcH,
                        float cx, float cy, float dstW, float dstH,
                        float angleRad, int key) {
     if (!img || !r2d_vectorActive()) return 0;
-#ifdef ENABLE_OPENGL1
-    r3dgl_drawImageRot(img, srcX, srcY, srcW, srcH, cx, cy, dstW, dstH, angleRad, key);
-#endif
+    r3d_overlay()->imageRot(img, srcX, srcY, srcW, srcH, cx, cy, dstW, dstH, angleRad, key);
     return 1;
 }
 
 int r2d_submitImageWindow(R2DImage *img) {
     if (!img || !r2d_vectorActive()) return 0;
-#ifdef ENABLE_OPENGL1
-    r3dgl_drawImageWindow(img);
-#endif
+    r3d_overlay()->imageWindow(img);
     return 1;
 }
 
 int r2d_submitImageWindowBoxX(R2DImage *img, float boxLeftX) {
     if (!img || !r2d_vectorActive()) return 0;
-#ifdef ENABLE_OPENGL1
-    r3dgl_drawImageWindowBoxX(img, boxLeftX);
-#endif
+    r3d_overlay()->imageWindowBoxX(img, boxLeftX);
     return 1;
 }
 
-/* Set for the duration of a GL flight frame (between gl_beginScene's main 3D view
- * and the present). 2D submissions draw immediately while this is set — pure-2D
- * screens (debrief/briefing/menus) have no 3D pass, so their primitives bake into
- * the page as before (accumulating, correctly ordered with their sprites). */
+/* Set for the duration of a native-overlay frame (a GPU flight frame between the
+ * main 3D view and the present, or a pure-2D screen that opened one). 2D
+ * submissions draw immediately while this is set; otherwise they bake into the page
+ * (accumulating, correctly ordered with their sprites). Only ever set when the
+ * active backend has an overlay, so r3d_overlay() is non-NULL whenever it is. */
 static int s_vectorFrame;
 
 void r2d_vectorBeginFrame(int composePageFirst) {
-#ifdef ENABLE_OPENGL1
+    const R2DOverlay *ov = r3d_overlay();
+    /* No native overlay: every submission bakes into the page. */
+    if (!ov) return;
     s_vectorFrame = 1;
     /* Set the immediate-draw letterbox+shake context. composePageFirst lays the
      * page backdrop down under the overlay for a pure-2D screen (a flight frame
      * passes 0 — its 3D pass composites the page mid-frame). */
-    if (r3dgl_active()) r3dgl_beginOverlay(composePageFirst);
-#else
-    /* No native (GPU) overlay compiled in: every submission bakes into the page. */
-    (void)composePageFirst;
-#endif
+    ov->begin(composePageFirst);
 }
 
 int r2d_vectorActive(void) { return s_vectorFrame; }
 
-int r2d_hasNativeOverlay(void) {
-#ifdef ENABLE_OPENGL1
-    return r3dgl_active();
-#else
-    return 0;
-#endif
-}
+int r2d_hasNativeOverlay(void) { return r3d_overlay() != 0; }
 
 void r2d_submitLine(int x1, int y1, int x2, int y2, int color) {
-#ifdef ENABLE_OPENGL1
-    if (r2d_vectorActive()) { r3dgl_drawLine(x1, y1, x2, y2, color); return; }
-#endif
+    if (r2d_vectorActive()) { r3d_overlay()->line(x1, y1, x2, y2, color); return; }
     if (s_swLine) s_swLine(x1, y1, x2, y2, color);
 }
 
 void r2d_submitPoint(int x, int y, int color) {
-#ifdef ENABLE_OPENGL1
-    if (r2d_vectorActive()) { r3dgl_drawPoint(x, y, color); return; }
-#endif
+    if (r2d_vectorActive()) { r3d_overlay()->point(x, y, color); return; }
     if (s_swPoint) s_swPoint(x, y, color);
 }
 
 void r2d_submitRect(int x0, int y0, int x1, int y1, int color) {
-#ifdef ENABLE_OPENGL1
-    if (r2d_vectorActive()) r3dgl_drawRect(x0, y0, x1, y1, color);
-#endif
+    if (r2d_vectorActive()) r3d_overlay()->rect(x0, y0, x1, y1, color);
     /* else: caller bakes via fillSpanRect (software retained page) */
 }
 
 void r2d_submitQuadF(const float *xy, int color, int cx0, int cy0, int cx1, int cy1) {
-    /* GL vector frame only; the software page has no rotated/sub-grid text path, so
+    /* Native overlay only; the software page has no rotated/sub-grid text path, so
      * the caller keeps upright integer glyphs there (the DOS look). */
-#ifdef ENABLE_OPENGL1
-    if (r2d_vectorActive()) r3dgl_drawQuadF(xy, color, cx0, cy0, cx1, cy1);
-#endif
+    if (r2d_vectorActive()) r3d_overlay()->quadF(xy, color, cx0, cy0, cx1, cy1);
 }
 
 /* Cohen-Sutherland clip of an integer segment to the inclusive box [x0,x1]x[y0,y1].
@@ -318,12 +282,10 @@ static int csClip(int *px1, int *py1, int *px2, int *py2,
 
 void r2d_submitScopeLine(float x1, float y1, float x2, float y2, int color,
                          int cx0, int cy0, int cx1, int cy1, float widthScale) {
-#ifdef ENABLE_OPENGL1
     if (r2d_vectorActive()) {
-        r3dgl_drawScopeLine(x1, y1, x2, y2, color, cx0, cy0, cx1, cy1, widthScale);
+        r3d_overlay()->scopeLine(x1, y1, x2, y2, color, cx0, cy0, cx1, cy1, widthScale);
         return;
     }
-#endif
     if (s_swLine) {
         int ix1 = (int)SDL_floorf(x1 + 0.5f), iy1 = (int)SDL_floorf(y1 + 0.5f);
         int ix2 = (int)SDL_floorf(x2 + 0.5f), iy2 = (int)SDL_floorf(y2 + 0.5f);
@@ -334,12 +296,10 @@ void r2d_submitScopeLine(float x1, float y1, float x2, float y2, int color,
 
 void r2d_submitPoly(const short *xy, int n, int color,
                     int clipX0, int clipY0, int clipX1, int clipY1) {
-    /* GL vector frame only; software fills the face in the page span rasterizer
+    /* Native overlay only; software fills the face in the page span rasterizer
      * and never reaches here (the call site branches on r2d_vectorActive first). */
     if (n < 3 || !r2d_vectorActive()) return;
-#ifdef ENABLE_OPENGL1
-    r3dgl_drawPoly(xy, n, color, clipX0, clipY0, clipX1, clipY1);
-#endif
+    r3d_overlay()->poly(xy, n, color, clipX0, clipY0, clipX1, clipY1);
 }
 
 void r2d_vectorMarkPresented(void) {
@@ -347,19 +307,5 @@ void r2d_vectorMarkPresented(void) {
 }
 
 void r2d_present(struct SDL_Surface *page, int shakeOffset) {
-#ifdef ENABLE_OPENGL1
-    if (r3dgl_active()) {
-        r3dgl_present(page, shakeOffset);
-        return;
-    }
-#endif
-    if (s_swPresent) s_swPresent(page, shakeOffset);
-}
-
-const char *r2d_backendName(void) {
-#ifdef ENABLE_OPENGL1
-    return r3dgl_active() ? "opengl1" : "software";
-#else
-    return "software";
-#endif
+    r3d_present(page, shakeOffset);
 }
