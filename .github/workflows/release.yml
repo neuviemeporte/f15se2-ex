@@ -1,6 +1,6 @@
 name: Release
 
-# Build portable, self-contained packages for Linux, Windows and macOS and attach
+# Build portable, self-contained packages for Linux, Windows, macOS and DOS and attach
 # them to a GitHub Release whenever a version tag (vX.Y.Z) is pushed.
 #
 # Each package bundles the SDL3 shared library and the runtime libraries the binary
@@ -287,12 +287,68 @@ jobs:
           path: dist/*
 
   # ---------------------------------------------------------------------------
+  # DOS: cross-compile with DJGPP, pack with UPX so the game fits on a floppy, and
+  # ship a zip with 8.3 names. The DPMI host (CWSDPMI) is not bundled; docs/dos.md
+  # (shipped as README.TXT) tells the user where to get it.
+  # ---------------------------------------------------------------------------
+  dos:
+    name: DOS (DJGPP)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build upx-ucl zip
+
+      - name: Install DJGPP
+        run: |
+          curl -fsSL -o djgpp.tar.bz2 \
+            https://github.com/andrewwutw/build-djgpp/releases/download/v3.4/djgpp-linux64-gcc1220.tar.bz2
+          echo "8464f17017d6ab1b2bb2df4ed82357b5bf692e6e2b7fee37e315638f3d505f00  djgpp.tar.bz2" | sha256sum -c -
+          sudo tar -xjf djgpp.tar.bz2 -C /opt
+          echo /opt/djgpp/bin >> "$GITHUB_PATH"
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=cmake/i586-pc-msdosdjgpp.cmake
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Compute version
+        id: ver
+        run: echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+
+      - name: Package zip
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          mkdir -p stage dist
+          cp build/f15se2ex.exe stage/F15SE2EX.EXE
+          cp docs/dos.md stage/README.TXT
+          cp LICENSE stage/LICENSE.TXT
+          cp build/_deps/sdl3-src/LICENSE.txt stage/SDL3.TXT
+          (cd stage && zip -9 -r "../dist/f15se2-ex-${VERSION}-dos.zip" .)
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dos
+          path: dist/*
+
+  # ---------------------------------------------------------------------------
   # Publish: gather every platform's artifacts and attach them to the Release.
   # Only runs for tag pushes (skipped on manual workflow_dispatch dry runs).
   # ---------------------------------------------------------------------------
   release:
     name: Publish GitHub Release
-    needs: [linux, windows, macos]
+    needs: [linux, windows, macos, dos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
@@ -314,6 +370,7 @@ jobs:
             - **Linux**: `.AppImage` (portable, just `chmod +x` and run) or `.tar.gz`
             - **Windows**: `.zip` (SDL3 + runtime DLLs bundled)
             - **macOS**: `.tar.gz` (libSDL3 bundled)
+            - **DOS**: `-dos.zip` (needs a DPMI host and a Sound Blaster; see `README.TXT`)
 
             ## Running
             These packages contain the engine and the optional HD asset overlays only.

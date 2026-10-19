@@ -11,6 +11,7 @@ bin/
 /*.c
 /*.grc
 build64/
+build-*/
 CMakeUserPresets.json
 /.cache
 /*.sh
