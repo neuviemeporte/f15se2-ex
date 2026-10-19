@@ -7,7 +7,7 @@
 #include "gfx_impl.h"
 #include "gfx.h"
 #include "r2d.h"
-#include "r3d_gl.h"
+#include "r3d.h"
 #include "struct.h"
 #include "log.h"
 #include "version.h"
@@ -31,7 +31,6 @@
 #define FIRE_CYCLE_NS (SDL_NS_PER_SECOND / FIRE_CYCLE_HZ)
 static SDL_Window *sdlWindow = NULL;
 static SDL_Renderer *sdlRenderer = NULL;
-static bool s_useGL = false; /* OpenGL backend owns the context + present */
 static SDL_Texture *gfxSoftwarePresentTexture;
 static int gfxSoftwarePresentTextureW;
 static int gfxSoftwarePresentTextureH;
@@ -63,11 +62,10 @@ static void gfx_expandIndexedSurface(SDL_Surface *surf, void *pixels, int dstPit
  * targets with no compositor/scaling (DOS); desktop keeps the renderer for its
  * resizable, scaled window. */
 static bool s_directFB = false;
-/* Software frame pacer for the no-vsync direct-FB present (DOS): pads each frame to
- * the slowest recent frame's wall time so delivery is even. s_paceCapNs != 0 forces
- * a fixed cap (F15_FPS_CAP) instead of the adaptive target. */
+/* Software frame pacer for a present that can't wait for vsync (the DOS direct
+ * framebuffer, or a renderer/GL context that refused vsync): pads each frame to the
+ * slowest recent frame's wall time so delivery is even. */
 static bool s_pace = false;
-static Uint64 s_paceCapNs = 0;
 
 /* FPS overlay (toggle: Alt+P, handled in input.c). Frames are counted per present
  * in gfx_presentPage; the shown value refreshes ~2x/second so it reads steady. It's
@@ -81,7 +79,6 @@ static int  s_fpsValue = 0;
 static GfxState FAR *gfx_getState(void);
 static SDL_Palette *gfxPalette; /* shared 256-entry VGA DAC palette */
 static int gfxPaletteGen;       /* bumped on every palette-entry change (cache invalidation) */
-static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake);
 static void gfx_presentDirectFB(SDL_Surface *surf, int shake);
 static bool gfx_initDirectFB(void);
 static void gfx_swLine(int x1, int y1, int x2, int y2, int color);
@@ -89,8 +86,8 @@ static void gfx_swPoint(int x, int y, int color);
 static void gfx_swImage(struct R2DImage *img, int srcX, int srcY, int w, int h,
                         int dstX, int dstY, int key);
 
-/* Bring up the SDL window and renderer. The 320x200 logical surface is stretched
- * to fill the resizable window (SDL_LOGICAL_PRESENTATION_STRETCH). */
+/* Bring up SDL video: the render backend probe (r3d_init) creates the window and
+ * whatever context the winning backend presents through. */
 void gfx_videoInit(void) {
     if (!SDL_Init(SDL_INIT_VIDEO))
         LogCritical(("SDL_Init failed: %s", SDL_GetError()));
@@ -102,81 +99,71 @@ void gfx_videoInit(void) {
         if (e && *e && *e != '0') s_showFps = true;
     }
 
-    /* The OpenGL 3D backend (r3d_gl.c) presents through a GL context rather than
-     * an SDL_Renderer (the two can't share a window). When it's selected, request
-     * a GL-capable window and bring the context up here; the present path then
-     * routes through the GL composite instead of the renderer. */
-    /* The software 2D backend present lives here (it owns the SDL_Renderer);
-     * register it with the r2d seam so r2d_present can dispatch to it when GL is
-     * not active. */
-    r2d_registerSoftwarePresent(gfx_presentSurfaceSW);
+    /* Pages bake their 2D primitives/images through the software rasterizer on every
+     * backend (a native overlay only takes over during a vector frame). */
     r2d_registerSoftwarePrims(gfx_swLine, gfx_swPoint);
     r2d_registerSoftwareImage(gfx_swImage);
 
-#ifdef ENABLE_OPENGL1
-    s_useGL = r3dgl_wantGL();
-
-    /* GL path: request the framebuffer attributes (incl. MSAA) before window
-     * creation, then bring the context up. MSAA can force a pixel format the driver
-     * can't satisfy, so if the context won't come up we retry once without it before
-     * giving up GL entirely — losing only the anti-aliasing, not the whole backend. */
-    if (s_useGL) {
-        int msaa = r3dgl_msaaSamples();
-        for (;;) {
-            r3dgl_setGLAttributes(msaa);
-            sdlWindow = SDL_CreateWindow("F-15 SE2 EX " F15_VERSION,
-                                         INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT,
-                                         SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
-            if (sdlWindow && r3dgl_initContext(sdlWindow)) break; /* GL up */
-            if (sdlWindow) { SDL_DestroyWindow(sdlWindow); sdlWindow = NULL; }
-            if (msaa > 0) {
-                LogWarn(("GL init failed with %dx MSAA; retrying without it", msaa));
-                msaa = 0;
-                continue;
-            }
-            LogCritical(("GL init failed; falling back to software renderer"));
-            s_useGL = false;
-            break;
-        }
-    }
-#endif /* ENABLE_OPENGL1 */
-
-    if (!sdlWindow) {
-#ifdef __DJGPP__
-        /* DOS: raw VGA/VESA, no compositor or window scaling — create the window at
-         * the native 320x200 page size and go fullscreen so it lands on mode 13h. */
-        sdlWindow = SDL_CreateWindow("F-15 SE2 EX " F15_VERSION, LOGICAL_WIDTH,
-                                     LOGICAL_HEIGHT, SDL_WINDOW_FULLSCREEN);
-#else
-        sdlWindow = SDL_CreateWindow("F-15 SE2 EX " F15_VERSION, INITIAL_WINDOW_WIDTH,
-                                     INITIAL_WINDOW_HEIGHT, SDL_WINDOW_RESIZABLE);
-#endif
-        if (!sdlWindow)
-            LogCritical(("Window creation failed: %s", SDL_GetError()));
-    }
+    r3d_init();
 
     /* Enable SDL_EVENT_TEXT_INPUT so the keyboard slots (ovlimpl.c) receive
      * shifted/localised ASCII for pilot-name entry. */
     SDL_StartTextInput(sdlWindow);
+}
 
-    if (s_useGL) return;
+SDL_Window *gfx_createWindow(uint64_t flags) {
+    sdlWindow = SDL_CreateWindow("F-15 SE2 EX " F15_VERSION, INITIAL_WINDOW_WIDTH,
+                                 INITIAL_WINDOW_HEIGHT,
+                                 SDL_WINDOW_RESIZABLE | (SDL_WindowFlags)flags);
+    return sdlWindow;
+}
 
-    /* Prefer the direct-framebuffer present on a fixed-resolution target (no
-     * SDL_Renderer, no per-frame texture upload). Falls through to the renderer if
-     * a native-resolution INDEX8 window surface can't be obtained. */
+void gfx_destroyWindow(void) {
+    if (sdlWindow) SDL_DestroyWindow(sdlWindow);
+    sdlWindow = NULL;
+}
+
+void gfx_enableFramePacing(void) { s_pace = true; }
+
+/* Software backend bring-up: the window plus either the direct-framebuffer present
+ * (no SDL_Renderer, no per-frame texture upload) or, failing that, an SDL_Renderer
+ * that scales the 320x200 page to the resizable window. */
+int gfx_initSoftwareVideo(void) {
+#ifdef __DJGPP__
+    /* DOS: raw VGA/VESA, no compositor or window scaling — create the window at
+     * the native 320x200 page size and go fullscreen so it lands on mode 13h. */
+    sdlWindow = SDL_CreateWindow("F-15 SE2 EX " F15_VERSION, LOGICAL_WIDTH,
+                                 LOGICAL_HEIGHT, SDL_WINDOW_FULLSCREEN);
+#else
+    gfx_createWindow(0);
+#endif
+    if (!sdlWindow)
+        LogCritical(("Window creation failed: %s", SDL_GetError()));
+
     if (gfx_initDirectFB()) {
         s_directFB = true;
-        return;
+        return 1;
     }
 
     sdlRenderer = SDL_CreateRenderer(sdlWindow, NULL);
     if (!sdlRenderer)
         LogCritical(("Renderer creation failed: %s", SDL_GetError()));
 
-    SDL_SetRenderVSync(sdlRenderer, 1);
-    /* No SDL logical presentation: the software present (gfx_presentSurfaceSW)
+    if (!SDL_SetRenderVSync(sdlRenderer, 1)) gfx_enableFramePacing();
+    /* No SDL logical presentation: the software present (gfx_presentSoftware)
      * letterboxes the page itself through the shared r2d mapping, so the virtual
      * size and the virtual->window placement live in exactly one place. */
+    return 1;
+}
+
+void gfx_shutdownSoftwareVideo(void) {
+    if (gfxSoftwarePresentTexture) {
+        SDL_DestroyTexture(gfxSoftwarePresentTexture);
+        gfxSoftwarePresentTexture = NULL;
+    }
+    if (sdlRenderer) SDL_DestroyRenderer(sdlRenderer);
+    sdlRenderer = NULL;
+    s_directFB = false;
 }
 
 void gfx_setTextInputEnabled(bool enabled) {
@@ -205,12 +192,8 @@ void gfx_videoShutdown(void) {
         SDL_DestroyPalette(gfxPalette);
         gfxPalette = NULL;
     }
-    if (gfxSoftwarePresentTexture) {
-        SDL_DestroyTexture(gfxSoftwarePresentTexture);
-        gfxSoftwarePresentTexture = NULL;
-    }
-    if (sdlRenderer) SDL_DestroyRenderer(sdlRenderer);
-    if (sdlWindow) SDL_DestroyWindow(sdlWindow);
+    r3d_shutdown();
+    gfx_destroyWindow();
     SDL_Quit();
 }
 
@@ -487,20 +470,15 @@ static bool gfx_setDirectFBMode(int width, int height) {
  * SDL_Renderer texture-upload path. Gated to DOS; elsewhere this returns false and
  * the caller keeps the SDL_Renderer (which scales the resizable desktop window).
  *
- * Present pacing: the direct-framebuffer hint skips SDL's vsync wait (which is
- * pathologically slow under DOSBox — it collapsed the frame rate), so the loop runs
- * free. That surfaces the fixed-timestep sim's per-frame step-count variance (0 vs 1
- * step, and a step costs real time) as judder when the render is cheap (low detail /
- * high fps). Instead of vsync we pace the loop ourselves (gfx_paceFrame): each frame
- * is padded to the slowest recent frame's wall time, so delivery is even without
- * capping throughput below what the scene can sustain. */
+ * The direct-framebuffer hint skips SDL's vsync wait (pathologically slow under
+ * DOSBox — it collapsed the frame rate), so this present is software-paced
+ * (gfx_paceFrame). */
 static bool gfx_initDirectFB(void) {
 #ifdef __DJGPP__
     SDL_DisplayID disp;
     SDL_DisplayMode **modes;
-    int i, n = 0, cap;
+    int i, n = 0;
     SDL_Surface *ws;
-    const char *capEnv;
 
     /* Fast present: copy system RAM straight to VRAM, no per-frame texture upload.
      * Must be set before the first SDL_GetWindowSurface. */
@@ -539,14 +517,8 @@ static bool gfx_initDirectFB(void) {
      * driver reprograms the DAC on the next present. */
     if (!gfxPalette) gfxPalette = gfx_buildPalette();
     if (gfxPalette) SDL_SetSurfacePalette(ws, gfxPalette);
-
-    /* Even out frame delivery ourselves (no vsync). F15_NO_PACE disables it (raw
-     * throughput, judder); F15_FPS_CAP=<n> forces a fixed cap instead of adaptive. */
-    s_pace = SDL_getenv("F15_NO_PACE") == NULL;
-    capEnv = SDL_getenv("F15_FPS_CAP");
-    cap = capEnv ? SDL_atoi(capEnv) : 0;
-    if (cap > 0) s_paceCapNs = (Uint64)SDL_NS_PER_SECOND / (Uint64)cap;
-    LogInfo(("direct FB present: %dx%d INDEX8, pace=%d cap=%d", ws->w, ws->h, s_pace, cap));
+    gfx_enableFramePacing();
+    LogInfo(("direct FB present: %dx%d INDEX8", ws->w, ws->h));
     return true;
 #else
     return false;
@@ -584,16 +556,15 @@ static void gfx_presentDirectFB(SDL_Surface *page, int shake) {
     SDL_UpdateWindowSurface(sdlWindow);
 }
 
-/* Software present: blit a page surface through the SDL_Renderer (vsync-paced).
- * Registered with r2d (r2d_registerSoftwarePresent) as the software 2D backend's
- * present; r2d_present calls it when GL is not active.
+/* Software backend present (R3DBackend.present): blit a page surface through the
+ * SDL_Renderer, or straight into the direct framebuffer.
  *
  * The virtual->window letterbox comes from the shared r2d mapping (the single
  * source of truth, derived from the surface's own dimensions so the 320x200
  * overlay and the 640x350 hi-res title both map correctly) rather than SDL's
  * logical presentation; we render into the centred dst rect over a black-cleared
  * window. */
-static void gfx_presentSurfaceSW(SDL_Surface *surf, int shake) {
+void gfx_presentSoftware(SDL_Surface *surf, int shake) {
     R2DMapping m;
     void *texturePixels;
     int texturePitch;
@@ -700,12 +671,13 @@ static void gfx_drawFpsOverlay(SDL_Surface *s) {
     }
 }
 
-/* Pace frame delivery for the no-vsync direct-FB present. Called once per present,
- * AFTER the present: measure the frame's own work (present-to-present, excluding this
- * pad), then sleep until the frame occupies `target` — the slowest work time over a
- * ~1s window (or the fixed F15_FPS_CAP). Padding every frame up to the slowest evens
- * the cadence the fixed-timestep sim's 0-vs-1-step cost variance would otherwise make
- * lumpy. On desktop the SDL_Renderer's own vsync paces instead, so s_pace stays off. */
+/* Pace frame delivery for a present without vsync. Called once per present, AFTER
+ * the present: measure the frame's own work (present-to-present, excluding this pad),
+ * then sleep until the frame occupies `target` — the slowest work time over a ~1s
+ * window. Unpaced, the fixed-timestep sim's per-frame step-count variance (0 vs 1
+ * step, and a step costs real time) shows as judder when the render is cheap; padding
+ * every frame up to the slowest evens the cadence without capping throughput below
+ * what the scene can sustain. A vsync'd present is paced by the display instead. */
 static void gfx_paceFrame(void) {
     static Uint64 frameStart = 0;
     static Uint64 ring[16];
@@ -716,19 +688,15 @@ static void gfx_paceFrame(void) {
     now = SDL_GetTicksNS();
     if (frameStart != 0) {
         Uint64 elapsed = now - frameStart;
-        if (s_paceCapNs) {
-            target = s_paceCapNs;
-        } else {
-            /* Feed the window (ignore stalls — menu key-waits, level loads — so a
-             * one-off long gap doesn't peg the target and starve the frame rate). */
-            if (elapsed < 200 * SDL_NS_PER_MS) {
-                ring[ringPos] = elapsed;
-                ringPos = (ringPos + 1) % 16;
-                if (ringN < 16) ringN++;
-            }
-            for (i = 0; i < ringN; i++)
-                if (ring[i] > target) target = ring[i];
+        /* Feed the window (ignore stalls — menu key-waits, level loads — so a
+         * one-off long gap doesn't peg the target and starve the frame rate). */
+        if (elapsed < 200 * SDL_NS_PER_MS) {
+            ring[ringPos] = elapsed;
+            ringPos = (ringPos + 1) % 16;
+            if (ringN < 16) ringN++;
         }
+        for (i = 0; i < ringN; i++)
+            if (ring[i] > target) target = ring[i];
         if (target > elapsed) SDL_DelayNS(target - elapsed);
     }
     frameStart = SDL_GetTicksNS();
@@ -748,8 +716,7 @@ static void gfx_fpsTick(void) {
     }
 }
 
-/* Push a page's surface to the active 2D backend (GL composite or software
- * renderer) via the r2d seam (vsync-paced present). */
+/* Push a page's surface to the active render backend via the r2d seam. */
 static void gfx_presentPage(int page) {
     gfx_fpsTick();
     /* During the hi-res title, the page-0 framebuffer still holds the prior
@@ -826,7 +793,7 @@ bool video_setHiRes(void) {
 
 /* ---- Slot 0x45: gfx_waitRetrace ---- */
 void FAR CDECL gfx_waitRetrace(void) {
-    /* Frame pacing now comes from the vsync'd present in gfx_flipPage/gfx_presentPage. */
+    /* Frame pacing comes from the present in gfx_flipPage/gfx_presentPage. */
 }
 
 /* ---- Slot 0x46: gfx_flipPage ---- */
@@ -845,14 +812,13 @@ void gfx_setRepaintHook(void (*hook)(void)) { g_repaintHook = hook; }
 /* Re-present the current visible frame (page 0, or the hi-res title surface).
  * gfx_presentPage already redirects to the hi-res path when the title is up. */
 void gfx_repaint(void) {
-    /* On a live GL flight frame the 3D is in the framebuffer, not the page, so
-     * re-presenting only the page here would blank it. The compositor still holds
-     * the last fully-composited frame, and the next flight frame redraws within a
-     * frame, so skip the bare re-present. Pure-2D screens (menus/briefing/debrief,
-     * which block in key-waits and produce no frame of their own) still need it. */
-#ifdef ENABLE_OPENGL1
-    if (r3dgl_active() && r3dgl_flightLive()) return;
-#endif
+    /* When the last frame's 3D lives in the framebuffer rather than the page (a GPU
+     * flight frame), re-presenting only the page here would blank it. The compositor
+     * still holds the last fully-composited frame, and the next flight frame redraws
+     * within a frame, so skip the bare re-present. Pure-2D screens (menus/briefing/
+     * debrief, which block in key-waits and produce no frame of their own) still
+     * need it. */
+    if (r3d_frameLive()) return;
     if (g_repaintHook) {
         g_repaintHook();
         return;

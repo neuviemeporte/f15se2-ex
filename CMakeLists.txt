@@ -34,21 +34,15 @@ option(AUTOSTART "Skip menus and start a mission directly (DEBUG_AUTOSTART)" OFF
 option(AUDIO "Build the sound subsystem (SDL3 OPL3/Sound Blaster backend)" ON)
 
 # The DJGPP toolchain (cmake/i586-pc-msdosdjgpp.cmake, from SDL) sets
-# CMAKE_SYSTEM_NAME=DOS. DOS has no GPU/OpenGL, so the GL backend is compiled out
-# there and the software rasterizer is the only 3D backend.
+# CMAKE_SYSTEM_NAME=DOS.
 if(CMAKE_SYSTEM_NAME STREQUAL "DOS")
     set(F15_DOS TRUE)
 endif()
 
-# 3D render backends are chosen per platform at compile time; the runtime probe
-# (r3d.c) then claims the first compiled-in backend whose environment it supports.
-# OpenGL 1.1 is the desktop default but does not exist on DOS. A future GPU backend
-# such as Glide would gate the same way (DOS-yes / desktop-no).
-option(ENABLE_OPENGL1 "Build the OpenGL 1.1 3D backend" ON)
-if(F15_DOS AND ENABLE_OPENGL1)
-    message(STATUS "DOS build: forcing ENABLE_OPENGL1 OFF (no GPU on DOS)")
-    set(ENABLE_OPENGL1 OFF)
-endif()
+# Optional render backends (see "Render backends" below). The software rasterizer
+# is not optional: every platform builds it, and it is the runtime fallback.
+include(CMakeDependentOption)
+cmake_dependent_option(ENABLE_OPENGL1 "Build the OpenGL 1.1 render backend" ON "NOT F15_DOS" OFF)
 
 #==============================================================================
 # Global settings
@@ -209,7 +203,6 @@ set(EGAME_SOURCES
     ${SRC_DIR}/eg3drast.c
     ${SRC_DIR}/r3d.c
     ${SRC_DIR}/r3d_sw.c
-    ${SRC_DIR}/r3d_gl.c
     ${SRC_DIR}/r3dmesh.c
     ${SRC_DIR}/r2d.c
     ${SRC_DIR}/egsys.c
@@ -247,11 +240,6 @@ set(END_SOURCES
 list(APPEND F15SE2_SOURCES ${EGAME_SOURCES})
 list(APPEND F15SE2_SOURCES ${END_SOURCES})
 
-# The GL backend is compiled in only when the OpenGL 1.1 backend is enabled.
-if(NOT ENABLE_OPENGL1)
-    list(REMOVE_ITEM F15SE2_SOURCES ${SRC_DIR}/r3d_gl.c)
-endif()
-
 #==============================================================================
 # Target
 #==============================================================================
@@ -262,12 +250,6 @@ set_source_files_properties(
     ${SRC_DIR}/vgapal.c
     PROPERTIES LANGUAGE CXX
 )
-
-# OpenGL for the GL 3D backend (r3d_gl.c). The immediate-mode 1.x path needs only
-# the base GL library; SDL3 supplies the GL headers and context management.
-if(ENABLE_OPENGL1)
-    find_package(OpenGL REQUIRED)
-endif()
 
 # Some tests use std::thread; link a threads library explicitly so it resolves
 # across toolchains (not all fold pthread into libc). DJGPP has no pthreads and the
@@ -347,9 +329,26 @@ if(AUTOSTART)
     target_compile_definitions(f15se2_core PUBLIC DEBUG_AUTOSTART)
 endif()
 target_link_libraries(f15se2_core PUBLIC SDL3::SDL3)
+
+#------------------------------------------------------------------------------
+# Render backends. Each optional backend is one module: its source, its libraries
+# and an F15_RENDER_<NAME> define that adds it to the probe list in r3d.c. The
+# software backend (r3d_sw.c) is always in the core and is probed last.
+#------------------------------------------------------------------------------
+function(add_render_backend name source)
+    set_source_files_properties(${source} PROPERTIES LANGUAGE CXX)
+    target_sources(f15se2_core PRIVATE ${source})
+    target_compile_definitions(f15se2_core PRIVATE F15_RENDER_${name})
+    if(ARGN)
+        target_link_libraries(f15se2_core PUBLIC ${ARGN})
+    endif()
+endfunction()
+
 if(ENABLE_OPENGL1)
-    target_link_libraries(f15se2_core PUBLIC OpenGL::GL)
-    target_compile_definitions(f15se2_core PUBLIC ENABLE_OPENGL1)
+    # Immediate-mode GL 1.x needs only the base GL library; SDL3 supplies the GL
+    # headers and context management.
+    find_package(OpenGL REQUIRED)
+    add_render_backend(OPENGL1 ${SRC_DIR}/r3d_gl.c OpenGL::GL)
 endif()
 
 add_executable(f15se2 ${SRC_DIR}/f15.c)

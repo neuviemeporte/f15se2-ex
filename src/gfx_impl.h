@@ -66,6 +66,22 @@ int gfx_paletteGeneration(void);
  * software present's shake shift. */
 int gfx_getShakeOffset(void);
 
+/* Window + present services for the render backends (r3d.h). gfx_videoInit runs
+ * the backend probe; the winning backend's init() creates the window here. */
+struct SDL_Window;
+/* Create the game window (resizable, initial 640x400) with extra SDL_WindowFlags
+ * (e.g. SDL_WINDOW_OPENGL). NULL on failure. */
+struct SDL_Window *gfx_createWindow(uint64_t flags);
+/* Destroy the window again (a backend that declines after creating it). */
+void gfx_destroyWindow(void);
+/* The present can't wait for vsync: pace frame delivery in software instead. */
+void gfx_enableFramePacing(void);
+/* Software backend: bring up the window + SDL_Renderer (or the direct framebuffer)
+ * and present the paletted page through it. */
+int gfx_initSoftwareVideo(void);
+void gfx_shutdownSoftwareVideo(void);
+void gfx_presentSoftware(struct SDL_Surface *page, int shakeOffset);
+
 /*
  * Reference structures documenting how the overlay accesses caller data.
  * These CANNOT be used in the asm data segments (which must maintain exact

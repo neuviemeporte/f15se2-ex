@@ -19,7 +19,6 @@
 #include "gfx.h"
 #include "gfx_impl.h"
 #include "joystick.h"
-#include "r3d.h"
 #include "input.h"
 
 #include <stdio.h>
@@ -47,7 +46,6 @@ void game_init(const int16 showIntro) {
 
     gfx_initState();
     gfx_setMode13();
-    r3d_init();
 
     /* F15.SPR (radar/tac-map/HUD sprite sheet) lives in a sprite-buffer image, not
      * a page. Allocated once here; START decodes f15.spr into it and EGAME blits
@@ -69,7 +67,6 @@ bool verifyGameAssets();
  * phase. Mirrors the normal teardown at the end of main(). */
 static void app_quit(void) {
     joy_shutdown();
-    r3d_shutdown();
     gfx_videoShutdown();
     exit(0);
 }
@@ -130,7 +127,6 @@ int main(int argc, char *argv[]) {
 
 shutdown:
     joy_shutdown();
-    r3d_shutdown();
     gfx_videoShutdown();
     return 0;
 }

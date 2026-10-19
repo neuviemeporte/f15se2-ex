@@ -65,10 +65,18 @@ typedef struct {
     int color;
 } R3DLine;
 
-/* A renderer backend. Selected once at startup by probe order. */
+struct SDL_Surface;
+struct R2DOverlay;
+
+/* A render backend: window bring-up, the in-flight 3D, the page present and
+ * (optionally) a native-resolution 2D overlay. Selected once at video init by
+ * probe order. */
 typedef struct R3DBackend {
     const char *(*name)(void);
-    int (*init)(void); /* probe; nonzero = claims this environment */
+    /* Probe: create this backend's window (gfx_createWindow) and whatever context it
+     * presents through, and claim the environment (nonzero). A backend that can't
+     * run here destroys anything it created and returns 0. */
+    int (*init)(void);
     void (*shutdown)(void);
 
     /* Mesh registry: decode/upload once, reference by handle. Software returns
@@ -81,27 +89,36 @@ typedef struct R3DBackend {
     void (*submit)(const R3DSubmit *sub);
     void (*submitLine)(const R3DLine *line);
     void (*endScene)(void);
+
+    /* Put the 320x200 page (composited over the 3D when the backend draws 3D off
+     * the page) on screen. shakeOffset is the explosion screen-shake, 320-space. */
+    void (*present)(struct SDL_Surface *page, int shakeOffset);
+    /* Optional: nonzero when the last present carried 3D the page doesn't hold, so a
+     * bare page re-present (window expose) would blank it. NULL = never. */
+    int (*frameLive)(void);
+    /* Optional native-resolution 2D overlay (r2d.h); NULL = every 2D submission
+     * bakes into the page. */
+    const struct R2DOverlay *overlay;
 } R3DBackend;
 
-/* Active-backend dispatch. */
+/* Probe the backend list and bring up the winner's window. Backend selection
+ * honours the F15_RENDER env var ("opengl1"/"gl", "software"/"sw", or a future
+ * backend's name; unset/"auto" = probe in preference order). Called from
+ * gfx_videoInit. */
 void r3d_init(void);
 void r3d_shutdown(void);
 const char *r3d_backendName(void);
-
-/* Backend selection from the F15_RENDER env var, normalized to a backend name to
- * force ("opengl1", "software", or a future backend's name). Returns NULL for
- * "auto"/unset, meaning probe the list in preference order. A forced backend that
- * is unavailable (declines or unknown name) falls back to the probe. Shared by
- * r3d_init() and the GL window decision (r3dgl_wantGL) so the two agree. */
-const char *r3d_requestedBackend(void);
 R3DMesh r3d_registerMesh(R3DMesh raw);
 void r3d_releaseMesh(R3DMesh mesh);
 void r3d_beginScene(const R3DScene *scene);
 void r3d_submit(const R3DSubmit *sub);
 void r3d_submitLine(const R3DLine *line);
 void r3d_endScene(void);
+void r3d_present(struct SDL_Surface *page, int shakeOffset);
+int r3d_frameLive(void);
+const struct R2DOverlay *r3d_overlay(void);
 
-/* Registered backends (preference order is defined in r3d.c). */
+/* Backends; the preference-ordered list lives in r3d.c. */
 extern const R3DBackend r3d_glBackend;
 extern const R3DBackend r3d_softwareBackend;
 
