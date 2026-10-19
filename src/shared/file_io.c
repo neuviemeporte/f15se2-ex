@@ -124,14 +124,10 @@ bool verifyGameAssets() {
     };
     const vector<Asset> assets = {
         { "3e468dbc9dd2c25a5343e384656d4b87", "15flt.3d3" },
-        { "82b6b193954a0abba22f5f8267291d14", "1.pic" },
         { "8a8d0d29a6789de4971a5381cb89a60c", "256left.pic" },
         { "b6651ea956bec71890bf90de9a31fb1d", "256pit.pic" },
         { "4c4704170d85e18c842e18b1f438d266", "256rear.pic" },
         { "d18609791beb5a4b6bbc3c95a49979ee", "256right.pic" },
-        { "a48a7ec1de1637da2d132a0fab3b4894", "2.pic" },
-        { "e488a9127ba89f636fd0151da599ddb1", "3.pic" },
-        { "d81029a10c5bcb0705ac98b6cc75621d", "4.pic" },
         { "fad492070c3afb3a11f32ad266df428d", "adv.pic" },
         { "f6b8b7b27b1de44282ca04ea6d369ea4", "armpiece.pic" },
         { "e480cd3510d5895f399e996725a58f6a", "ce.3d3" },
