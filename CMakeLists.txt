@@ -406,6 +406,25 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang"
     target_link_options(f15se2 PRIVATE $<$<CONFIG:Release>:-s>)
 endif()
 
+# Pack the DOS Release executable with UPX when it's installed, so the game and its
+# data fit on a single 1.44 MB floppy. DOS only: on the desktop a packed binary buys
+# little and trips antivirus heuristics and AppImage/macOS tooling.
+if(F15_DOS AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    find_program(UPX_EXECUTABLE NAMES upx upx-ucl)
+    set(UPX_ARGS "--lzma" CACHE STRING "UPX options for packing the DOS executable")
+    if(UPX_EXECUTABLE)
+        separate_arguments(UPX_ARG_LIST UNIX_COMMAND "${UPX_ARGS}")
+        add_custom_command(TARGET f15se2 POST_BUILD
+            COMMAND ${UPX_EXECUTABLE} -q ${UPX_ARG_LIST} $<TARGET_FILE:f15se2>
+            COMMENT "Packing $<TARGET_FILE_NAME:f15se2> with UPX"
+            VERBATIM
+        )
+    else()
+        message(STATUS "UPX not found: the DOS executable will not be packed "
+                       "(install upx or upx-ucl for a floppy-sized build)")
+    endif()
+endif()
+
 #==============================================================================
 # Compiler warnings (game code, compiled once into the core library)
 #==============================================================================

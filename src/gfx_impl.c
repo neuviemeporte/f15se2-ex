@@ -550,9 +550,12 @@ static void gfx_presentDirectFB(SDL_Surface *page, int shake) {
     dp = (Uint8 *)ws->pixels;
     /* Centre a 350-line title in a taller VESA mode. */
     dp += (size_t)((ws->h - h) / 2) * ws->pitch;
-    for (y = 0; y < h; y++)
-        SDL_memcpy(dp + (size_t)y * ws->pitch,
-                   sp + (size_t)y * page->pitch + shake, (size_t)copyw);
+    for (y = 0; y < h; y++) {
+        Uint8 *row = dp + (size_t)y * ws->pitch;
+        SDL_memcpy(row, sp + (size_t)y * page->pitch + shake, (size_t)copyw);
+        /* The shake shift uncovers the right edge; black it like the renderer path. */
+        SDL_memset(row + copyw, 0, (size_t)shake);
+    }
     SDL_UpdateWindowSurface(sdlWindow);
 }
 

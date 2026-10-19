@@ -63,4 +63,5 @@ cmake -S . -B build-dos \
 cmake --build build-dos -j4
 ```
 
-The output is `build-dos/f15se2ex.exe`.
+The output is `build-dos/f15se2ex.exe`. If `upx` or `upx-ucl` is installed, the
+Release build is packed with it so the game fits on a single 1.44 MB floppy.
