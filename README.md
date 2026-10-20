@@ -9,11 +9,11 @@
 
 This is a work in progress project to port, fix and enhance the [reconstructed source code](https://github.com/neuviemeporte/f15se2-re) of the Microprose game F-15 Strike Eagle 2 v451.03 (the definitive 1991 Desert Storm expansion disk version) for modern architectures.
 
-Unlike the old project, whose aim was a bug-for-bug, instruction-level faithful recreation of the game for the orginal MS-DOS platform and the MS C v5.1 compiler, here we aim to keep as much of the game's spirit intact, while taking it forward into the 21st century with modern compilers and libraries, better graphics and enhanced features.
+Unlike the old project, whose aim was a bug-for-bug, instruction-level faithful reconstruction of the game's source code for the orginal MS-DOS platform and the MS C v5.1 compiler, here we aim to keep as much of the game's spirit intact, while taking it forward into the 21st century with modern compilers and libraries, better graphics and enhanced features.
 
-The repository was forked off from tag `v0.9.2`, and the idea is that the reconstruction will see occasional backports from this project which provide bugfixes, clarify or document the original code, but of course these will need to make sure to preserve the contract of instruction-level identity with the original.
+The repository was forked off from tag `v0.9.2`, and the projects continue to diverge from there, but the idea is for the reconstruction to see occasional backports from this project which provide bugfixes, clarify or document the original code, but of course these will need to make sure to preserve the contract of the reconstruction's instruction-level identity with the original.
 
-The project is based on the [SDL3 library](https://github.com/libsdl-org/SDL/releases) for the graphical frontend.
+The project uses the [SDL3 library](https://github.com/libsdl-org/SDL/releases) for the graphical frontend.
 
 Development journal: https://neuviemeporte.github.io/category/f15-se2
 
@@ -52,19 +52,20 @@ The entire game is playable, rendering and input handling is ported to SDL, soun
 
 ## Completed improvements
 
-These are bugfixes and new features that were not part of the original game, and have been implemented in this project.
+These are bugfixes and new features which were not part of the original game that have been added by this project.
 
 1. The original was limited to 15 FPS with a convoluted time scale implementation to make sure the game engine kept up with rendering. This has been eliminated, with the game engine being decoupled from rendering, so now it plays much smoother. 
 1. Input loop has been upgraded to an SDL event pump which should make it deal with simultaneous inputs much bettern and improve general responsiveness.
 1. The game originally supported 4 levels of detail (`0-3`, switchable with `Alt-D`), with the highest one still suffering from limited draw distance. An additional level of detail (`4`) has been implemented with unlimited draw distance, and enabled by default.
-1. Rendering has been moved out of the bespoke software engine that was capped at `320x200` resolution (still available with `F15_RENDER=software` envvar) and into OpenGL (with MSAA), enabling higher resolutions and improved clarity and nicer graphics (particularly the horizon now has fog). At a later time, perhaps it will also be possible to upgrade the original software renderer to support higher resolutions.
-1. Smooth movement and high resolution 3D rendering of MFD screens.
+1. Rendering has been moved out of the bespoke software engine that was capped at `320x200` resolution (still available with the `F15_RENDER=software` envvar) and into OpenGL (with MSAA), enabling higher resolutions (including widescreen), improved clarity and overall nicer graphics (particularly the horizon now has fog). At a later time, perhaps it will also be possible to upgrade the original software renderer to support higher resolutions.
+1. Smooth movement and high resolution 3D rendering of cockpit display screens.
 1. Air targets are now also selectable with the `T` key, just like ground targets.
 1. Widescreen is supported with correct aspect ratio.
 1. 3D object occlusion was fixed, was difficult due to the engine handling the draw order and aspects of rendering in an unorthodox way, many models containing coplanar surfaces which would z-fight; solved by introducing depth bias.
 1. Gun spread and target hitboxes are improved, it is actually possible to aim the gun now.
 1. Missiles follow the actually selected targets instead of the closest one.
 1. Asset converters allow loading original 3D models into modeling software, could lead to better/more models in the future. Fonts and sprites are also exported.
+1. The game was ported back to DOS, running in 32bit protected mode
 
 ## Planned improvements
 
@@ -82,23 +83,21 @@ These are things that are broken or missing from the original, and which we plan
 1. Better clouds and smoke effects, right now these are solid polygons in mid air.
 1. Add more information (altitude/speed) to the target display MFD for airborne targets.
 1. Let player skip the ejection sequence and go straight to debriefing.
-1. It's sometimes impossible to lock some targets even when nearby, cycling targets just jumps over them.
 1. Implement a full 3D cockpit with 3DOF/6DOF head movement with the hat switch and/or TrackIR.
 1. Map and 3D model editors. (Some progress has been made but not complete)
+1. VR support. (Some initial progress made with OpenXR for Linux/X11)
 1. Multiplayer.
-1. Port the game back to 32bit DOS.
-1. VR support. 😈
 
 ## Known bugs
 
 Problems with the game that were introduces by the port, and to the best of our knowledge are *not* present in the original.
 
-1. There seem to be some kind of gimbal lock problems with the input; pointing the plane straight up or straight down, then rolling 90 degrees to either side and pulling on the stick seems to have little to no effect.
+1. There seem to be some kind of gimbal lock problems with the input; pointing the plane straight up or straight down, then rolling 90 degrees to either side and pulling on the stick seems to have little to no effect sometimes.
 1. The bearing (`BRG`) value on the airborne target screen is broken, mostly stuck on one value even though target is visibly turning.
 1. There's sometimes flickering beneath and above the left display (map) in the cockpit.
 1. Shaking in the cockpit after getting hit is too long.
 1. The font color at the bottom of the pilot select screen is sometimes wrong, should be red like the score text.
-1. When on the airfield/carrier, can see through to the ground on the sides of the view (exposed by widescreen support). Also, aircraft geometry sometimes flickers beneath the player.
+1. When on the airfield/carrier, can see through to the ground on the sides of the view (exposed by widescreen support). Also, carrier geometry sometimes flickers beneath the player.
 1. Some z-fighting still visible, e.g. on the underside of the player aircraft in external view.
 
 ## Building
