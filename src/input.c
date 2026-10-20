@@ -18,6 +18,7 @@
 #include "const.h"
 #include "gfx.h"
 #include "joystick.h"
+#include "xr.h"
 #include <SDL3/SDL.h>
 
 /* Game tick clock (timer.c); pumped here so the window stays responsive and the
@@ -740,6 +741,11 @@ void input_pumpEvents(void) {
              * never reaches the ring as an Alt-shifted Return. */
             if (ev.key.scancode == SDL_SCANCODE_RETURN && (ev.key.mod & SDL_KMOD_ALT)) {
                 gfx_toggleFullscreen();
+                break;
+            }
+            /* F12 recenters the VR seat on the pilot's head (no-op without VR). */
+            if (ev.key.scancode == SDL_SCANCODE_F12) {
+                xr_recenter();
                 break;
             }
             if (g_mode == INPUT_MODE_FLIGHT) {

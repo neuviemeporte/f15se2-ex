@@ -36,6 +36,7 @@
 #include "egdata.h"
 #include "egtypes.h"
 #include "log.h"
+#include "xr.h"
 
 #include <stdlib.h> /* qsort */
 
@@ -44,6 +45,26 @@
 static SDL_Window *s_win;
 static SDL_GLContext s_ctx;
 static int s_active;
+static int s_vr; /* an OpenXR session mirrors each present into the headset (xr.h) */
+static int s_vrEyes;     /* eyes to render this flight frame (xr_beginFrame); 0 = flat only */
+static int s_vrSkyIdx;   /* sky palette index for the eye clears */
+static float s_vrFarGl;  /* far depth gate in camera-space units, for the eye projection */
+static float s_vrHeadRot[9]; /* head orientation this frame (xr_headRotation, row-major) */
+static int s_vrViewPosZ;     /* scene g_viewPosZ (the tile walk reuses the global) */
+#ifdef F15_VR
+/* Camera-space units per metre: the scene's camera space runs ~1024 units per foot
+ * (measured as the ground-plane distance against altitude). Sets the stereo IPD and
+ * head-position parallax scale. */
+static const float VR_UNITS_PER_METRE = 1024.0f / 0.3048f;
+static const float VR_NEAR_M = 1.0f;
+/* The cockpit quad's distance ahead of the eye (metres). Its windscreen hole is sized
+ * to subtend the same view angle as the flat projection, so the HUD lines up with
+ * the stereo world as seen from the centre eye. */
+static const float VR_COCKPIT_DIST = 1.0f;
+/* The cull and terrain fetch still follow the nose; widen the object cull so a
+ * head turn finds objects to either side (nothing behind the nose is fetched). */
+static const int VR_CULL_WIDEN = 4;
+#endif
 
 /* glFogCoordf (core GL 1.4) lets us drive fog from an explicit per-vertex distance
  * instead of GL's eye-space distance. We must: the "eye" coords we submit are
@@ -57,6 +78,10 @@ static int s_active;
 #define GL_FOG_COORD 0x8451
 #endif
 static void (*s_glFogCoordf)(GLfloat);
+/* glBlendFuncSeparate (core GL 1.4): the 2D overlay blends alpha as well as colour,
+ * so the window holds premultiplied colour + coverage alpha — what VR's cockpit quad
+ * layer composites over the stereo world. Plain glBlendFunc would store alpha^2. */
+static void (*s_glBlendFuncSeparate)(GLenum, GLenum, GLenum, GLenum);
 
 /* MSAA multisampling for the GL framebuffer. 4x is effectively free on any desktop
  * GPU and noticeably cleans up the flat-shaded polygon edges and the native-res
@@ -86,6 +111,8 @@ static int initContext(SDL_Window *win) {
     SDL_GL_MakeCurrent(win, s_ctx);
     if (!SDL_GL_SetSwapInterval(1)) gfx_enableFramePacing();
     s_glFogCoordf = (void (*)(GLfloat))SDL_GL_GetProcAddress("glFogCoordf");
+    s_glBlendFuncSeparate =
+        (void (*)(GLenum, GLenum, GLenum, GLenum))SDL_GL_GetProcAddress("glBlendFuncSeparate");
     if (GL_MSAA_SAMPLES > 0) glEnable(GL_MULTISAMPLE); /* no-op if the format has 0 samples */
     {
         GLint depthBits = 0, stencilBits = 0, samples = 0;
@@ -366,14 +393,24 @@ static const char *gl_name(void) { return "opengl1"; }
  * driver can't satisfy, so if the context won't come up we retry once without it
  * before declining — losing only the anti-aliasing, not the whole backend. */
 static int gl_init(void) {
-    int msaa = GL_MSAA_SAMPLES;
+    /* VR blits the back buffer into the headset swapchain, which needs it single-sampled. */
+    int vr = xr_probe();
+    int msaa = vr ? 0 : GL_MSAA_SAMPLES;
     for (;;) {
         setGLAttributes(msaa);
+        /* VR: the window's alpha marks the see-through windscreen of the cockpit quad. */
+        SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, vr ? 8 : 0);
         SDL_Window *win = gfx_createWindow(SDL_WINDOW_OPENGL);
-        if (win && initContext(win)) return 1;
+        if (win && initContext(win)) {
+            /* xrWaitFrame paces the loop to the headset instead of desktop vsync. */
+            s_vr = vr && xr_startSession();
+            if (s_vr) SDL_GL_SetSwapInterval(0);
+            return 1;
+        }
         gfx_destroyWindow();
         if (msaa == 0) {
             LogWarn(("GL init failed; declining the OpenGL backend"));
+            xr_shutdown();
             return 0;
         }
         LogWarn(("GL init failed with %dx MSAA; retrying without it", msaa));
@@ -382,6 +419,8 @@ static int gl_init(void) {
 }
 
 static void gl_shutdown(void) {
+    xr_shutdown();
+    s_vr = 0;
     r2d_registerImageDestroy(NULL);
     if (s_ctx) SDL_GL_DestroyContext(s_ctx);
     s_ctx = NULL;
@@ -549,6 +588,33 @@ static void beginModelPass(void) {
     glEnable(GL_POLYGON_OFFSET_POINT);
 }
 
+#ifdef F15_VR
+/* Turn the flight camera with the pilot's head: rotate g_viewRotMatrix (the matrix
+ * every object/terrain transform and frustum cull reads) into the head's frame, so
+ * the scene is fetched and culled around where the pilot looks. The eye pass rotates
+ * it back (renderVrEyes), keeping the world fixed to the aircraft.
+ *
+ * Camera-space axis a (0 = right, 1 = up, 2 = forward) of a world offset is
+ * sum_k m[3k + a] * rel_k; the head frame is H^T * camera, where H is the head
+ * orientation re-expressed with +Z forward (OpenXR looks down -Z). */
+static void applyHeadRotation(void) {
+    static const float flip[3] = { 1.0f, 1.0f, -1.0f };
+    float h[9], m[9];
+    int a, b, k;
+    xr_headRotation(s_vrHeadRot);
+    for (a = 0; a < 3; a++)
+        for (b = 0; b < 3; b++) h[a * 3 + b] = s_vrHeadRot[a * 3 + b] * flip[a] * flip[b];
+    for (k = 0; k < 9; k++) m[k] = (float)g_viewRotMatrix[k];
+    for (k = 0; k < 3; k++)
+        for (a = 0; a < 3; a++) {
+            float v = 0.0f;
+            for (b = 0; b < 3; b++) v += h[b * 3 + a] * m[3 * k + b];
+            v = SDL_roundf(v);
+            g_viewRotMatrix[3 * k + a] = (int16)(v > 32767.0f ? 32767.0f : v < -32767.0f ? -32767.0f : v);
+        }
+}
+#endif
+
 /* Target-model MFD sub-view (renderScene == 0). The game's two-tone horizon backdrop
  * is drawn immediately (fillSpanRectImmediate, egmath.c) into the MFD region just
  * before this, over the anchor page composite — so the framebuffer already holds the
@@ -644,6 +710,9 @@ static void gl_beginScene(const R3DScene *s) {
      * here. */
     r2d_vectorBeginFrame(R2D_COMPOSE_NONE);
 
+    /* VR: open the headset frame now (xrWaitFrame paces here, before any drawing). */
+    s_vrEyes = s_vr ? xr_beginFrame() : 0;
+
     if (s_wide < 0) {
         /* Widescreen 3D (Hor+): on by default; F15_WIDESCREEN=0 forces 4:3. The
          * stock UI stays a centred, pillarboxed 320x200 image (it never widens);
@@ -659,6 +728,9 @@ static void gl_beginScene(const R3DScene *s) {
      * r3d_objTransformFar. */
     setup3DTransform(s->viewport, s->angleX, s->angleY, s->angleZ,
                      s->posX, s->posY, s->posZ, 0);
+#ifdef F15_VR
+    if (s_vrEyes) applyHeadRotation();
+#endif
 
     vpTop = s->viewport[7];
     vpBot = s->viewport[8];
@@ -690,7 +762,7 @@ static void gl_beginScene(const R3DScene *s) {
      * viewport region is re-cleared to the sky colour once scissored below. */
     glViewport(0, 0, win_w, win_h);
     glDisable(GL_SCISSOR_TEST);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClearColor(0.0f, 0.0f, 0.0f, s_vrEyes ? 0.0f : 1.0f);
     glDepthMask(GL_TRUE);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
@@ -702,7 +774,7 @@ static void gl_beginScene(const R3DScene *s) {
         int gw = (int)(Wv * scaleX);
         int gh = (int)(Hv * scaleY);
         int gy = win_h - (lby + (int)(vpTop * scaleY)) - gh;
-        if (s_wide) {
+        if (s_wide && !s_vrEyes) {
             /* Render the 3D across the WHOLE window and remap the projection so the
              * central 320-space region still lands on exactly the gx/gw/gy/gh pixels
              * (px = C0 + C1*camX/depth preserved, extended linearly outside). The
@@ -737,10 +809,23 @@ static void gl_beginScene(const R3DScene *s) {
             s_vpW = (float)gw;
             s_vpH = (float)gh;
             r3d_setObjCullWiden(1, 1, 1, 1); /* 4:3: original cull */
+#ifdef F15_VR
+            if (s_vrEyes) {
+                /* Size the cockpit quad so a window pixel subtends the same angle as
+                 * the flat projection, with the principal point straight ahead. */
+                float px = gx + 0.5f * gw * (1.0f + s_proj[8]);
+                float py = gy + 0.5f * gh * (1.0f + s_proj[9]);
+                float mppX = VR_COCKPIT_DIST / (0.5f * gw * s_proj[0] * 65536.0f);
+                float mppY = VR_COCKPIT_DIST / (0.5f * gh * s_proj[5] * 65536.0f);
+                xr_setScreen((0.5f * win_w - px) * mppX, (0.5f * win_h - py) * mppY,
+                             VR_COCKPIT_DIST, win_w * mppX, win_h * mppY);
+                r3d_setObjCullWiden(VR_CULL_WIDEN, 1, VR_CULL_WIDEN, 1);
+            }
+#endif
             sphOrtho[0] = 0.0f; sphOrtho[1] = (float)Wv;
             sphOrtho[2] = (float)Hv; sphOrtho[3] = 0.0f;
         }
-        if (s_wide) {
+        if (s_wide && !s_vrEyes) {
             s_sceneVp[0] = 0; s_sceneVp[1] = 0;
             s_sceneVp[2] = win_w; s_sceneVp[3] = win_h;
         } else {
@@ -768,14 +853,20 @@ static void gl_beginScene(const R3DScene *s) {
         uint8 r, g, b;
         gfx_paletteRGB((int)(uint8)skyIdx, &r, &g, &b);
         glClearColor(r / 255.0f, g / 255.0f, b / 255.0f, 1.0f);
+        /* VR: the window's windscreen stays empty (premultiplied 0,0,0,0) so the
+         * cockpit quad shows the stereo world there; the 3D is drawn per eye only. */
+        if (s_vrEyes) glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     }
     glDepthMask(GL_TRUE);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    s_vrSkyIdx = (int)(uint8)skyIdx;
+    s_vrViewPosZ = g_viewPosZ;
+    s_vrFarGl = fGate * 65536.0f;
 
     /* Sky/ground background sphere (detail >= 3) drawn first (farthest) with the
      * depth test off so it stays behind everything; the 3D projection is then
      * restored for the objects. */
-    if ((char)g_detailLevel >= 3)
+    if ((char)g_detailLevel >= 3 && !s_vrEyes)
         glDrawSphere(sphOrtho[0], sphOrtho[1], sphOrtho[2], sphOrtho[3]);
     glMatrixMode(GL_PROJECTION);
     glLoadMatrixf(s_proj);
@@ -1367,20 +1458,10 @@ static int subCmp(const void *a, const void *b) {
 
 static void composePageBackdrop(SDL_Surface *page, int shakeOffset); /* defined below */
 
-static void gl_endScene(void) {
+/* Draw the recorded scene (sorted subs + effect lines) with the current projection,
+ * modelview and target. Runs once for the window and, in VR, once per eye. */
+static void replayScene(void) {
     int i;
-
-    /* Re-establish the scene's GL state before replaying the deferred subs: an
-     * immediate 2D primitive drawn mid-scene (e.g. the far-contact dot from
-     * updateTargetLock) leaves the overlay's full-window ortho/viewport behind,
-     * which would project the whole scene as garbage. */
-    glViewport(s_sceneVp[0], s_sceneVp[1], s_sceneVp[2], s_sceneVp[3]);
-    glScissor(s_sceneVp[0], s_sceneVp[1], s_sceneVp[2], s_sceneVp[3]);
-    glEnable(GL_SCISSOR_TEST);
-    glMatrixMode(GL_PROJECTION);
-    glLoadMatrixf(s_proj);
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_BLEND);
     glShadeModel(GL_FLAT);
@@ -1388,10 +1469,6 @@ static void gl_endScene(void) {
     glEnable(GL_POLYGON_OFFSET_LINE);
     glEnable(GL_POLYGON_OFFSET_POINT);
     if (s_mainScene) glEnable(GL_FOG);
-
-    if (s_subOverflow)
-        LogWarn(("r3d_gl: %d submissions dropped (cap %d)", s_subOverflow, GL_MAX_SUBS));
-    qsort(s_subs, s_nSub, sizeof(GlSub), subCmp);
 
     /* Pass 1 — the ground plane class (flat ground/sea/roads/surf at world Z=0, the
      * "immediate" set): pure painter's, depth test OFF and depth writes OFF, drawn
@@ -1411,6 +1488,7 @@ static void gl_endScene(void) {
      * lives only here, breaking these objects' own coplanar ties by draw order; the
      * counter resets so pass 1's primitives don't inflate it into a punch-through. */
     glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
     glDepthMask(GL_TRUE);
     s_paintSeq = 0;
 
@@ -1443,13 +1521,144 @@ static void gl_endScene(void) {
      * just drawn and fogged like it, so they occlude and haze. Drawn after the
      * objects with no polygon offset (they are thin free-standing ribbons, not
      * coplanar decals). */
-    if (s_lineOverflow)
-        LogWarn(("r3d_gl: %d effect lines dropped (cap %d)", s_lineOverflow, GL_MAX_LINES));
     glPolygonOffset(0.0f, 0.0f);
     for (i = 0; i < s_nLine; i++) drawGlLine(&s_lines[i]);
-    s_nLine = 0;
-
     glDisable(GL_FOG);
+}
+
+#ifdef F15_VR
+/* Sky and ground dome: the flat view's horizon sphere (glDrawSphere) is a
+ * screen-space effect, so in the headset the same palette ramps are laid on a sphere
+ * around the eye. Ring k sits where the flat view puts it: the sky rings at
+ * atan(g_sphereRingTable[k] / 256) above the horizon (256 = the flat focal length in
+ * 320-space pixels), the ground rings at the altitude-dependent depressions drawSphere
+ * derives from g_viewPosZ. Drawn first with depth off; the world paints over it. */
+static void domeRing(const float *e, const float *f, const float *u, float R, float elevA,
+                     float elevB, int colA, int colB) {
+    static const int SEG = 32;
+    float ca = SDL_cosf(elevA) * R, sa = SDL_sinf(elevA) * R;
+    float cb = SDL_cosf(elevB) * R, sb = SDL_sinf(elevB) * R;
+    int i;
+    glBegin(GL_QUAD_STRIP);
+    for (i = 0; i <= SEG; i++) {
+        float t = (float)i * (2.0f * SDL_PI_F / SEG), ct = SDL_cosf(t), st = SDL_sinf(t);
+        float dx = ct * e[0] + st * f[0], dy = ct * e[1] + st * f[1], dz = ct * e[2] + st * f[2];
+        glColorIndex(colA);
+        glVertex3f(ca * dx + sa * u[0], ca * dy + sa * u[1], (ca * dz + sa * u[2]) / 65536.0f);
+        glColorIndex(colB);
+        glVertex3f(cb * dx + sb * u[0], cb * dy + sb * u[1], (cb * dz + sb * u[2]) / 65536.0f);
+    }
+    glEnd();
+}
+
+static void drawVrDome(float farGl) {
+    float u[3], e[3], f[3], ul, el, R = farGl * 0.9f, sky[17], gnd[17];
+    int k;
+    u[0] = (float)g_viewRotMatrix[3];
+    u[1] = (float)g_viewRotMatrix[4];
+    u[2] = (float)g_viewRotMatrix[5];
+    ul = SDL_sqrtf(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
+    if (ul < 1e-3f) return;
+    u[0] /= ul; u[1] /= ul; u[2] /= ul;
+    /* two horizontal axes: e = normalize(up x forward), f = up x e */
+    e[0] = u[1]; e[1] = -u[0]; e[2] = 0.0f;
+    el = SDL_sqrtf(e[0] * e[0] + e[1] * e[1]);
+    if (el < 1e-3f) { e[0] = 1.0f; e[1] = 0.0f; el = 1.0f; }
+    e[0] /= el; e[1] /= el;
+    f[0] = u[1] * e[2] - u[2] * e[1];
+    f[1] = u[2] * e[0] - u[0] * e[2];
+    f[2] = u[0] * e[1] - u[1] * e[0];
+
+    for (k = 0; k < 16; k++) {
+        sky[k] = SDL_atanf((float)g_sphereRingTable[k] / 256.0f);
+        gnd[k] = k == 0 ? 0.0f
+                        : SDL_atanf(((float)s_vrViewPosZ / ((16 - k) * 0x20) -
+                                     (float)s_vrViewPosZ / 0x200) / 256.0f);
+    }
+    sky[16] = gnd[16] = SDL_PI_F * 0.5f;
+
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_FOG);
+    glShadeModel(GL_SMOOTH);
+    for (k = 0; k < 16; k++) {
+        domeRing(e, f, u, R, sky[k], sky[k + 1], 0x60 + k, 0x60 + (k < 15 ? k + 1 : 15));
+        domeRing(e, f, u, R, -gnd[k], -gnd[k + 1], 0x70 + k, 0x70 + (k < 15 ? k + 1 : 15));
+    }
+    glShadeModel(GL_FLAT);
+}
+
+/* Replay the scene once per eye into the headset swapchains. Submitted vertices are
+ * (camX, camY, depth/65536) in the head-turned flight camera space (X right, Y up,
+ * Z forward); scale to metres, flip Z to OpenXR's -Z forward, rotate by the head
+ * orientation into the seated space, then apply the eye's view. */
+static void renderVrEyes(void) {
+    float P[16], V[16], S[16], H[16];
+    float farM = s_vrFarGl / VR_UNITS_PER_METRE;
+    float savedPixelScale = s_pixelScale;
+    int eye, w, h, row, col;
+    uint8 r, g, b;
+
+    SDL_memset(S, 0, sizeof S);
+    S[0] = 1.0f / VR_UNITS_PER_METRE;
+    S[5] = 1.0f / VR_UNITS_PER_METRE;
+    S[10] = -65536.0f / VR_UNITS_PER_METRE;
+    S[15] = 1.0f;
+    /* The scene was transformed into the head's frame (applyHeadRotation); rotate it
+     * back so the world stays fixed to the aircraft while the eyes look around. */
+    SDL_memset(H, 0, sizeof H);
+    for (row = 0; row < 3; row++)
+        for (col = 0; col < 3; col++) H[col * 4 + row] = s_vrHeadRot[row * 3 + col];
+    H[15] = 1.0f;
+    gfx_paletteRGB(s_vrSkyIdx, &r, &g, &b);
+
+    for (eye = 0; eye < s_vrEyes; eye++) {
+        if (!xr_bindEye(eye, VR_NEAR_M, farM, P, V, &w, &h)) continue;
+        glViewport(0, 0, w, h);
+        glDisable(GL_SCISSOR_TEST);
+        glClearColor(r / 255.0f, g / 255.0f, b / 255.0f, 1.0f);
+        glDepthMask(GL_TRUE);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        glMatrixMode(GL_PROJECTION);
+        glLoadMatrixf(P);
+        glMatrixMode(GL_MODELVIEW);
+        glLoadMatrixf(V);
+        glMultMatrixf(H);
+        glMultMatrixf(S);
+        s_pixelScale = (float)w / 500.0f; /* point sprites: ~logical px at headset density */
+        drawVrDome(s_vrFarGl);
+        replayScene();
+        xr_releaseEye(eye);
+    }
+    s_pixelScale = savedPixelScale;
+}
+#endif
+
+static void gl_endScene(void) {
+    /* Re-establish the scene's GL state before replaying the deferred subs: an
+     * immediate 2D primitive drawn mid-scene (e.g. the far-contact dot from
+     * updateTargetLock) leaves the overlay's full-window ortho/viewport behind,
+     * which would project the whole scene as garbage. */
+    glViewport(s_sceneVp[0], s_sceneVp[1], s_sceneVp[2], s_sceneVp[3]);
+    glScissor(s_sceneVp[0], s_sceneVp[1], s_sceneVp[2], s_sceneVp[3]);
+    glEnable(GL_SCISSOR_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glLoadMatrixf(s_proj);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    if (s_subOverflow)
+        LogWarn(("r3d_gl: %d submissions dropped (cap %d)", s_subOverflow, GL_MAX_SUBS));
+    if (s_lineOverflow)
+        LogWarn(("r3d_gl: %d effect lines dropped (cap %d)", s_lineOverflow, GL_MAX_LINES));
+    qsort(s_subs, s_nSub, sizeof(GlSub), subCmp);
+
+#ifdef F15_VR
+    if (s_mainScene && s_vrEyes) renderVrEyes();
+    else
+#endif
+        replayScene();
+    s_nLine = 0;
     s_nSub = 0;
     glDisable(GL_SCISSOR_TEST);
 
@@ -1462,6 +1671,15 @@ static void gl_endScene(void) {
         composePageBackdrop(gfx_getCurPageSurface(), gfx_getShakeOffset());
         s_mainScene = 0;
     }
+}
+
+/* Source-over for the 2D overlay: colour as glBlendFunc(SRC_ALPHA, 1-SRC_ALPHA),
+ * alpha accumulated as coverage (see s_glBlendFuncSeparate). */
+static void overlayBlend(void) {
+    if (s_glBlendFuncSeparate)
+        s_glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    else
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
 /* ---- 2D overlay composite + present ------------------------------------ */
@@ -1839,7 +2057,7 @@ static void gl_drawImage(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
         glDisable(GL_BLEND);
     } else {
         glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        overlayBlend();
     }
     glBindTexture(GL_TEXTURE_2D, itex);
     /* Full-frame texcoords into the sheet; pixel-snapping the quad keeps every
@@ -1897,7 +2115,7 @@ static void gl_drawImageF(R2DImage *img, int srcX, int srcY, int imgW, int imgH,
         glDisable(GL_BLEND);
     } else {
         glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        overlayBlend();
     }
     glBindTexture(GL_TEXTURE_2D, itex);
     hu = 0.5f / (float)surf->w;
@@ -1952,7 +2170,7 @@ static void gl_drawImageRot(R2DImage *img, int srcX, int srcY, int imgW, int img
         glDisable(GL_BLEND);
     } else {
         glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        overlayBlend();
     }
     glBindTexture(GL_TEXTURE_2D, itex);
     hu = 0.5f / (float)surf->w;
@@ -1996,7 +2214,7 @@ static void drawImageWindowFitH(R2DImage *img, float leftWinX) {
     glEnable(GL_TEXTURE_2D);
     glColor3ub(255, 255, 255);
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    overlayBlend();
     glBindTexture(GL_TEXTURE_2D, itex);
     sc = (float)s_ov.winH / (float)surf->h;
     dw = (float)surf->w * sc;
@@ -2192,7 +2410,7 @@ static void composePageBackdrop(SDL_Surface *page, int shakeOffset) {
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, s_pageTex);
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    overlayBlend();
 
     shake = shakeOffset * scaleX;
     {
@@ -2224,6 +2442,11 @@ static void gl_present(SDL_Surface *page, int shakeOffset) {
     s_sceneRendered = 0;
     s_pageComposited = 0;
     r2d_vectorMarkPresented();
+    if (s_vr && !xr_presentWindow(s_win)) {
+        s_vr = 0;
+        SDL_GL_SetSwapInterval(1);
+    }
+    s_vrEyes = 0;
     SDL_GL_SwapWindow(s_win);
 }
 

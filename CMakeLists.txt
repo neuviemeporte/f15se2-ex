@@ -43,6 +43,11 @@ endif()
 # is not optional: every platform builds it, and it is the runtime fallback.
 include(CMakeDependentOption)
 cmake_dependent_option(ENABLE_OPENGL1 "Build the OpenGL 1.1 render backend" ON "NOT F15_DOS" OFF)
+# OpenXR VR mode on top of the GL backend. Linux/X11 only for now: SteamVR takes GL
+# through XR_KHR_opengl_enable with an Xlib/GLX context. Falls back to the flat
+# window at runtime when no OpenXR runtime/headset is available.
+cmake_dependent_option(VR "Build the OpenXR VR mode (GL backend, Linux/X11)" OFF
+    "ENABLE_OPENGL1;UNIX;NOT APPLE;NOT F15_DOS" OFF)
 
 #==============================================================================
 # Global settings
@@ -340,6 +345,31 @@ if(ENABLE_OPENGL1)
     # headers and context management.
     find_package(OpenGL REQUIRED)
     add_render_backend(OPENGL1 ${SRC_DIR}/r3d_gl.c OpenGL::GL)
+endif()
+
+if(VR)
+    find_package(OpenXR CONFIG QUIET)
+    if(OpenXR_FOUND)
+        message(STATUS "Found system OpenXR")
+    elseif(DOWNLOAD_DEPENDENCIES)
+        message(STATUS "System OpenXR not found, building the loader from source")
+        set(DYNAMIC_LOADER OFF CACHE BOOL "" FORCE) # link the loader in statically
+        set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        FetchContent_Declare(
+            OpenXR
+            GIT_REPOSITORY "https://github.com/KhronosGroup/OpenXR-SDK.git"
+            GIT_TAG "release-1.1.65"
+            UPDATE_DISCONNECTED TRUE
+        )
+        FetchContent_MakeAvailable(OpenXR)
+    else()
+        find_package(OpenXR REQUIRED CONFIG)
+    endif()
+    find_package(X11 REQUIRED)
+    set_source_files_properties(${SRC_DIR}/xr.c PROPERTIES LANGUAGE CXX)
+    target_sources(f15se2_core PRIVATE ${SRC_DIR}/xr.c)
+    target_compile_definitions(f15se2_core PRIVATE F15_VR)
+    target_link_libraries(f15se2_core PUBLIC OpenXR::openxr_loader OpenGL::GLX X11::X11)
 endif()
 
 add_executable(f15se2 ${SRC_DIR}/f15.c)

@@ -16,6 +16,7 @@
 #include "inttype.h"
 #include <dos.h>
 #include <SDL3/SDL.h>
+#include "xr.h"
 
 extern uint8 timerCounter;
 extern uint8 timerCounter2;
@@ -45,6 +46,7 @@ void setTimerTickHook(void(far *fn)(void)) {
  * per 1/60 s tick. Safe to call as often as a spin loop likes. */
 void timerPump(void) {
     Uint64 now;
+    xr_idle(); /* every wait loop lands here; keep the headset fed between presents */
     if (!timerRunning) return;
     now = SDL_GetTicksNS();
     if (now > nextTickNs + MAX_CATCHUP_NS)

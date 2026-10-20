@@ -89,6 +89,10 @@ static void gfx_swImage(struct R2DImage *img, int srcX, int srcY, int w, int h,
 /* Bring up SDL video: the render backend probe (r3d_init) creates the window and
  * whatever context the winning backend presents through. */
 void gfx_videoInit(void) {
+#ifdef F15_VR
+    /* OpenXR binds GL through Xlib/GLX (xr.c); SDL_VIDEODRIVER still overrides. */
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
+#endif
     if (!SDL_Init(SDL_INIT_VIDEO))
         LogCritical(("SDL_Init failed: %s", SDL_GetError()));
 
